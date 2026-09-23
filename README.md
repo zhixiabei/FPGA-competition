@@ -1,5 +1,39 @@
 # 安路 PH1P35 边缘检测 + OSD 合并工程
 
+## 第一次看代码，从这里开始
+
+这个工程实现的是“摄像头采集 → 图像处理 → DDR 帧缓存 → 文字/Logo 叠加 → HDMI 显示”。文件多，是因为同时包含算法、硬件接口以及 IP 配套文件。
+
+先按下面顺序打开 5 个文件。详细的模块作用、数据流、参数修改位置、同名文件区别和 TD 登记文件索引，见 **[代码与配置导航](CODE_MAP.md)**。
+
+| 顺序 | 文件 | 先看什么 |
+|---|---|---|
+| 1 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 系统顶层：摄像头、ISP、DDR、HDMI 怎么连接 |
+| 2 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 图像处理流水线：彩色重建、白平衡、边缘检测、数据打包 |
+| 3 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 边缘算法：灰度、相邻像素平均、Sobel、阈值判断 |
+| 4 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 在图像上加 Logo、文字和帧计数；设置显示位置与调试画面 |
+| 5 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | 不接板子时如何送入测试图像、检查算法输出 |
+
+注意：当前边缘阈值由 **isp_top.v 中的 `.EDGE_TH(11'd80)`** 设置。只修改 edge_detect_96.v 中的默认值，会被这个实例参数覆盖。仿真测试台还独立设置了 THRESHOLD。
+
+### 各目录用来做什么
+
+| 目录或文件 | 用途 |
+|---|---|
+| [td_project/](td_project/) | TD 工程入口 `.al` 和当前顶层时序约束 `.sdc` |
+| [user_source/hdl_source/](user_source/hdl_source/) | HDL 源码，既有算法，也有摄像头、DDR、HDMI 接口与配套 IP |
+| [user_source/hdl_source/isp/](user_source/hdl_source/isp/) | 图像处理模块；注意当前使用的 AWB 源文件在上一层 |
+| [user_source/ip_source/](user_source/ip_source/) | PLL、FIFO、RAM、除法器的 IP 配置与生成源码 |
+| [user_source/constraints_source/](user_source/constraints_source/) | 板卡引脚等约束；当前使用 pin.adc |
+| [sim/](sim/) | 仿真测试台和启动脚本；运行方法见 [仿真说明](sim/README.md) |
+| [verification/](verification/) | TD 检查脚本和历史验证记录；生成日志及报告留在本地 |
+| [.gitignore](.gitignore) | 上传时过滤运行缓存和输出文件 |
+| [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) | 首次上传、后续更新、导出干净 ZIP 的操作步骤 |
+
+源码里保留了同名模块的其他版本。以 `.al` 的文件路径和 TD 展开的模块层次为准；不要把整个 hdl_source 目录重复添加到工程。具体容易混淆的路径见 [代码导航](CODE_MAP.md)。
+
+## TD 打开入口
+
 在 TD 中选择 File → Open Project，打开：
 
     td_project/anlogic_edge_osd.al
@@ -40,14 +74,14 @@ verification/synthesis_console.log：本次综合完整输出，以末尾 PASS/F
 目前合并保留了原例程的算法和时序行为，不代表完成了功能仿真或实物验证。
 原例程中的未连接输入、位宽等告警需要结合后续仿真和上板调试审查。
 OSD 中的运行计数按显示帧递增，不是秒计时。
-## 本次 TD 综合结果（2026-09-23）
+## 初次 TD 命令行综合记录（2026-09-23）
 
 - 工程打开、源码分析和层次展开：通过。
 - RTL 优化、门级综合、物理实例合法化：完成，synthesis_console.log 末尾为 MERGED_PROJECT_SYNTHESIS_PASS。
 - 综合阶段资源：Slice 13510/21216（63.68%），ERAM 40/108（37.04%），DSP 9/40（22.50%），寄存器 13768/42432（32.45%）。均未超出报告容量；最终用量以布局布线为准。
 - 综合时序估计：Setup WNS = -1.477 ns，Hold WNS = 0.114 ns，STA coverage = 95.32%。综合完成不等于时序通过。请继续布局布线，检查最终时序以及未约束路径。
 - 原 PLL 配置保持不变。综合报告显示 HDMI 像素时钟约 75.002 MHz；不是重新生成的标准 74.25 MHz 配置。
-- 未执行布局布线、下载文件生成、功能仿真或实物验证。
+- 此处记录的是初次命令行综合检查，当时未执行布局布线、下载文件生成、功能仿真或实物验证；后续独立边缘模块仿真见下一节。
 - 完整资源报告：verification/merged_gate.area；综合时序报告：verification/merged_gate.timing。
 
 本次检查还报告了原边缘模块 RAM_STYLE 设置未按预期采用、部分原例程信号未连接和位宽等告警。保留日志供后续审查，未为消除告警改写原算法。
