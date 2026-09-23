@@ -1,0 +1,34 @@
+# TD synthesis/place/route output directories, including future runs.
+**/*_Runs/
+/td_project/log/
+.lock.f
+
+# Simulation outputs. Keep new testbench source outside out and out_*.
+/sim/out/
+/sim/out_*/
+xsim.dir/
+.Xil/
+
+# Logs and waveforms; source and IP configuration files remain included.
+*.log
+*.logw
+*.jou
+*.wdb
+*.vcd
+*.fst
+
+# TD-generated verification reports/databases. Keep scripts and source_check.txt.
+/verification/*.db
+/verification/*.area
+/verification/*.timing
+/verification/*.rpt
+/verification/*.qor
+/verification/*.status
+
+# Generated programming files and optional exported archives.
+*.bit
+/exports/
+
+# Do not ignore *.bin, *.dat, *.mif, *.mem, *.hex, *.txt, *.xml, *.ipc,
+# *.v, *.sv, *.vh, *.vhd, *.tcl, *.adc, *.sdc, or *.al globally.
+# These can be source data, IP configuration, or project dependencies.
