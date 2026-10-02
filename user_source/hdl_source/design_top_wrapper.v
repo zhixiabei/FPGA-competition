@@ -1,6 +1,8 @@
 
 
-module design_top_wrapper (
+module design_top_wrapper #(
+    parameter integer ENABLE_EDGE = 1
+) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
       
@@ -46,6 +48,14 @@ module design_top_wrapper (
 		
 	wire        	S_pll_lock;
     wire        	S_rst_n;
+	reg  [17:0] 	S_cam_power_cnt;
+	reg         	S_cam_pwdnb;
+	reg         	S_cam_i2c_ready;
+	(* keep = "true" *) wire [15:0] S_cam_sensor_id;
+	(* keep = "true" *) wire        S_cam_sensor_id_ok;
+	(* keep = "true" *) wire        S_cam_i2c_error;
+	localparam integer CAM_PWDNB_LOW_CYCLES = 23810;  // >= 1 ms at 23.809524 MHz
+	localparam integer CAM_I2C_START_CYCLES = 142857; // release + >= 5 ms
 	
 	wire [15:0] 	S_ae;
     wire [15:0] 	S_ag;
@@ -407,7 +417,24 @@ module design_top_wrapper (
         S_vi_ddr_wr_en
     };
 	
-	assign O_cam_rst 	= 1'b1;
+	// SC520CS上电后先保持PWDNB/XSHUTDN为低，再释放并等待内部上电完成，
+	// 避免PLL刚锁定就开始I2C初始化而造成寄存器偶发写入失败。
+	always @(posedge S_24m_clk or negedge S_pll_lock) begin
+		if (!S_pll_lock) begin
+			S_cam_power_cnt <= 18'd0;
+			S_cam_pwdnb <= 1'b0;
+			S_cam_i2c_ready <= 1'b0;
+		end else begin
+			if (S_cam_power_cnt < CAM_I2C_START_CYCLES)
+				S_cam_power_cnt <= S_cam_power_cnt + 1'b1;
+			if (S_cam_power_cnt >= CAM_PWDNB_LOW_CYCLES)
+				S_cam_pwdnb <= 1'b1;
+			if (S_cam_power_cnt >= CAM_I2C_START_CYCLES - 1)
+				S_cam_i2c_ready <= 1'b1;
+		end
+	end
+
+	assign O_cam_rst 	= S_cam_pwdnb;
     assign O_cam_24m 	= S_24m_clk;
 	
 	
@@ -442,24 +469,28 @@ module design_top_wrapper (
       .O_ag(S_ag)
   );
   
-    // SC500CS factory HD mode: 1280x720@60, RAW10, 2-Lane, 480 Mbps/Lane.
-    uicfgcs500_720p #(
-      .CLK_DIV(24000000 / 100000 - 1)
-  ) u_uicfgcs500 (
+    // SC520CS原厂真实HD模式：1280x720@60、RAW10、2-Lane、828 Mbps/Lane。
+    // 当前寄存器表已关闭Slave/FSIN等待，Sensor以free-run方式连续输出。
+    uicfgcs520 #(
+      .CLK_DIV(23809524 / 100000 - 1)
+  ) u_uicfgcs520 (
       .I_clk(S_24m_clk),  //系统时钟输入
-      .I_rst_n(S_rst_n),  //系统复位输入
+      .I_rst_n(S_cam_i2c_ready), // SC520CS power-up delay completed
       .I_ae_req(S_ae_req),
       .I_ae(S_ae),
       .I_ag(S_ag),
       .O_cam_scl(O_cam_scl),  //I2C总线，SCL时钟
       .IO_cam_sda(IO_cam_sda),  //I2C总线，SDA数据
       .O_cfg_done(S_cam_cfg_done),  //摄像头寄存器初始化完成
-      .O_ae_cfg_done(S_ae_cfg_done)  //AE配置完成
+      .O_ae_cfg_done(S_ae_cfg_done),  //AE配置完成
+      .O_sensor_id(S_cam_sensor_id),
+      .O_sensor_id_ok(S_cam_sensor_id_ok),
+      .O_iic_error(S_cam_i2c_error)
   );
 	
     mipi_dphy_rx_ph1p_mipiio_wrapper#(
         .DPHY_RX_LOCATION      ( "DPHY0" ),
-        .HS_EQUALIZER          ( "0dB"   ),//"0dB","1.5dB","3dB","4.5dB","6dB","7.5dB","9dB","10.5dB"
+        .HS_EQUALIZER          ( "3dB"   ),// 828 Mbps/Lane接收均衡
         .HS_VGA_GAIN           ( "8dB" ),//"-3dB","-1.5dB","0dB","1.5dB","3dB","4.5dB","6dB","7.5dB"
         .LANE_NUM              ( 2       ),
         .BYTE_NUM              ( 1       )
@@ -583,7 +614,9 @@ assign S_raw_tuser  = S_axis_tuser;
 
 
 //ISP算法顶层模块
-isp_top u_isp_top (
+isp_top #(
+        .ENABLE_EDGE(ENABLE_EDGE)
+    ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
 .I_tlast         (S_raw_tlast	),

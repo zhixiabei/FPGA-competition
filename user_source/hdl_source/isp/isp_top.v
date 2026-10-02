@@ -1,4 +1,6 @@
-module isp_top (
+module isp_top #(
+    parameter integer ENABLE_EDGE = 1
+) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
     input 			I_tlast			,
@@ -99,6 +101,8 @@ awb #(
     .O_tready(awb_O_tready)
 );
 
+generate
+if (ENABLE_EDGE != 0) begin : g_edge
 edge_detect_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
@@ -117,6 +121,15 @@ edge_detect_96 #(
     .O_tvalid(edge_O_tvalid),
     .O_tready(edge_O_tready)
 );
+end else begin : g_camera_rgb
+    // Bring-up mode: keep the camera RGB data and its stream markers together.
+    assign edge_O_tlast  = awb_O_tlast;
+    assign edge_O_tuser  = awb_O_tuser;
+    assign edge_O_tdata  = awb_O_tdata;
+    assign edge_O_tvalid = awb_O_tvalid;
+end
+endgenerate
+
 
     data_96bit_to_128bit u_data_96bit_to_128bit(
         .I_clk              ( axi4s_video_aclk  ),

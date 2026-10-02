@@ -1,5 +1,16 @@
 # 安路 PH1P35 边缘检测 + OSD 合并工程
 
+## 当前版本：SC520CS（2026-10-02）
+
+已按新提供的 SC520CS Lab2 例程更新摄像头配置、曝光/增益、启动时序、MIPI 参数和时序约束，保留原合并工程的 DDR、HDMI 和 OSD。
+
+**第一次看摄像头实时视频，先打开 `td_project/anlogic_sc520_capture.al`**，顶层为 `sc520_capture_top`：彩色图像经过 ISP、DDR 和 OSD 后由开发板 HDMI 输出。
+`td_project/anlogic_edge_osd.al` 顶层仍为 `design_top_wrapper`，输出边缘检测图像加 OSD。两者都配置 SC520CS；这是两个编译配置，不是按键切换。
+
+TD 用于编译工程；视频显示在 HDMI 接收设备上。两个工程均已检查源文件引用无缺失。摄像头控制总线仿真已通过；按用户要求中止后续编译，**本次没有生成新版 bit，也没有上板验证视频**。
+
+工程入口、修改清单及接线待确认事项见 [SC520CS 使用说明](SC520CS_TEST.md)。原资料包含不同板卡版本，尚不能据此确认实物排线兼容；接线前应核实板卡与模块的配套排线/转接关系。
+
 ## 第一次看代码，从这里开始
 
 这个工程实现的是“摄像头采集 → 图像处理 → DDR 帧缓存 → 文字/Logo 叠加 → HDMI 显示”。文件多，是因为同时包含算法、硬件接口以及 IP 配套文件。
@@ -32,6 +43,10 @@
 
 源码里保留了同名模块的其他版本。以 `.al` 的文件路径和 TD 展开的模块层次为准；不要把整个 hdl_source 目录重复添加到工程。具体容易混淆的路径见 [代码导航](CODE_MAP.md)。
 
+## Vivado 图形界面仿真入口
+
+在 Vivado 中打开 [sim/vivado/edge_gui.xpr](sim/vivado/edge_gui.xpr)，点击 **Run Simulation → Run Behavioral Simulation**，即可运行边缘模块测试并查看预设波形。无需手工运行脚本。操作步骤和图片结果位置见 [GUI 仿真说明](sim/VIVADO_GUI.md)。
+
 ## TD 打开入口
 
 在 TD 中选择 File → Open Project，打开：
@@ -45,7 +60,7 @@
 
 以 Lab2（lab_ex2_edge）为基础，保留原有摄像头、RAW10 解包、ISP、边缘检测、DDR 和 HDMI 通路。
 使用 Lab3 的 hdmi_mixer.v 替换显示混合模块，并加入 anlogic_logo_rom.v、osd_char_lib.v。
-输出通路：SC500CS → ISP → 边缘检测 → DDR → 安路 Logo / 字符 / 帧计数叠加 → HDMI。
+当前输出通路：SC520CS → ISP → 边缘检测（彩色工程旁路）→ DDR → 安路 Logo / 字符 / 帧计数叠加 → HDMI。
 分辨率保持 1280×720；顶层 DEBUG_MODE 保持 0。
 
 已复制全部 user_source，工程文件引用均指向本文件夹内的文件。
@@ -74,7 +89,7 @@ verification/synthesis_console.log：本次综合完整输出，以末尾 PASS/F
 目前合并保留了原例程的算法和时序行为，不代表完成了功能仿真或实物验证。
 原例程中的未连接输入、位宽等告警需要结合后续仿真和上板调试审查。
 OSD 中的运行计数按显示帧递增，不是秒计时。
-## 初次 TD 命令行综合记录（2026-09-23）
+## 初次 TD 命令行综合记录（2026-09-23，旧 SC500CS 版本）
 
 - 工程打开、源码分析和层次展开：通过。
 - RTL 优化、门级综合、物理实例合法化：完成，synthesis_console.log 末尾为 MERGED_PROJECT_SYNTHESIS_PASS。

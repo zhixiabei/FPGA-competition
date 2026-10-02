@@ -13,3 +13,15 @@ Coverage includes rectangle/color image, solid white/black, fixed-seed random RG
 valid bubbles, variable line gaps, frame transitions and reset before final frame.
 Not covered: ISP/AWB integration, OSD, packing, DDR, MIPI, HDMI, timing or hardware.
 ModelSim/Questa alternative script is provided but has not been run here.
+
+Vivado saved GUI project validation, 2026-09-24
+Project: sim/vivado/edge_gui.xpr; waveform configuration: edge_gui.wcfg (15 signals).
+Vivado 2021.1 launch_simulation behavioral workflow: PASS.
+320x180: 5 frames, 288000 pixels, 900 lines, 77716 checked cycles.
+Saved settings: top=tb_edge_detect, runtime=all, fallback timescale=1ns/1ps.
+Clean relocated copy of XPR/WCFG and the two source files: PASS.
+All source references and default waveform resolved within the relocated copy;
+launch_simulation loaded the saved waveform and ran to ALL_TESTS_PASS automatically.
+Default tests finished at 1243657 ns. Source RTL/testbench unchanged.
+Validation ran through Vivado project commands; native GUI clicks were not automated.
+Scope remains the standalone edge module, not the entire Anlogic system.

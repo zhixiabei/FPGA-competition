@@ -172,7 +172,7 @@
                     <Attr Name="CompileOrder" Val="35"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/uics500_cfg/SC500GainTbl.v">
+            <File Path="../user_source/hdl_source/uics520_cfg/SC520GainTbl.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -180,7 +180,7 @@
                     <Attr Name="CompileOrder" Val="36"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/uics500_cfg/uicfgcs500_720p.v">
+            <File Path="../user_source/hdl_source/uics520_cfg/uicfgcs520.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -188,7 +188,7 @@
                     <Attr Name="CompileOrder" Val="37"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/uics500_cfg/uics500reg_720p60.v">
+            <File Path="../user_source/hdl_source/uics520_cfg/uics520reg_720p60.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -196,7 +196,7 @@
                     <Attr Name="CompileOrder" Val="38"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/uics500_cfg/uics500regAE.v">
+            <File Path="../user_source/hdl_source/uics520_cfg/uics520regAE.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>

@@ -4,7 +4,13 @@ TD 中的 Read Design / Optimize / Generate Bitstream 是实现流程。功能�
 
 本目录直接使用合并工程原有的 `user_source/hdl_source/isp/edge_detect_96.v`。没有改写 TD 的算法源码，也没有把测试台加入 TD 的综合源文件列表。
 
-## 直接运行
+## 推荐：直接在 Vivado 界面操作
+
+用 Vivado **Open Project** 打开 [vivado/edge_gui.xpr](vivado/edge_gui.xpr)，点击 **Run Simulation → Run Behavioral Simulation**。工程已配置测试台、运行到结束和默认波形，不需要手工运行脚本。
+
+详细的点击步骤、波形说明和结果图片位置见 **[Vivado 图形界面仿真](VIVADO_GUI.md)**。下面保留脚本方式，作为备选；两种方式引用同一份边缘源码和测试台。
+
+## 脚本运行（备选）
 
 1. 在资源管理器打开本目录，双击 `run_xsim.cmd`。
 2. 程序依次编译、展开、运行；结束应显示 `PASS` 和 `ALL_TESTS_PASS`（后者在仿真日志中）。

@@ -70,15 +70,16 @@ end
 	
 //	Use button to add / sub idelay values. I_button[0]:IncDatDly, [1]DecDatDly, [2]IncI_clkDly, [3]DecI_clkDly
 reg 	[3:0] 	r_button_0 = 0, r_button_1 = 0; 
-// 720p60 uses VTS=1000. Exposure is expressed in half-line units, so 1990
-// is close to the legal maximum. AG=80 maps to the selected 4x gain setting.
-reg 	[15:0] 	r_ae_set = 1990, r_ag_set = 80; 
+// 原厂720p60模式VTS=1000，曝光以半行计，最大值为2*VTS-9=1991。
+// 默认使用最大安全曝光1991；增益控制144映射为0x3e09=0x0f、
+// 0x3e06=0x00、0x3e07=0x80，即16倍模拟增益、1倍数字增益。
+reg 	[15:0] 	r_ae_set = 1991, r_ag_set = 144; 
 always @(posedge I_clk or posedge I_rst) begin
 	if(I_rst) begin
 		r_button_0 <= 0; 
 		r_button_1 <= 0; 
-		r_ae_set <= 1990; 
-		r_ag_set <= 80; 
+		r_ae_set <= 1991; 
+		r_ag_set <= 144; 
 	end else begin
 	//	When button pressed, r_button_1 bit is 1. 
 		r_button_0 <= ~I_btn; 
@@ -87,12 +88,12 @@ always @(posedge I_clk or posedge I_rst) begin
 		if(r_button_1[0]) begin
 			r_ae_set <= (r_ae_set > 2) ? r_ae_set - r_ae_tick : r_ae_set; 
 		end else if(r_button_1[1]) begin
-			r_ae_set <= (r_ae_set < 1990) ? r_ae_set + r_ae_tick : r_ae_set; 
+			r_ae_set <= (r_ae_set < 1991) ? r_ae_set + r_ae_tick : r_ae_set; 
 		end 
 		if(r_button_1[2]) begin
 				r_ag_set <= (r_ag_set > 16) ? r_ag_set - r_ag_tick : r_ag_set; 
 		end else if(r_button_1[3]) begin
-				r_ag_set <= (r_ag_set < 89) ? r_ag_set + r_ag_tick : r_ag_set; 
+				r_ag_set <= (r_ag_set < 176) ? r_ag_set + r_ag_tick : r_ag_set; 
 		end 
 		end
 	end
@@ -109,7 +110,9 @@ always @(posedge I_clk or posedge I_rst) begin
 	if(I_rst) begin
 		r_ae_req <= 0; 
 		r_ae     <= 1990; 
-		r_ag     <= 80; 
+		// 与r_ag_set保持不同，使Sensor初始化完成后一定触发一次AE/AG写入，
+		// 确保SC520CS实际收到默认增益设置。
+		r_ag     <= 17; 
 	end else if(r_ae_req) begin
 		r_ae_req <= 0; 
 	end else if(((r_ae != r_ae_set) || (r_ag != r_ag_set))&&(I_cam_cfg_done==1'b1)&&(I_ae_cfg_done==1'b1)) begin

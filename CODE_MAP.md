@@ -10,7 +10,7 @@
 
 ```mermaid
 flowchart TD
-    CAM[SC500CS 摄像头] --> RX[MIPI 接收与 CSI-2 解包]
+    CAM[SC520CS 摄像头] --> RX[MIPI 接收与 CSI-2 解包]
     RX --> RAW[RAW10 解包与像素流整理]
     RAW --> ISP[ISP：重建彩色图像、白平衡、边缘检测]
     ISP --> VIN[video_in：写入图像]
@@ -75,7 +75,7 @@ flowchart TD
 | 改显示内容或字形 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v)、[osd_char_lib.v](user_source/hdl_source/osd_char_lib.v) | S_pf_char、CHAR_*、I_char | mixer 选择显示的字符，字库存放图案；不是改一段普通字符串就能显示任意文字 |
 | 切换彩条/状态图 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | u_hdmi_mixer、DEBUG_MODE | 0=图像加OSD，1=彩条，2=按状态组合显示颜色，3=分区显示四个状态位；调试模式分支不叠加正常 OSD |
 | 调整 Bayer 排列 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_demosaic、BAYER_MODE | BGGR；需匹配传感器实际排列及读出方向 |
-| 查看摄像头初始化 | [uicfgcs500_720p.v](user_source/hdl_source/uics500_cfg/uicfgcs500_720p.v)、[uics500reg_720p60.v](user_source/hdl_source/uics500_cfg/uics500reg_720p60.v) | CLK_DIV、REG_DATA | 当前使用 SC500CS 1280×720@60 的寄存器表；顶层 CLK_DIV=239，输入配置时钟为 24 MHz |
+| 查看摄像头初始化 | [uicfgcs520.v](user_source/hdl_source/uics520_cfg/uicfgcs520.v)、[uics520reg_720p60.v](user_source/hdl_source/uics520_cfg/uics520reg_720p60.v) | CLK_DIV、REG_DATA | 当前使用 SC520CS 1280×720@60 寄存器表；顶层 CLK_DIV=237，配置时钟约 23.809524 MHz，I²C 约 100 kHz |
 | 查看摄像头 MIPI 配置 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | u_mipi_dphy_rx_ph1p_mipiio_wrapper、LANE_NUM | 2 lane；需与摄像头寄存器配置和物理接线一致 |
 | 查看显示时序 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | u_hdmi_vtc | 有效尺寸 1280×720；行/帧总长 1650/750；水平同步 1390～1430，垂直同步 725～730 |
 | 修改时钟 | [PLL IP](user_source/ip_source/PLL/)、[DDR IP](user_source/hdl_source/ph1p35_ddr/ddr2/) | TD 的 IP 配置与相应约束 | 存在多个时钟域，DDR 也有自身时钟逻辑；应通过对应 IP 配置生成并重新检查时序 |
@@ -110,7 +110,7 @@ edge_detect_96 #(
 
 | 任务 | 文件或目录 | 作用 |
 |---|---|---|
-| 摄像头没初始化 | [uics500_cfg/](user_source/hdl_source/uics500_cfg/)、[ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 初始化寄存器、I2C 传输、曝光/增益配置请求 |
+| 摄像头没初始化 | [uics520_cfg/](user_source/hdl_source/uics520_cfg/)、[ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 芯片 ID、初始化寄存器、I2C 错误、曝光/增益配置请求；通用 I2C 底层仍在 uics500_cfg/uii2c.v |
 | MIPI 没收到数据 | [mipi_dphy_rx/](user_source/hdl_source/mipi_dphy_rx/) | 安路 MIPI 物理接收及字节/通道对齐，含加密 IP |
 | 收到字节却没有像素帧 | [csi_unpacket_2lane.v](user_source/hdl_source/isp/csi_unpacket_2lane.v)、[raw10_unpacket_2lane.v](user_source/hdl_source/isp/raw10_unpacket_2lane.v)、[uial2axis.v](user_source/hdl_source/isp/uial2axis.v) | CSI-2 包解析、RAW10 像素提取、帧/行有效信号整理 |
 | 图像写入/读出缓存异常 | [video_in.v](user_source/hdl_source/video_in.v)、[video_out.v](user_source/hdl_source/video_out.v) | FIFO、帧缓存指针、DDR 读写请求和数据宽度适配 |
@@ -152,7 +152,7 @@ edge_detect_96 #(
 3. 可以把测试台 THRESHOLD 改为 160 后重新仿真。对于同一输入，更高阈值通常会留下更少边缘；测试台会按自己的参考计算检查输出。满意后再决定是否把 TD 系统的实例阈值也改为相同值。
 4. 理解边缘模块后，再研究 mixer 的 Logo/文字坐标。现有测试台没有验证 OSD，修改它需要补 OSD 仿真或上板观察。
 
-本说明只整理导航与配置，没有替你更改任何阈值或 RTL。已有仿真记录见 [validation.txt](sim/validation.txt)：验证独立边缘模块，不等于完成摄像头、整条 ISP、DDR、OSD 和 HDMI 的联合验证。
+当前边缘算法阈值保持原设置。独立边缘模块历史仿真见 [validation.txt](sim/validation.txt)；2026-10-02 已适配 SC520CS，并增加可旁路边缘模块的彩色工程，详情见 [SC520CS_TEST.md](SC520CS_TEST.md)。摄像头控制总线仿真已通过，整条视频通路尚未上板验证。
 
 ## 8. TD 显式登记的文件索引
 
@@ -183,10 +183,10 @@ edge_detect_96 #(
 | [user_source/hdl_source/isp/data128_96/data128_96.v](user_source/hdl_source/isp/data128_96/data128_96.v) | 从 128 位格式提取并重排四个 RGB888 像素 | 已登记 |
 | [user_source/hdl_source/isp/data96_128/data96_128.v](user_source/hdl_source/isp/data96_128/data96_128.v) | 提供当前使用的 data_96bit_to_128bit 打包模块 | 已登记 |
 | [user_source/hdl_source/image_correction.v](user_source/hdl_source/image_correction.v) | 旧图像裁剪模块；当前顶层直接旁路 | AutoExcluded=true |
-| [user_source/hdl_source/uics500_cfg/SC500GainTbl.v](user_source/hdl_source/uics500_cfg/SC500GainTbl.v) | SC500 增益查表 | 已登记 |
-| [user_source/hdl_source/uics500_cfg/uicfgcs500_720p.v](user_source/hdl_source/uics500_cfg/uicfgcs500_720p.v) | 摄像头初始化与曝光/增益配置控制 | 已登记 |
-| [user_source/hdl_source/uics500_cfg/uics500reg_720p60.v](user_source/hdl_source/uics500_cfg/uics500reg_720p60.v) | SC500CS 720p60 初始化寄存器表 | 已登记 |
-| [user_source/hdl_source/uics500_cfg/uics500regAE.v](user_source/hdl_source/uics500_cfg/uics500regAE.v) | 曝光/增益寄存器数据生成 | 已登记 |
+| [user_source/hdl_source/uics520_cfg/SC520GainTbl.v](user_source/hdl_source/uics520_cfg/SC520GainTbl.v) | SC520CS 模拟及数字增益映射 | 已登记 |
+| [user_source/hdl_source/uics520_cfg/uicfgcs520.v](user_source/hdl_source/uics520_cfg/uicfgcs520.v) | 芯片 ID 检查、初始化、曝光/增益配置及错误处理 | 已登记 |
+| [user_source/hdl_source/uics520_cfg/uics520reg_720p60.v](user_source/hdl_source/uics520_cfg/uics520reg_720p60.v) | SC520CS 720p60 初始化寄存器表 | 已登记 |
+| [user_source/hdl_source/uics520_cfg/uics520regAE.v](user_source/hdl_source/uics520_cfg/uics520regAE.v) | SC520CS 曝光/增益及 group hold 数据生成 | 已登记 |
 | [user_source/hdl_source/uics500_cfg/uii2c.v](user_source/hdl_source/uics500_cfg/uii2c.v) | I2C 传输 | 已登记 |
 | [user_source/hdl_source/uiisp_beta/ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 曝光/增益设置请求与控制 | 已登记 |
 | [user_source/hdl_source/hdmi_tx.v](user_source/hdl_source/hdmi_tx.v) | HDMI 发送子系统封装 | 已登记 |
@@ -220,4 +220,6 @@ edge_detect_96 #(
 | [user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_demosaic/blk_mem_gen_demosaic.xml](user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_demosaic/blk_mem_gen_demosaic.xml) | 彩色重建配套 RAM 的 IP 配置入口 | 已登记 |
 
 </details>
+
+彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 56 个登记入口。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认 `ENABLE_EDGE=1`。
 
