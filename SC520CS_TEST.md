@@ -14,13 +14,13 @@ D:\vivado_work\anlogic_edge_osd\td_project\anlogic_sc520_capture.al
 通路：SC520CS → RAW10 解包 → 彩色重建/白平衡 → DDR → Logo/文字/帧计数 → HDMI。
 这个工程保留彩色图像，便于观察摄像头是否正常采集；不是测试图发生器。
 
-确认彩色视频正常后，边缘检测版本入口是：
+同一套彩色/边缘功能的主工程入口是：
 
 ```text
 D:\vivado_work\anlogic_edge_osd\td_project\anlogic_edge_osd.al
 ```
 
-顶层：`design_top_wrapper`。上电默认输出边缘检测结果和 OSD。两个工程共用源码，`ENABLE_EDGE` 现在只决定复位后的默认模式（1=边缘、0=彩色），均支持板载 **K1** 实时切换。K1 对应 D5，与原例程 N2/J14 扩展口上的 `I_button` 无关。详见 [切换说明](VIDEO_MODE_SWITCH.md)。
+顶层：`design_top_wrapper`。上电默认输出彩色图像和 OSD。两个工程共用源码，`ENABLE_EDGE` 现在只决定复位后的默认模式（1=边缘、0=彩色），当前主工程默认值为 0；均支持板载 **K1** 实时切换。K1 对应 D5，与原例程 N2/J14 扩展口上的 `I_button` 无关。详见 [切换说明](VIDEO_MODE_SWITCH.md)。
 不要重新把整个源码目录全部添加到工程，已有登记清单包含所需源文件和 IP。
 两个工程均启用 TD 默认生成综合脚本，使 GUI 按当前 SC520CS 源文件清单生成流程，避免复用旧 SC500CS 的运行脚本。如果工程已在 TD 打开，请关闭再重新打开，以加载本次修改。
 

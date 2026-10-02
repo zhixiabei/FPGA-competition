@@ -1,7 +1,7 @@
 
 
 module design_top_wrapper #(
-    parameter integer ENABLE_EDGE = 1 // Reset default only; button selects at runtime.
+    parameter integer ENABLE_EDGE = 0 // Reset default only; button selects at runtime.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,

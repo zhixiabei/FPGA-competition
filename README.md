@@ -4,8 +4,8 @@
 
 已按新提供的 SC520CS Lab2 例程更新摄像头配置、曝光/增益、启动时序、MIPI 参数和时序约束，保留原合并工程的 DDR、HDMI 和 OSD。
 
-**第一次看摄像头实时视频，先打开 `td_project/anlogic_sc520_capture.al`**，顶层为 `sc520_capture_top`：彩色图像经过 ISP、DDR 和 OSD 后由开发板 HDMI 输出。
-`td_project/anlogic_edge_osd.al` 顶层仍为 `design_top_wrapper`，上电默认边缘检测图像加 OSD；彩色工程上电默认彩色。两者现在均支持 **板载 K1 按键切换彩色/边缘模式**。首次使用新功能需要重新编译下载；之后按 K1 即可切换。接法、测试和验证范围见 [彩色/边缘切换说明](VIDEO_MODE_SWITCH.md)。
+**直接使用主工程 `td_project/anlogic_edge_osd.al`**：彩色图像经过 ISP、DDR 和 OSD 后由开发板 HDMI 输出。已与提供的 SC520CS Lab1 彩色例程核对，当前生效的摄像头配置、曝光/增益、RAW10 解包、去马赛克、AWB 和打包逻辑与其一致；本次实际源码改动是将主工程复位默认模式设为彩色，继续使用已有 K1 切换。
+`td_project/anlogic_edge_osd.al` 顶层仍为 `design_top_wrapper`，现在上电默认输出彩色图像加 OSD；按 **板载 K1** 可切换到边缘检测，再按一次切回彩色。彩色入口仍保留，两个工程共用同一条 SC520 彩色 ISP 链路。首次使用新默认模式需要重新编译下载；之后按 K1 即可切换。接法、测试和验证范围见 [彩色/边缘切换说明](VIDEO_MODE_SWITCH.md)。
 
 TD 用于编译工程；视频显示在 HDMI 接收设备上。用户已确认基础版本的摄像头实时画面、边缘检测和 OSD 能正常显示。新增 K1 切换功能已完成独立仿真，尚需重新编译后的最终时序检查和上板验证；旧 bit 不包含新功能。此前 SC520CS 适配与验证记录见下文及 SC520CS_TEST.md。
 

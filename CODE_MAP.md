@@ -67,7 +67,7 @@ flowchart TD
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
 | 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 11'd80；由选择模块传给内部 u_edge_detect_96 |
-| 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 1=边缘；彩色入口 0=彩色；二者均可按 K1 切换 |
+| 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 0=彩色；如设为 1 则上电边缘；二者均可按 K1 切换 |
 | 改边缘算法 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | gray、pair、sobel_mag、window_valid | 灰度 → 两像素平均 → Sobel → 阈值；改算法后需要同步审查参考模型 |
 | 改仿真阈值 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | THRESHOLD | 80；同时用于测试中的 DUT 和参考计算，不会自动读取 isp_top 的配置 |
 | 改无板测试尺寸 | [tb_edge_detect.sv](sim/tb_edge_detect.sv)、[run_xsim.cmd](sim/run_xsim.cmd) | WIDTH、HEIGHT、SIM_PARAMS | 默认 320×180；run_720p.cmd 通过脚本将参数设为 1280×720；边缘模块要求宽度能被 4 整除 |
@@ -228,5 +228,5 @@ rgb_edge_switch_96 #(
 
 新增的 [video_mode_control.v](user_source/hdl_source/video_mode_control.v) 和 [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) 已登记到两个工程。主工程现有 57 个登记入口。
 
-彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 58 个登记入口。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认 `ENABLE_EDGE=1`。此参数现在只指定复位后的模式，运行中均可按板载 K1（D5）切换。
+彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 58 个登记入口。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数现在只指定复位后的模式，运行中均可按板载 K1（D5）切换。
 

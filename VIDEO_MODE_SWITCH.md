@@ -6,12 +6,12 @@
 
 ## 怎么用
 
-1. 在 TD 打开 `td_project/anlogic_edge_osd.al`。如果仍在使用旧工程窗口，按下面的“一行修复命令”更新当前工程并启动综合。
+1. 在 TD 打开 `td_project/anlogic_edge_osd.al`，使用当前保存的源码重新综合。
 2. 综合完成后继续布局布线，检查最终时序，通过后生成并下载新版 bit。
-3. 上电默认显示边缘图。按一下 **K1** 切换到彩色，再按一下切回边缘。
+3. 上电默认显示彩色图。按一下 **K1** 切换到边缘，再按一下切回彩色。
 4. 按下和松开均需稳定至少 20 ms；正常按一下即可。长按只切换一次。
 
-`td_project/anlogic_sc520_capture.al` 也支持同样的操作，只是上电默认彩色。两个工程都保留原来的 Logo、文字和计数叠加。切换不需要重新配置摄像头或复位 DDR。
+`td_project/anlogic_sc520_capture.al` 也支持同样的操作，两个工程现在均上电默认彩色，并保留原来的 Logo、文字和计数叠加。切换不需要重新配置摄像头或复位 DDR。
 
 ## Read Design 报错的处理
 
@@ -59,7 +59,7 @@ source D:/vivado_work/anlogic_edge_osd/verification/fix_video_mode_in_td.tcl
 - `user_source/hdl_source/isp/isp_top.v`：将选择结果送给原来的 96/128 位打包模块。
 - `user_source/constraints_source/pin.adc`：K1 / D5 输入约束。两个顶层 SDC 将异步机械按键输入路径排除出同步时序分析，后续同步器和消抖逻辑仍需正常满足时序。
 
-`ENABLE_EDGE` 现在只表示复位默认值：1 为边缘，0 为彩色；不再用于综合时删除边缘模块。
+`ENABLE_EDGE` 现在只表示复位默认值：1 为边缘，0 为彩色；当前主工程默认值为 0，不再用于综合时删除边缘模块。
 
 当前 AWB 可能在有效像素之前给出帧首脉冲，因此模式更新不能要求 `tuser` 与 `tvalid` 同时为 1。请求恰好到达帧首、尚未通过同步器时，会推迟到后续帧生效。新画面还需要经过已有 DDR 缓冲，按键响应不是零延迟。
 
