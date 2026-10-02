@@ -1,4 +1,4 @@
-// Color camera bring-up with the same DDR, OSD and HDMI path.
+// Same switchable RGB/edge pipeline, with RGB selected after reset.
 module sc520_capture_top (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -9,6 +9,7 @@ module sc520_capture_top (
     output wire       O_cam_rst,
       
     inout wire [1:0]  I_button,
+    input wire        I_mode_key_n, // Board K1 (D5), active low.
 
     output wire       O_screen_pwm,
     output wire       O_tmds_ch0_p,
@@ -44,6 +45,7 @@ module sc520_capture_top (
         .O_cam_24m(O_cam_24m),
         .O_cam_rst(O_cam_rst),
         .I_button(I_button),
+        .I_mode_key_n(I_mode_key_n),
         .O_screen_pwm(O_screen_pwm),
         .O_tmds_ch0_p(O_tmds_ch0_p),
         .O_tmds_ch1_p(O_tmds_ch1_p),

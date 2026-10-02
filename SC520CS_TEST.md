@@ -20,7 +20,7 @@ D:\vivado_work\anlogic_edge_osd\td_project\anlogic_sc520_capture.al
 D:\vivado_work\anlogic_edge_osd\td_project\anlogic_edge_osd.al
 ```
 
-顶层：`design_top_wrapper`。输出边缘检测结果和 OSD。两个工程共用源码，`ENABLE_EDGE` 是编译时参数，不提供运行时切换。
+顶层：`design_top_wrapper`。上电默认输出边缘检测结果和 OSD。两个工程共用源码，`ENABLE_EDGE` 现在只决定复位后的默认模式（1=边缘、0=彩色），均支持板载 **K1** 实时切换。K1 对应 D5，与原例程 N2/J14 扩展口上的 `I_button` 无关。详见 [切换说明](VIDEO_MODE_SWITCH.md)。
 不要重新把整个源码目录全部添加到工程，已有登记清单包含所需源文件和 IP。
 两个工程均启用 TD 默认生成综合脚本，使 GUI 按当前 SC520CS 源文件清单生成流程，避免复用旧 SC500CS 的运行脚本。如果工程已在 TD 打开，请关闭再重新打开，以加载本次修改。
 
@@ -41,7 +41,7 @@ D:\vivado_work\anlogic_edge_osd\td_project\anlogic_edge_osd.al
 | 时序约束 | 输入 MIPI 时钟周期 2.415 ns；彩色工程约束已补上 `u_video/` 层次前缀 |
 | 曝光/增益 | 新 `ae_set.v`、`SC520GainTbl.v` 和 8 条带 group hold 的曝光/增益写序列 |
 | 通信失败 | 在供应控制器上补充 NACK 处理：锁存错误、清除完成状态、停止后续请求，复位后恢复 |
-| ISP | 新增 `ENABLE_EDGE` 参数，彩色版本旁路边缘模块 |
+| ISP | `ENABLE_EDGE` 决定启动模式；K1 切换请求同步至像素时钟域，在帧首选择延迟一致的彩色/边缘通路 |
 | DDR/HDMI/OSD | 保留现有合并通路，OSD 的计数是显示帧计数，不是采集成功指示 |
 
 通用 I²C 底层仍引用 `uics500_cfg/uii2c.v`，它并非 SC500CS 专用寄存器表。旧 SC500CS 专用文件保留在磁盘，但不在这两个当前工程中使用。
@@ -68,7 +68,9 @@ I²C SDA 按开漏方式仅驱动 0 或高阻；MIPI 接收实例的 LP 发送�
 
 接线前应确认实际板卡版本、摄像头接口和配套排线/转接板对应关系；断开板卡全部电源后插拔摄像头排线，按实物连接器触点方向安装，不能仅凭排线蓝色面判断。供电按实物板卡标识和对应版本说明，不套用其他版本的电源参数。
 
-## 验证状态
+## SC520CS 适配时的历史验证状态
+
+以下记录保留适配当时的检查范围。用户随后已确认基础摄像头画面、边缘和 OSD 正常；新增 K1 切换功能的验证单独记录在 [VIDEO_MODE_SWITCH.md](VIDEO_MODE_SWITCH.md)，尚未上板确认。
 
 - 静态源文件引用检查：边缘工程 55 个登记入口、彩色工程 56 个登记入口，均存在；目标器件一致。
 - 用户要求停止之前，`sim/tb_sc520_config.sv` 已在 XSim 2021.1 完成。使用真实 `uicfgcs520`、真实 `uii2c` 和 SCL/SDA 摄像头行为模型，覆盖两个合法 ID、错误 ID、165 条初始化、软件复位等待、分辨率/free-run/stream-on、曝光增益更新、缺失摄像头、初始化/曝光更新 NACK，以及复位恢复。

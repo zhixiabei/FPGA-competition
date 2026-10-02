@@ -1,8 +1,9 @@
 module isp_top #(
-    parameter integer ENABLE_EDGE = 1
+    parameter integer ENABLE_EDGE = 1 // Reset default, not a generate-time bypass.
 ) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
+    input           I_edge_mode_async,
     input 			I_tlast			,
     input 			I_tuser			,
     input [39:0] 	I_tdata			,
@@ -39,10 +40,7 @@ wire         m_aixs_tvalid;  //synthesis keep
     wire         edge_O_tuser;  //synthesis keep
     wire [ 95:0] edge_O_tdata;  //synthesis keep
     wire         edge_O_tvalid;  //synthesis keep
-    wire         edge_O_tready;  //synthesis keep
-
-    assign awb_O_tready = edge_O_tready;
-    assign edge_O_tready = O_tready;
+    assign awb_O_tready = O_tready;
   assign O_tdata  = awb_O_tdata_128;
   assign O_tlast  = awb_O_tlast    ;
   assign O_tuser  = awb_O_tuser_128    ;
@@ -101,34 +99,25 @@ awb #(
     .O_tready(awb_O_tready)
 );
 
-generate
-if (ENABLE_EDGE != 0) begin : g_edge
-edge_detect_96 #(
+rgb_edge_switch_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
-    .EDGE_TH   (11'd80)
-) u_edge_detect_96 (
+    .EDGE_TH   (11'd80),
+    .DEFAULT_EDGE_MODE(ENABLE_EDGE)
+) u_rgb_edge_switch (
     .I_clk   (axi4s_video_aclk),
     .I_rst_n (I_rst_n),
+    .I_edge_mode_async(I_edge_mode_async),
     .I_tlast (awb_O_tlast),
     .I_tuser (awb_O_tuser),
     .I_tdata (awb_O_tdata),
     .I_tvalid(awb_O_tvalid),
-    .I_tready(awb_O_tready),
     .O_tlast (edge_O_tlast),
     .O_tuser (edge_O_tuser),
     .O_tdata (edge_O_tdata),
     .O_tvalid(edge_O_tvalid),
-    .O_tready(edge_O_tready)
+    .O_edge_mode()
 );
-end else begin : g_camera_rgb
-    // Bring-up mode: keep the camera RGB data and its stream markers together.
-    assign edge_O_tlast  = awb_O_tlast;
-    assign edge_O_tuser  = awb_O_tuser;
-    assign edge_O_tdata  = awb_O_tdata;
-    assign edge_O_tvalid = awb_O_tvalid;
-end
-endgenerate
 
 
     data_96bit_to_128bit u_data_96bit_to_128bit(

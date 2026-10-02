@@ -34,7 +34,7 @@ flowchart TD
 | 阅读顺序 | 文件 | 它负责什么 | 怎么读 |
 |---|---|---|---|
 | 1 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 系统连接、时钟/复位、外设接口和顶层配置 | 先搜 u_isp_top、u_video_in、u_video_out、u_hdmi_mixer，看它们连了哪些信号；再看各实例上面的参数 |
-| 2 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 串接图像处理模块 | 按 demosaic → data128_96 → awb → edge_detect_96 → data_96bit_to_128bit 阅读 |
+| 2 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 串接图像处理模块 | 按 demosaic → data128_96 → awb → rgb_edge_switch_96 → data_96bit_to_128bit 阅读 |
 | 3 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 把 RGB 图像变成黑白边缘图 | 从 pix0～pix3、gray0～gray3、pair0/pair1，读到 sobel_mag、EDGE_TH 和输出寄存器 |
 | 4 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 叠加文字/Logo、计数以及调试图案 | 先看 LOGO_*、DYN_OSD_*，再看两个字库/Logo 实例以及最后的 DEBUG_MODE 输出选择 |
 | 5 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | 给边缘模块送测试图像，并与参考计算结果比较 | 先看 WIDTH、HEIGHT、THRESHOLD 和 DUT 实例，再看图像输入与检查过程 |
@@ -52,6 +52,8 @@ flowchart TD
 | 像素格式转换 | [data128_96.v](user_source/hdl_source/isp/data128_96/data128_96.v) | 从四个 32 位位置取出 RGB888，并按代码规定的顺序拼成 96 位 |
 | 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 统计和调整颜色通道，处理四个 RGB888 像素组成的 96 位数据 |
 | 边缘检测 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 96 位 RGB 输入，输出同宽黑白边缘图 |
+| 模式切换 | [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 内含持续运行的边缘模块；将彩色数据延迟一拍，在帧首选择输出 |
+| 板载 K1 控制 | [video_mode_control.v](user_source/hdl_source/video_mode_control.v) | 50 MHz 时钟下同步并消抖 20 ms，每次按下翻转一次模式请求 |
 | DDR 数据打包 | [data96_128.v](user_source/hdl_source/isp/data96_128/data96_128.v) | 文件内的 data_96bit_to_128bit 模块把 96 位像素流重新打包为 128 位 |
 
 边缘模块当前每拍处理四个像素：先近似灰度化，再将相邻两个像素平均，得到两个采样点；对采样点计算 Sobel 的 `|Gx| + |Gy|`，与阈值比较。每个结果复制为两个输出像素，白色表示边缘，黑色表示非边缘。它不是直接在原始每个像素上执行全分辨率 Sobel。
@@ -64,7 +66,8 @@ flowchart TD
 
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
-| 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_edge_detect_96、EDGE_TH | 11'd80；改变系统中实际实例的参数 |
+| 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 11'd80；由选择模块传给内部 u_edge_detect_96 |
+| 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 1=边缘；彩色入口 0=彩色；二者均可按 K1 切换 |
 | 改边缘算法 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | gray、pair、sobel_mag、window_valid | 灰度 → 两像素平均 → Sobel → 阈值；改算法后需要同步审查参考模型 |
 | 改仿真阈值 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | THRESHOLD | 80；同时用于测试中的 DUT 和参考计算，不会自动读取 isp_top 的配置 |
 | 改无板测试尺寸 | [tb_edge_detect.sv](sim/tb_edge_detect.sv)、[run_xsim.cmd](sim/run_xsim.cmd) | WIDTH、HEIGHT、SIM_PARAMS | 默认 320×180；run_720p.cmd 通过脚本将参数设为 1280×720；边缘模块要求宽度能被 4 整除 |
@@ -91,11 +94,11 @@ Verilog 的模块声明可以写默认参数，但上层实例化时可以覆盖
 parameter EDGE_TH = 11'd80
 
 // isp_top.v 中实例化时的配置，会覆盖默认值
-edge_detect_96 #(
+rgb_edge_switch_96 #(
     .IMG_WIDTH(1280),
     .IMG_HEIGHT(720),
     .EDGE_TH(11'd80)
-) u_edge_detect_96 (...);
+) u_rgb_edge_switch (...);
 ```
 
 所以，要改 TD 系统中的阈值，应改 isp_top.v 的实例参数；要改当前独立仿真的阈值，应改测试台的 THRESHOLD。这两个配置是分别指定的。
@@ -159,7 +162,7 @@ edge_detect_96 #(
 下面的索引从当前 .al 提取；新增模块或更换 IP 后，应与 .al 一起更新。它列出登记入口，不展开 IP 的所有内部依赖，也不等同于最终综合网表中保留的模块。
 
 <details>
-<summary>展开：当前 TD 工程的 55 个登记文件及作用</summary>
+<summary>展开：当前 TD 工程的 57 个登记文件及作用</summary>
 
 | 文件 | 作用 | 登记状态 |
 |---|---|---|
@@ -199,6 +202,8 @@ edge_detect_96 #(
 | [user_source/hdl_source/audio_arc_calculate.v](user_source/hdl_source/audio_arc_calculate.v) | HDMI 音频时钟恢复参数计算 | 已登记 |
 | [user_source/hdl_source/key_remove_shakes.v](user_source/hdl_source/key_remove_shakes.v) | HDMI 子系统配套按键消抖 | 已登记 |
 | [user_source/hdl_source/isp/edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 四像素输入的 Sobel 边缘检测 | 已登记 |
+| [user_source/hdl_source/isp/rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 彩色/边缘对齐及帧边界选择 | 已登记 |
+| [user_source/hdl_source/video_mode_control.v](user_source/hdl_source/video_mode_control.v) | K1 输入同步、消抖与模式请求 | 已登记 |
 | [user_source/hdl_source/anlogic_logo_rom.v](user_source/hdl_source/anlogic_logo_rom.v) | 安路 Logo 像素 ROM | 已登记 |
 | [user_source/hdl_source/osd_char_lib.v](user_source/hdl_source/osd_char_lib.v) | OSD 字符点阵 | 已登记 |
 | [user_source/hdl_source/mipi_dphy_rx/mipi_dphy_rx_ph1p_mipiio_wrapper.sv](user_source/hdl_source/mipi_dphy_rx/mipi_dphy_rx_ph1p_mipiio_wrapper.sv) | MIPI D-PHY 接收入口 | 已登记 |
@@ -221,5 +226,7 @@ edge_detect_96 #(
 
 </details>
 
-彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 56 个登记入口。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认 `ENABLE_EDGE=1`。
+新增的 [video_mode_control.v](user_source/hdl_source/video_mode_control.v) 和 [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) 已登记到两个工程。主工程现有 57 个登记入口。
+
+彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 58 个登记入口。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认 `ENABLE_EDGE=1`。此参数现在只指定复位后的模式，运行中均可按板载 K1（D5）切换。
 

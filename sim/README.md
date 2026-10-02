@@ -1,5 +1,7 @@
 # 无板仿真：先验证边缘检测模块
 
+新增 K1 彩色/边缘切换测试：双击 `run_video_mode.cmd`；720p 测试运行 `run_video_mode.cmd --no-pause 720`。覆盖按键消抖、帧边界选择和实际 96/128 位打包，详见 [切换说明](../VIDEO_MODE_SWITCH.md)。原有独立边缘测试入口保持不变。
+
 TD 中的 Read Design / Optimize / Generate Bitstream 是实现流程。功能仿真需要测试台（testbench）提供时钟、复位和输入像素，再由仿真器执行 RTL。
 
 本目录直接使用合并工程原有的 `user_source/hdl_source/isp/edge_detect_96.v`。没有改写 TD 的算法源码，也没有把测试台加入 TD 的综合源文件列表。

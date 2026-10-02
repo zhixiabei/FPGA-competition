@@ -1,4 +1,6 @@
 create_clock -name {sys_clk_50m} -period 20.000 -waveform {0.000 10.000} [get_ports {I_sys_clk}]
+# K1 is asynchronous; only the first input synchronizer samples the raw port.
+set_false_path -from [get_ports {I_mode_key_n}]
 create_clock -name {mipi_rx_ck_pad} -period 2.415 -waveform {0.000 1.208} [get_nets {IO_rx_clk_pad_p}]
 
 derive_clocks

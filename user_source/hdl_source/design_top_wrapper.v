@@ -1,7 +1,7 @@
 
 
 module design_top_wrapper #(
-    parameter integer ENABLE_EDGE = 1
+    parameter integer ENABLE_EDGE = 1 // Reset default only; button selects at runtime.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -12,6 +12,7 @@ module design_top_wrapper #(
     output wire       O_cam_rst,
       
     inout wire [1:0]  I_button,
+    input wire        I_mode_key_n, // Board K1 (D5), active low.
 
     output wire       O_screen_pwm,
     output wire       O_tmds_ch0_p,
@@ -48,6 +49,7 @@ module design_top_wrapper #(
 		
 	wire        	S_pll_lock;
     wire        	S_rst_n;
+    wire        S_edge_mode_requested;
 	reg  [17:0] 	S_cam_power_cnt;
 	reg         	S_cam_pwdnb;
 	reg         	S_cam_i2c_ready;
@@ -458,10 +460,20 @@ module design_top_wrapper #(
 	
 
   
+    video_mode_control #(
+        .DEBOUNCE_CYCLES(1000000), // 20 ms at I_sys_clk = 50 MHz
+        .DEFAULT_EDGE_MODE(ENABLE_EDGE)
+    ) u_video_mode_control (
+        .I_clk(I_sys_clk),
+        .I_rst_n(S_rst_n),
+        .I_key_n(I_mode_key_n), // K1: one toggle per debounced press.
+        .O_edge_mode(S_edge_mode_requested)
+    );
+
   ae_set u_ae_set (
       .I_clk(S_24m_clk),
       .I_rst(~S_rst_n),
-      .I_btn({I_button,2'b11}),
+      .I_btn({I_button,2'b11}), // Original extension-header gain controls.
       .I_cam_cfg_done(S_cam_cfg_done),
       .I_ae_cfg_done(S_ae_cfg_done),
       .O_ae_req(S_ae_req),
@@ -619,6 +631,7 @@ isp_top #(
     ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
+.I_edge_mode_async(S_edge_mode_requested),
 .I_tlast         (S_raw_tlast	),
 .I_tuser         (S_raw_tuser	),
 .I_tdata         (S_raw_tdata	),
