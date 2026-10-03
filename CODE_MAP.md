@@ -6,6 +6,26 @@
 
 本说明依据当前的 [TD 工程文件](td_project/anlogic_edge_osd.al)、[系统顶层](user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 2026-10-03 新增目标检测：现在主要看这三个文件
+
+| 文件 | 修改/新增的内容 | 阅读入口 |
+|---|---|---|
+| [color_target_detect.v](user_source/hdl_source/color_target_detect.v) | 新增的单个红色目标检测算法 | `O_pixel_red` 颜色判断 → `line1/line2` 和 `votes` 去噪 → `count/xmin/xmax/ymin/ymax` 每帧统计 |
+| [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 在原有显示模块接入检测，添加框、中心十字、状态与坐标；修正帧首重复计数 | `u_color_target_detect` → `S_display_frame_start` → `S_target_box_on`/`S_target_cross_on` → 输出选择 |
+| [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 启用新功能 | `u_hdmi_mixer` 的 `SHOW_COLOR_TARGET(1)`；默认 `SHOW_RED_MASK=0` |
+
+检测在 **DDR 读出之后、屏幕叠加之前**，不是直接替换 ISP 中的边缘模块。
+它每拍处理一个显示像素，与画框同属 HDMI 时钟域，不新增跨时钟域坐标总线。
+完整一帧统计完成后，下一显示帧使用其结果，因此目标框有一帧延迟。
+3×3 多数判决只统计中心在图像内侧的像素，最外一圈不统计。
+多个红色区域会得到一个总包围框；当前使用场景是单个红色卡片。
+
+两份 `.al` 已登记新算法源码；`sim/tb_color_target_detect.sv` 和
+`sim/tb_color_target_mixer.sv` 只用于仿真，不参与上板综合。
+本次未修改摄像头 I²C、曝光/增益、引脚、DDR、现有边缘模块或 K1 切换。
+官方边缘模块仍是开发对照，最终提交前需要替换为自己的实现。
+操作方法和阈值见 [README.md](README.md)。
+
 ## 1. 先认识整条数据通路
 
 ```mermaid
@@ -16,7 +36,9 @@ flowchart TD
     ISP --> VIN[video_in：写入图像]
     VIN --> MEM[DDR 帧缓存]
     MEM --> VOUT[video_out：读出图像]
-    VOUT --> OSD[hdmi_mixer：叠加 Logo、文字和帧计数]
+    VOUT --> DET[单个红色目标检测：颜色分割、去噪、边界统计]
+    VOUT --> OSD[hdmi_mixer：叠加 Logo、文字、目标框和坐标]
+    DET -.-> OSD
     OSD --> TX[hdmi_tx：发送 HDMI]
     TX --> MON[显示器]
     CFG[I2C 摄像头配置] -.-> CAM

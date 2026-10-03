@@ -11,6 +11,14 @@
     </HardWare>
     <Source_Files>
         <Verilog>
+            <File Path="../user_source/hdl_source/color_target_detect.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="0"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/sc520_capture_top.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

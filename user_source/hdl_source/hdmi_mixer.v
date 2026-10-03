@@ -4,7 +4,12 @@ module hdmi_mixer #(
     parameter IMG_WIDTH = 1280,
     parameter IMG_HEIGHT = 720,
     parameter integer DEBUG_MODE = 0,
-    parameter integer SHOW_CAMERA_STATUS = 0
+    parameter integer SHOW_CAMERA_STATUS = 0,
+    parameter integer SHOW_COLOR_TARGET = 0,
+    parameter integer SHOW_RED_MASK = 0,
+    parameter integer TARGET_RED_MIN = 80,
+    parameter integer TARGET_RED_DELTA = 30,
+    parameter integer TARGET_MIN_PIXELS = 128
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -121,6 +126,162 @@ module hdmi_mixer #(
     localparam CHAR_T            = 8'h54;
     localparam CHAR_0            = 8'h30;
     localparam CHAR_COLON        = 8'h3a;
+
+    wire S_target_raw_red;
+    wire S_target_result_ready, S_target_result_found;
+    wire [11:0] S_result_xmin, S_result_xmax, S_result_ymin, S_result_ymax;
+    wire [11:0] S_result_center_x, S_result_center_y;
+    reg S_target_found;
+    reg [11:0] S_target_xmin, S_target_xmax, S_target_ymin, S_target_ymax;
+    reg [11:0] S_target_center_x, S_target_center_y;
+    // Double-dabble conversion runs once per frame, during the first scan
+    // line, rather than putting decimal dividers in the pixel critical path.
+    reg [27:0] S_target_bcd_work_x, S_target_bcd_work_y;
+    reg [15:0] S_target_bcd_x, S_target_bcd_y;
+    reg [3:0] S_target_bcd_count;
+    reg S_target_bcd_busy;
+    reg [27:0] S_target_bcd_adjust_x, S_target_bcd_adjust_y;
+    integer S_target_digit;
+    wire S_display_frame_start = S_video_de_2d &&
+                                 (S_x_2d == 0) && (S_y_2d == 0);
+
+    generate if (SHOW_COLOR_TARGET != 0) begin: target_detection
+        color_target_detect #(
+            .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
+            .RED_MIN(TARGET_RED_MIN), .RED_DELTA(TARGET_RED_DELTA),
+            .MIN_PIXELS(TARGET_MIN_PIXELS)
+        ) u_color_target_detect (
+            .I_clk(I_clk), .I_rst_n(I_rst_n), .I_valid(S_video_de_2d),
+            .I_x(S_x_2d), .I_y(S_y_2d), .I_rgb(S_video_data_2d),
+            .O_pixel_red(S_target_raw_red),
+            .O_result_ready(S_target_result_ready),
+            .O_found(S_target_result_found),
+            .O_xmin(S_result_xmin), .O_xmax(S_result_xmax),
+            .O_ymin(S_result_ymin), .O_ymax(S_result_ymax),
+            .O_center_x(S_result_center_x), .O_center_y(S_result_center_y),
+            .O_pixels(), .O_mask_valid(), .O_mask_hit(),
+            .O_mask_x(), .O_mask_y()
+        );
+    end else begin: no_target_detection
+        assign S_target_raw_red = 1'b0;
+        assign S_target_result_ready = 1'b0;
+        assign S_target_result_found = 1'b0;
+        assign S_result_xmin = 12'd0;
+        assign S_result_xmax = 12'd0;
+        assign S_result_ymin = 12'd0;
+        assign S_result_ymax = 12'd0;
+        assign S_result_center_x = 12'd0;
+        assign S_result_center_y = 12'd0;
+    end endgenerate
+
+    always @(*) begin
+        S_target_bcd_adjust_x = S_target_bcd_work_x;
+        S_target_bcd_adjust_y = S_target_bcd_work_y;
+        for (S_target_digit = 0; S_target_digit < 4; S_target_digit = S_target_digit+1) begin
+            if (S_target_bcd_work_x[12+4*S_target_digit +: 4] >= 5)
+                S_target_bcd_adjust_x[12+4*S_target_digit +: 4] =
+                    S_target_bcd_work_x[12+4*S_target_digit +: 4] + 4'd3;
+            if (S_target_bcd_work_y[12+4*S_target_digit +: 4] >= 5)
+                S_target_bcd_adjust_y[12+4*S_target_digit +: 4] =
+                    S_target_bcd_work_y[12+4*S_target_digit +: 4] + 4'd3;
+        end
+    end
+
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_target_found <= 1'b0;
+            S_target_xmin <= 12'd0; S_target_xmax <= 12'd0;
+            S_target_ymin <= 12'd0; S_target_ymax <= 12'd0;
+            S_target_center_x <= 12'd0; S_target_center_y <= 12'd0;
+            S_target_bcd_work_x <= 28'd0; S_target_bcd_work_y <= 28'd0;
+            S_target_bcd_x <= 16'd0; S_target_bcd_y <= 16'd0;
+            S_target_bcd_count <= 4'd0;
+            S_target_bcd_busy <= 1'b0;
+        end else if (S_display_frame_start) begin
+            S_target_found <= S_target_result_ready && S_target_result_found;
+            S_target_xmin <= S_result_xmin; S_target_xmax <= S_result_xmax;
+            S_target_ymin <= S_result_ymin; S_target_ymax <= S_result_ymax;
+            S_target_center_x <= S_result_center_x;
+            S_target_center_y <= S_result_center_y;
+            S_target_bcd_work_x <= {16'd0, S_result_center_x};
+            S_target_bcd_work_y <= {16'd0, S_result_center_y};
+            S_target_bcd_count <= 4'd0;
+            S_target_bcd_busy <= 1'b1;
+        end else if (S_target_bcd_busy) begin
+            S_target_bcd_work_x <= S_target_bcd_adjust_x << 1;
+            S_target_bcd_work_y <= S_target_bcd_adjust_y << 1;
+            S_target_bcd_count <= S_target_bcd_count + 1'b1;
+            if (S_target_bcd_count == 11) begin
+                S_target_bcd_x <= S_target_bcd_adjust_x[26:11];
+                S_target_bcd_y <= S_target_bcd_adjust_y[26:11];
+                S_target_bcd_busy <= 1'b0;
+            end
+        end
+    end
+
+    // Frame-latched geometry. Widen sums so a box near the right/bottom
+    // edge cannot overflow. Existing Logo/text has priority over this box.
+    wire [12:0] S_target_dx = (S_x_2d >= S_target_center_x) ?
+        {1'b0,S_x_2d} - {1'b0,S_target_center_x} :
+        {1'b0,S_target_center_x} - {1'b0,S_x_2d};
+    wire [12:0] S_target_dy = (S_y_2d >= S_target_center_y) ?
+        {1'b0,S_y_2d} - {1'b0,S_target_center_y} :
+        {1'b0,S_target_center_y} - {1'b0,S_y_2d};
+    wire S_target_box_on = S_target_found &&
+        (S_x_2d >= S_target_xmin) && (S_x_2d <= S_target_xmax) &&
+        (S_y_2d >= S_target_ymin) && (S_y_2d <= S_target_ymax) &&
+        (({1'b0,S_x_2d} < {1'b0,S_target_xmin}+13'd2) ||
+         ({1'b0,S_x_2d}+13'd2 > {1'b0,S_target_xmax}) ||
+         ({1'b0,S_y_2d} < {1'b0,S_target_ymin}+13'd2) ||
+         ({1'b0,S_y_2d}+13'd2 > {1'b0,S_target_ymax}));
+    wire S_target_cross_on = S_target_found &&
+        (((S_target_dx <= 1) && (S_target_dy <= 6)) ||
+         ((S_target_dy <= 1) && (S_target_dx <= 6)));
+
+    // Bottom-left panel: RED:FOUND X:0000 Y:0000, or RED:NONE.
+    // Uses the existing character ROM; coordinates are zero-based decimals.
+    localparam TARGET_TEXT_X = 16;
+    localparam TARGET_TEXT_Y = IMG_HEIGHT-32;
+    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && S_video_de_2d &&
+        (S_x_2d >= TARGET_TEXT_X) && (S_x_2d < TARGET_TEXT_X+368) &&
+        (S_y_2d >= TARGET_TEXT_Y) && (S_y_2d < TARGET_TEXT_Y+16);
+    wire [11:0] S_target_text_x = S_x_2d - TARGET_TEXT_X;
+    wire [3:0] S_target_text_y = S_y_2d - TARGET_TEXT_Y;
+    wire [4:0] S_target_char_index = S_target_text_x[8:4];
+    reg [7:0] S_target_char;
+    wire [15:0] S_target_char_bits;
+    always @(*) begin
+        S_target_char = 8'h20;
+        case (S_target_char_index)
+            0: S_target_char = "R";
+            1: S_target_char = "E";
+            2: S_target_char = "D";
+            3: S_target_char = ":";
+            4: S_target_char = S_target_found ? "F" : "N";
+            5: S_target_char = "O";
+            6: S_target_char = S_target_found ? "U" : "N";
+            7: S_target_char = S_target_found ? "N" : "E";
+            8: S_target_char = S_target_found ? "D" : " ";
+            10: S_target_char = S_target_found ? "X" : " ";
+            11: S_target_char = S_target_found ? ":" : " ";
+            12: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_x[15:12]} : " ";
+            13: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_x[11:8]} : " ";
+            14: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_x[7:4]} : " ";
+            15: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_x[3:0]} : " ";
+            17: S_target_char = S_target_found ? "Y" : " ";
+            18: S_target_char = S_target_found ? ":" : " ";
+            19: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_y[15:12]} : " ";
+            20: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_y[11:8]} : " ";
+            21: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_y[7:4]} : " ";
+            22: S_target_char = S_target_found ? 8'h30+{4'd0,S_target_bcd_y[3:0]} : " ";
+            default: S_target_char = 8'h20;
+        endcase
+    end
+    osd_char_lib u_target_char_lib (
+        .I_char(S_target_char), .I_row(S_target_text_y), .O_row_bits(S_target_char_bits)
+    );
+    wire S_target_text_on = S_target_panel_on &&
+        S_target_char_bits[15-S_target_text_x[3:0]];
 
     function [4:0] F_logo_text_bits;
         input [3:0] I_char;
@@ -507,8 +668,11 @@ module hdmi_mixer #(
             S_y <= 12'd0;
         end
         else if(I_video_user) begin
-            S_x <= 12'd0;
-            S_y <= 12'd0;
+            // USER coincides with pixel (0,0) in the supplied VTC. Count
+            // that beat now; otherwise pixel (1,0) repeats x=0 and the last
+            // column never reaches IMG_WIDTH-1 in following frames.
+            S_x <= I_video_de && !I_video_last ? 12'd1 : 12'd0;
+            S_y <= I_video_de && I_video_last ? 12'd1 : 12'd0;
         end
         else if(I_video_de) begin
             if(I_video_last) begin
@@ -573,9 +737,9 @@ module hdmi_mixer #(
             S_y_2d <= 12'd0;
         end
         else begin
-            S_x_1d <= S_x;
+            S_x_1d <= I_video_user ? 12'd0 : S_x;
             S_x_2d <= S_x_1d;
-            S_y_1d <= S_y;
+            S_y_1d <= I_video_user ? 12'd0 : S_y;
             S_y_2d <= S_y_1d;
         end
     end
@@ -951,6 +1115,14 @@ module hdmi_mixer #(
                         S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
                 else if(S_osd_hit)
                     O_hdmi_data <= S_osd_color;
+                else if(S_target_panel_on)
+                    O_hdmi_data <= S_target_text_on ? 24'hfff200 : 24'h101010;
+                else if(SHOW_COLOR_TARGET && S_video_de_2d && S_target_box_on)
+                    O_hdmi_data <= 24'h00ff00;
+                else if(SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
+                    O_hdmi_data <= 24'hfff200;
+                else if(SHOW_COLOR_TARGET && SHOW_RED_MASK && S_video_de_2d)
+                    O_hdmi_data <= S_target_raw_red ? 24'hffffff : 24'h000000;
                 else
                     O_hdmi_data <= S_video_data_2d;
             end

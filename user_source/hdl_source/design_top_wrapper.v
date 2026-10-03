@@ -1,7 +1,8 @@
 
 
 module design_top_wrapper #(
-    parameter integer ENABLE_EDGE = 0 // Reset default only; button selects at runtime.
+    parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
+    parameter integer SHOW_RED_MASK = 0 // 1: diagnostic raw red segmentation view.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -829,7 +830,9 @@ isp_top #(
         .IMG_WIDTH  ( 1280 ),
         .IMG_HEIGHT ( 720  ),
         .DEBUG_MODE ( 0    ),
-        .SHOW_CAMERA_STATUS ( 1 )
+        .SHOW_CAMERA_STATUS ( 1 ),
+        .SHOW_COLOR_TARGET  ( 1 ),
+        .SHOW_RED_MASK      ( SHOW_RED_MASK )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
         .I_rst_n         ( S_hdmi_rst_n       ),
