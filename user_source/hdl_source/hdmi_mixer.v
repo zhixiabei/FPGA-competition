@@ -3,7 +3,8 @@ module hdmi_mixer #(
     parameter V_OFFSET = 60,
     parameter IMG_WIDTH = 1280,
     parameter IMG_HEIGHT = 720,
-    parameter integer DEBUG_MODE = 0
+    parameter integer DEBUG_MODE = 0,
+    parameter integer SHOW_CAMERA_STATUS = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -898,7 +899,26 @@ module hdmi_mixer #(
                 end
             end
             else begin
-                if(S_osd_hit)
+                // Four 16x16 status blocks at (192,16), with 8-pixel gaps.
+                // Left to right: sensor ID, init, default AE/AG ACKed, no NACK.
+                // This overlay does not change the camera pixels elsewhere.
+                if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                   (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                   (S_x_2d >= 12'd192) && (S_x_2d < 12'd208))
+                    O_hdmi_data <= I_debug_status[0] ? 24'h00ff00 : 24'hff0000;
+                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                        (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                        (S_x_2d >= 12'd216) && (S_x_2d < 12'd232))
+                    O_hdmi_data <= I_debug_status[1] ? 24'h00ff00 : 24'hff0000;
+                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                        (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                        (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
+                    O_hdmi_data <= I_debug_status[2] ? 24'h00ff00 : 24'hff0000;
+                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                        (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                        (S_x_2d >= 12'd264) && (S_x_2d < 12'd280))
+                    O_hdmi_data <= I_debug_status[3] ? 24'h00ff00 : 24'hff0000;
+                else if(S_osd_hit)
                     O_hdmi_data <= S_osd_color;
                 else
                     O_hdmi_data <= S_video_data_2d;

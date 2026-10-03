@@ -204,6 +204,10 @@ module design_top_wrapper #(
     reg [1:0]   S_dbg_mc_wdf_rdy_seen_sync;
     reg [1:0]   S_dbg_mc_cmd_pop_seen_sync;
     wire[3:0]   S_hdmi_debug_status;
+    reg         S_cam_ae_started;
+    reg [3:0]   S_cam_status;
+    (* async_reg = "true" *) reg [3:0] S_cam_status_meta;
+    (* async_reg = "true" *) reg [3:0] S_cam_status_sync;
     wire        S_lane_error_any;
 
 
@@ -412,12 +416,36 @@ module design_top_wrapper #(
     assign S_mc_dbg_wdf_rdy = 1'b0;
     assign S_mc_dbg_cmd_pop = 1'b0;
 
-    assign S_hdmi_debug_status = {
-        (|S_ddr_user_rd_data),
-        S_ddr_user_rd_valid,
-        S_vo_ddr_rd_en,
-        S_vi_ddr_wr_en
-    };
+    // O_ae_cfg_done also goes high after initialization, before any AE write.
+    // Require an actual busy AE transaction before reporting default AE/AG done.
+    always @(posedge S_24m_clk or negedge S_cam_i2c_ready) begin
+        if (!S_cam_i2c_ready) begin
+            S_cam_ae_started <= 1'b0;
+            S_cam_status <= 4'b0000;
+        end else begin
+            if (S_cam_cfg_done && !S_ae_cfg_done)
+                S_cam_ae_started <= 1'b1;
+            S_cam_status <= {
+                !S_cam_i2c_error,
+                (S_cam_ae_started && S_ae_cfg_done && S_cam_cfg_done &&
+                 !S_cam_i2c_error && (S_ae == 16'd1991) && (S_ag == 16'd144)),
+                S_cam_cfg_done,
+                S_cam_sensor_id_ok
+            };
+        end
+    end
+
+    // These are slow diagnostic flags, not pixel data or control signals.
+    always @(posedge S_hdmi_pixel_clk or negedge S_hdmi_rst_n) begin
+        if (!S_hdmi_rst_n) begin
+            S_cam_status_meta <= 4'b0000;
+            S_cam_status_sync <= 4'b0000;
+        end else begin
+            S_cam_status_meta <= S_cam_status;
+            S_cam_status_sync <= S_cam_status_meta;
+        end
+    end
+    assign S_hdmi_debug_status = S_cam_status_sync;
 	
 	// SC520CS上电后先保持PWDNB/XSHUTDN为低，再释放并等待内部上电完成，
 	// 避免PLL刚锁定就开始I2C初始化而造成寄存器偶发写入失败。
@@ -792,7 +820,8 @@ isp_top #(
         .V_OFFSET   ( 0    ),
         .IMG_WIDTH  ( 1280 ),
         .IMG_HEIGHT ( 720  ),
-        .DEBUG_MODE ( 0    )
+        .DEBUG_MODE ( 0    ),
+        .SHOW_CAMERA_STATUS ( 1 )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
         .I_rst_n         ( S_hdmi_rst_n       ),
