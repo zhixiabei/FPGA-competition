@@ -56,6 +56,7 @@ module design_top_wrapper #(
 	(* keep = "true" *) wire [15:0] S_cam_sensor_id;
 	(* keep = "true" *) wire        S_cam_sensor_id_ok;
 	(* keep = "true" *) wire        S_cam_i2c_error;
+	wire [7:0] S_cam_fail_index;
 	localparam integer CAM_PWDNB_LOW_CYCLES = 23810;  // >= 1 ms at 23.809524 MHz
 	localparam integer CAM_I2C_START_CYCLES = 142857; // release + >= 5 ms
 	
@@ -208,6 +209,8 @@ module design_top_wrapper #(
     reg [3:0]   S_cam_status;
     (* async_reg = "true" *) reg [3:0] S_cam_status_meta;
     (* async_reg = "true" *) reg [3:0] S_cam_status_sync;
+    (* async_reg = "true" *) reg [7:0] S_cam_fail_meta;
+    (* async_reg = "true" *) reg [7:0] S_cam_fail_sync;
     wire        S_lane_error_any;
 
 
@@ -440,9 +443,13 @@ module design_top_wrapper #(
         if (!S_hdmi_rst_n) begin
             S_cam_status_meta <= 4'b0000;
             S_cam_status_sync <= 4'b0000;
+            S_cam_fail_meta <= 8'd0;
+            S_cam_fail_sync <= 8'd0;
         end else begin
             S_cam_status_meta <= S_cam_status;
             S_cam_status_sync <= S_cam_status_meta;
+            S_cam_fail_meta <= S_cam_fail_index;
+            S_cam_fail_sync <= S_cam_fail_meta;
         end
     end
     assign S_hdmi_debug_status = S_cam_status_sync;
@@ -525,7 +532,8 @@ module design_top_wrapper #(
       .O_ae_cfg_done(S_ae_cfg_done),  //AE配置完成
       .O_sensor_id(S_cam_sensor_id),
       .O_sensor_id_ok(S_cam_sensor_id_ok),
-      .O_iic_error(S_cam_i2c_error)
+      .O_iic_error(S_cam_i2c_error),
+      .O_fail_index(S_cam_fail_index)
   );
 	
     mipi_dphy_rx_ph1p_mipiio_wrapper#(
@@ -831,6 +839,7 @@ isp_top #(
         .I_video_user    ( S_hdmi_user        ),
         .I_video_last    ( S_hdmi_last        ),
         .I_debug_status  ( S_hdmi_debug_status),
+        .I_cam_fail_index( S_cam_fail_sync    ),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),
         .O_hdmi_vsync    ( S_hdmi_out_vsync   ),

@@ -16,6 +16,7 @@ module hdmi_mixer #(
     input wire        I_video_last,
 
     input wire[3:0]   I_debug_status,
+    input wire[7:0]   I_cam_fail_index,
 
     output wire       O_video_rd_en,
     input wire[23:0]  I_video_rd_data,
@@ -238,6 +239,24 @@ module hdmi_mixer #(
                 4'hf: F_hex7seg = 7'b1000111;
                 default: F_hex7seg = 7'b0000000;
             endcase
+        end
+    endfunction
+
+    function F_fail_digit_on;
+        input [3:0] I_hex;
+        input [3:0] I_x;
+        input [4:0] I_y;
+        reg [6:0] seg;
+        begin
+            seg = F_hex7seg(I_hex);
+            F_fail_digit_on =
+                (seg[6] && I_y >= 5'd2  && I_y < 5'd5  && I_x >= 4'd3  && I_x < 4'd13) ||
+                (seg[5] && I_y >= 5'd4  && I_y < 5'd12 && I_x >= 4'd12 && I_x < 4'd15) ||
+                (seg[4] && I_y >= 5'd12 && I_y < 5'd21 && I_x >= 4'd12 && I_x < 4'd15) ||
+                (seg[3] && I_y >= 5'd20 && I_y < 5'd23 && I_x >= 4'd3  && I_x < 4'd13) ||
+                (seg[2] && I_y >= 5'd12 && I_y < 5'd21 && I_x >= 4'd1  && I_x < 4'd4 ) ||
+                (seg[1] && I_y >= 5'd4  && I_y < 5'd12 && I_x >= 4'd1  && I_x < 4'd4 ) ||
+                (seg[0] && I_y >= 5'd11 && I_y < 5'd14 && I_x >= 4'd3  && I_x < 4'd13);
         end
     endfunction
 
@@ -918,6 +937,18 @@ module hdmi_mixer #(
                         (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
                         (S_x_2d >= 12'd264) && (S_x_2d < 12'd280))
                     O_hdmi_data <= I_debug_status[3] ? 24'h00ff00 : 24'hff0000;
+                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                        I_debug_status[0] && !I_debug_status[3] &&
+                        (S_y_2d >= 12'd40) && (S_y_2d < 12'd64) &&
+                        (S_x_2d >= 12'd216) && (S_x_2d < 12'd232))
+                    O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[7:4],
+                        S_x_2d - 12'd216, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
+                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                        I_debug_status[0] && !I_debug_status[3] &&
+                        (S_y_2d >= 12'd40) && (S_y_2d < 12'd64) &&
+                        (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
+                    O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[3:0],
+                        S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
                 else if(S_osd_hit)
                     O_hdmi_data <= S_osd_color;
                 else
