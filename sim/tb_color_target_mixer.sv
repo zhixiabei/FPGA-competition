@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// Exercise the real mixer, its native pixel coordinates, detector, result
+// Exercise the real mixer, its native pixel coordinates, external target result
 // latch, decimal text, original OSD and output timing at actual 720p size.
 module tb_color_target_mixer;
     parameter integer MASK_VIEW = 0;
@@ -9,6 +9,8 @@ module tb_color_target_mixer;
     always #5 clk=~clk;
     reg rst_n=0, de=0, user=0, last=0, hs=0, vs=0;
     reg [23:0] rgb=0;
+    reg target_ready=0, target_found=0;
+    reg [11:0] tx0=0,tx1=0,ty0=0,ty1=0,tcx=0,tcy=0;
     wire rd, out_de, out_hs, out_vs;
     wire [23:0] out_rgb;
     integer output_frame=0, output_x=0, output_y=0;
@@ -25,6 +27,10 @@ module tb_color_target_mixer;
         .I_video_hsync(hs),.I_video_vsync(vs),
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0),
         .I_video_rd_data(rgb),.O_video_rd_en(rd),
+        .I_target_result_ready(target_ready),.I_target_found(target_found),
+        .I_target_xmin(tx0),.I_target_xmax(tx1),
+        .I_target_ymin(ty0),.I_target_ymax(ty1),
+        .I_target_center_x(tcx),.I_target_center_y(tcy),
         .O_hdmi_de(out_de),.O_hdmi_hsync(out_hs),
         .O_hdmi_vsync(out_vs),.O_hdmi_data(out_rgb)
     );
@@ -41,7 +47,9 @@ module tb_color_target_mixer;
     endfunction
 
     function automatic bit expected_found(input integer f);
-        expected_found=(f>=1 && f<=4);
+        // Frame 7 is monochrome video with a target result produced from the
+        // RGB branch. It must retain the box despite having no red pixels.
+        expected_found=(f>=1 && f<=4) || (f==7);
     endfunction
     function automatic integer expected_x0(input integer f);
         expected_x0=(f<=2) ? 500 : 800;
@@ -119,11 +127,7 @@ module tb_color_target_mixer;
                         $fatal(1,"Text panel has an invalid color");
                     if (out_rgb == 24'hfff200) label_pixels=label_pixels+1;
                 end else begin
-                    expected_rgb=box_on ? 24'h00ff00 : cross_on ? 24'hfff200 :
-                        MASK_VIEW ? ((sample_native[23:16]>=80 &&
-                            integer'(sample_native[23:16])-integer'(sample_native[15:8])>=30 &&
-                            integer'(sample_native[23:16])-integer'(sample_native[7:0])>=30)
-                            ? 24'hffffff : 24'h000000) : sample_native;
+                    expected_rgb=box_on ? 24'hff3030 : cross_on ? 24'hfff200 : sample_native;
                     if (out_rgb !== expected_rgb) $fatal(1,"Overlay mismatch %0d,%0d",output_x,output_y);
                     if (box_on) boxes=boxes+1;
                     if (cross_on) crosses=crosses+1;
@@ -154,6 +158,11 @@ module tb_color_target_mixer;
         $fwrite(preview,"P6\n1280 720\n255\n");
         blank(6); rst_n=1;
         for (integer f=0; f<FRAMES; f=f+1) begin
+            target_ready=(f>0);
+            target_found=expected_found(f);
+            tx0=expected_x0(f); tx1=expected_x1(f);
+            ty0=expected_y0(f); ty1=expected_y1(f);
+            tcx=(tx0+tx1)/2; tcy=(ty0+ty1)/2;
             for (integer yy=0; yy<H; yy=yy+1) begin
                 for (integer xx=0; xx<W; xx=xx+1) begin
                     @(negedge clk);

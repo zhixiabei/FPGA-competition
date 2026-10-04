@@ -1,10 +1,51 @@
 # 无板仿真：先验证边缘检测模块
 
-新增 K1 彩色/边缘切换测试：双击 `run_video_mode.cmd`；720p 测试运行 `run_video_mode.cmd --no-pause 720`。覆盖按键消抖、帧边界选择和实际 96/128 位打包，详见 [切换说明](../VIDEO_MODE_SWITCH.md)。原有独立边缘测试入口保持不变。
+当前 K1 彩色/边缘切换测试：双击 `run_video_mode.cmd`；720p 测试运行 `run_video_mode.cmd --no-pause 720`。入口验证按键消抖、彩色梯度/NMS/局部连接、帧边界选择和统一 11 拍延迟，日志放在终端打印的系统临时目录，详见 [切换说明](../VIDEO_MODE_SWITCH.md)。当前算法使用整数色度差和一次局部连接，不是完整 Lab/VTV/Canny 复现；红色目标由独立前端支路检测。原有独立灰度边缘测试入口保持不变，仅用于官方旧算法对照。
+
+当前彩色边缘高/低阈值为 20/10。梯度幅值在比较前除以 4，所以纯亮度的水平或垂直
+梯度采用高阈值 20 时，灵敏度近似对应旧灰度 Sobel 的 80；斜向或色度边界不保证相同。
+测试台另外运行 80/40 对照实例，检查较暗的灰度边界和等亮度色度边界在 20/10 下
+能保留、在 80/40 下会丢失，同时检查四级灰度扰动不产生边缘。旧灰度测试中的 80
+保留为历史对照，不能直接套用到当前彩色算法。
+
+20/10 阈值已通过 XSim 检查：64×48 为 13 帧、39,936 个像素；720p 快速测试为
+7 帧、6,451,200 个像素，均出现 `COLOR_EDGE_DETECT_TEST_PASS` 和
+`LOW_CONTRAST_PASS`。当前阈值版本只重跑功能仿真，未重跑 TD 综合；
+此前彩色边缘 TD 报告对应 80/40，不能作为当前版本的实现或时序结论。
+
+## 目标框与 DDR 帧对齐
+
+`tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。测试台以 `force` 提供 ISP 结果、图像标志和异步时钟，因此不覆盖 ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。
+
+在 PowerShell 运行以下命令；产物只写到系统临时目录，不需要安装厂商 IP 仿真库：
+
+```powershell
+$simRoot = 'D:/vivado_work/anlogic_edge_osd'
+$simBin = 'D:/XILINX/Vivado/2021.1/bin'
+$simWork = Join-Path $env:TEMP ('anlogic_target_alignment_' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $simWork | Out-Null
+Push-Location $simWork
+& "$simBin/xvlog.bat" -sv -d TARGET_ALIGNMENT_STUBS `
+  "$simRoot/user_source/hdl_source/design_top_wrapper.v" `
+  "$simRoot/user_source/hdl_source/video_in.v" `
+  "$simRoot/user_source/hdl_source/video_out.v" `
+  "$simRoot/user_source/hdl_source/hdmi_mixer.v" `
+  "$simRoot/user_source/hdl_source/anlogic_logo_rom.v" `
+  "$simRoot/user_source/hdl_source/osd_char_lib.v" `
+  "$simRoot/sim/tb_target_frame_alignment.sv"
+& "$simBin/xelab.bat" -timescale 1ns/1ps -debug all work.tb_target_frame_alignment -s target_frame_alignment
+& "$simBin/xsim.bat" target_frame_alignment -runall
+Pop-Location
+Write-Output $simWork
+```
+
+每一步都应无 ERROR，最终成功标志为 `TARGET_FRAME_ALIGNMENT_PASS`。`TARGET_ALIGNMENT_STUBS` 只启用测试台末尾的空外围模块；只编译上面列出的文件，不可同时编译同名真实外围/IP 模块。空模块使用统一宽度的输入端口，宽度不匹配警告属于测试边界声明，不代表生产 RTL 接线。测试台没有加入 TD 工程。
+
+以下章节是原官方灰度边缘模块的历史对照测试，不用于验证当前彩色边缘算法。
 
 TD 中的 Read Design / Optimize / Generate Bitstream 是实现流程。功能仿真需要测试台（testbench）提供时钟、复位和输入像素，再由仿真器执行 RTL。
 
-本目录直接使用合并工程原有的 `user_source/hdl_source/isp/edge_detect_96.v`。没有改写 TD 的算法源码，也没有把测试台加入 TD 的综合源文件列表。
+以下旧测试入口直接使用合并工程原有的 `user_source/hdl_source/isp/edge_detect_96.v`，没有把测试台加入 TD 的综合源文件列表。
 
 ## 推荐：直接在 Vivado 界面操作
 

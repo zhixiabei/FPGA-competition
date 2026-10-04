@@ -1,4 +1,7 @@
 `timescale 1ns/1ps
+// Historical 2026-10-02 grayscale Sobel / one-clock selector test.
+// The current run_video_mode.cmd entry uses tb_color_edge_detect_96.sv,
+// which verifies the color-vector pipeline and its ten-clock selector.
 // Image-domain Sobel reference plus a byte scoreboard through the REAL packer.
 // Bubbles occur at complete four-beat boundaries, as required by that packer.
 module tb_rgb_edge_switch;

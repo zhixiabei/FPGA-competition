@@ -6,25 +6,24 @@
 
 本说明依据当前的 [TD 工程文件](td_project/anlogic_edge_osd.al)、[系统顶层](user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](user_source/hdl_source/isp/isp_top.v) 整理。
 
-## 2026-10-03 新增目标检测：现在主要看这三个文件
+## 当前试验版：红色目标与彩色边缘并行
 
 | 文件 | 修改/新增的内容 | 阅读入口 |
 |---|---|---|
-| [color_target_detect.v](user_source/hdl_source/color_target_detect.v) | 新增的单个红色目标检测算法 | `O_pixel_red` 颜色判断 → `line1/line2` 和 `votes` 去噪 → `count/xmin/xmax/ymin/ymax` 每帧统计 |
-| [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 在原有显示模块接入检测，添加框、中心十字、状态与坐标；修正帧首重复计数 | `u_color_target_detect` → `S_display_frame_start` → `S_target_box_on`/`S_target_cross_on` → 输出选择 |
-| [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 启用新功能 | `u_hdmi_mixer` 的 `SHOW_COLOR_TARGET(1)`；默认 `SHOW_RED_MASK=0` |
+| [color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 替代官方灰度边缘算法 | `pair_vector` → 彩色梯度 → `nms_class` → `local_hysteresis` |
+| [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | AWB 输出上的四像素并行红色检测 | `red_mask` → 两行缓存与 `votes` → 框、中心与面积 |
+| [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 在相同 RGB 源上并行检测并选择显示 | `u_red_target_detect_96`、`u_rgb_edge_switch`；两条视频路径延迟 11 拍 |
+| [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 帧对应及坐标跨时钟传输 | `S_target_mailbox` 请求/确认 → `S_target_slots` 四槽表 → 当前读槽结果 |
+| [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 叠加前端框、十字和坐标 | `I_target_*` → `S_display_frame_start` → 框/十字/文字 |
+| [video_in.v](user_source/hdl_source/video_in.v) / [video_out.v](user_source/hdl_source/video_out.v) | 提供当前图像的 DDR 槽标记 | `O_write_frame_slot` / `O_read_frame_slot`；原地址与 FIFO 控制不变 |
 
-检测在 **DDR 读出之后、屏幕叠加之前**，不是直接替换 ISP 中的边缘模块。
-它每拍处理一个显示像素，与画框同属 HDMI 时钟域，不新增跨时钟域坐标总线。
-完整一帧统计完成后，下一显示帧使用其结果，因此目标框有一帧延迟。
-3×3 多数判决只统计中心在图像内侧的像素，最外一圈不统计。
-多个红色区域会得到一个总包围框；当前使用场景是单个红色卡片。
-
-两份 `.al` 已登记新算法源码；`sim/tb_color_target_detect.sv` 和
-`sim/tb_color_target_mixer.sv` 只用于仿真，不参与上板综合。
-本次未修改摄像头 I²C、曝光/增益、引脚、DDR、现有边缘模块或 K1 切换。
-官方边缘模块仍是开发对照，最终提交前需要替换为自己的实现。
-操作方法和阈值见 [README.md](README.md)。
+检测在 **AWB 后、彩色/边缘切换前**，因此边缘模式仍能识别红色物体。
+框按存图的实际 DDR 槽选择；边缘模式补偿轮廓向右 6 像素、向下 3 行的因果窗口偏移。
+多数滤波忽略最外侧一像素边界；多个红色区域仍合为一个总包围框。
+官方 `edge_detect_96.v` 和旧 `color_target_detect.v` 留作对照，不在当前运行通路内。
+新实现是整数色度空间、相邻平均及一次局部连接的硬件简化，未实现非线性 Lab、迭代矢量全变分去噪或完整 Canny 滞后追踪。
+两份 `.al` 已登记新增算法；`sim/tb_*` 仅供仿真，不参与上板综合。
+本次未改变摄像头配置、曝光、AWB 算法、板卡引脚或下载方式。
 
 ## 1. 先认识整条数据通路
 
@@ -33,12 +32,13 @@ flowchart TD
     CAM[SC520CS 摄像头] --> RX[MIPI 接收与 CSI-2 解包]
     RX --> RAW[RAW10 解包与像素流整理]
     RAW --> ISP[ISP：重建彩色图像、白平衡、边缘检测]
-    ISP --> VIN[video_in：写入图像]
+    ISP --> DET[AWB RGB：红色检测、去噪、框统计]
+    ISP --> VIN[video_in：彩色或彩色边缘写入图像]
     VIN --> MEM[DDR 帧缓存]
     MEM --> VOUT[video_out：读出图像]
-    VOUT --> DET[单个红色目标检测：颜色分割、去噪、边界统计]
     VOUT --> OSD[hdmi_mixer：叠加 Logo、文字、目标框和坐标]
-    DET -.-> OSD
+    DET -.-> META[握手跨时钟、按 DDR 槽保存结果]
+    META -.-> OSD
     OSD --> TX[hdmi_tx：发送 HDMI]
     TX --> MON[显示器]
     CFG[I2C 摄像头配置] -.-> CAM
@@ -57,9 +57,9 @@ flowchart TD
 |---|---|---|---|
 | 1 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 系统连接、时钟/复位、外设接口和顶层配置 | 先搜 u_isp_top、u_video_in、u_video_out、u_hdmi_mixer，看它们连了哪些信号；再看各实例上面的参数 |
 | 2 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 串接图像处理模块 | 按 demosaic → data128_96 → awb → rgb_edge_switch_96 → data_96bit_to_128bit 阅读 |
-| 3 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 把 RGB 图像变成黑白边缘图 | 从 pix0～pix3、gray0～gray3、pair0/pair1，读到 sobel_mag、EDGE_TH 和输出寄存器 |
+| 3 | [color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 保留色度差并输出黑白边缘图 | 从 pair_vector、vector_gradient，读到 nms_class、local_hysteresis 和窗口缓存 |
 | 4 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 叠加文字/Logo、计数以及调试图案 | 先看 LOGO_*、DYN_OSD_*，再看两个字库/Logo 实例以及最后的 DEBUG_MODE 输出选择 |
-| 5 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | 给边缘模块送测试图像，并与参考计算结果比较 | 先看 WIDTH、HEIGHT、THRESHOLD 和 DUT 实例，再看图像输入与检查过程 |
+| 5 | [tb_color_edge_detect_96.sv](sim/tb_color_edge_detect_96.sv) | 给新彩色边缘和切换器送图像，并与独立参考比较 | 先看 WIDTH、HEIGHT、LAT 和两个 DUT 实例，再看 build、cycle 和检查过程 |
 
 顶层文件中的 `isp_top u_isp_top (...)` 表示：模块类型是 isp_top，本次使用它的实例名是 u_isp_top。想看实现，就去找 `module isp_top`；同一个模块可以被实例化多次。
 
@@ -73,12 +73,16 @@ flowchart TD
 | 插值计算 | [bilinear_interpolation.v](user_source/hdl_source/isp/demosaic_4x_2_0/bilinear_interpolation.v) | 根据 Bayer 排列和邻域数据计算彩色像素 |
 | 像素格式转换 | [data128_96.v](user_source/hdl_source/isp/data128_96/data128_96.v) | 从四个 32 位位置取出 RGB888，并按代码规定的顺序拼成 96 位 |
 | 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 统计和调整颜色通道，处理四个 RGB888 像素组成的 96 位数据 |
-| 边缘检测 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 96 位 RGB 输入，输出同宽黑白边缘图 |
-| 模式切换 | [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 内含持续运行的边缘模块；将彩色数据延迟一拍，在帧首选择输出 |
+| 边缘检测 | [color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 96 位 RGB 输入，使用亮度和两种色度差输出同宽黑白边缘图 |
+| 红色目标检测 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 与边缘支路共享 AWB RGB 输入，不依赖显示模式 |
+| 模式切换 | [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘模块持续运行；将彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
 | 板载 K1 控制 | [video_mode_control.v](user_source/hdl_source/video_mode_control.v) | 50 MHz 时钟下同步并消抖 20 ms，每次按下翻转一次模式请求 |
 | DDR 数据打包 | [data96_128.v](user_source/hdl_source/isp/data96_128/data96_128.v) | 文件内的 data_96bit_to_128bit 模块把 96 位像素流重新打包为 128 位 |
 
-边缘模块当前每拍处理四个像素：先近似灰度化，再将相邻两个像素平均，得到两个采样点；对采样点计算 Sobel 的 `|Gx| + |Gy|`，与阈值比较。每个结果复制为两个输出像素，白色表示边缘，黑色表示非边缘。它不是直接在原始每个像素上执行全分辨率 Sobel。
+新边缘模块每拍处理四像素，将相邻两个像素平均为两个颜色向量样本。
+亮度 `Y=(R+2G+B)/4` 与色度差 `R-G`、`B-G` 共同参与梯度计算，
+再做四方向非极大值抑制、双阈值和一次强边缘邻域连接；局部弱边缘只在邻近强边缘时保留，不递归追踪整帧。
+每个结果复制为两个输出像素，白色为边缘；水平细节为半分辨率。
 
 常见接口信号：`tdata` 是数据，`tvalid` 表示数据有效，`tuser` 在这里表示帧首，`tlast` 表示行尾。`tready` 的实际支持情况需读实现；已有独立边缘仿真固定 ready=1，不能据此认定整条流水线支持任意反压。
 
@@ -88,11 +92,12 @@ flowchart TD
 
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
-| 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 11'd80；由选择模块传给内部 u_edge_detect_96 |
+| 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 高阈值 20；低阈值默认一半，即 10，内部 u_color_edge_detect_96 |
+| 改红色判定 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_red_target_detect_96 | RED_MIN=80、RED_DELTA=30、MIN_PIXELS=128 |
 | 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 0=彩色；如设为 1 则上电边缘；二者均可按 K1 切换 |
-| 改边缘算法 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | gray、pair、sobel_mag、window_valid | 灰度 → 两像素平均 → Sobel → 阈值；改算法后需要同步审查参考模型 |
-| 改仿真阈值 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | THRESHOLD | 80；同时用于测试中的 DUT 和参考计算，不会自动读取 isp_top 的配置 |
-| 改无板测试尺寸 | [tb_edge_detect.sv](sim/tb_edge_detect.sv)、[run_xsim.cmd](sim/run_xsim.cmd) | WIDTH、HEIGHT、SIM_PARAMS | 默认 320×180；run_720p.cmd 通过脚本将参数设为 1280×720；边缘模块要求宽度能被 4 整除 |
+| 改边缘算法 | [color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | pair_vector、vector_gradient、nms_class、local_hysteresis | 修改流水级数后同时调整切换模块延迟；修改因果窗口后调整顶层框偏移 |
+| 改仿真阈值 | [tb_color_edge_detect_96.sv](sim/tb_color_edge_detect_96.sv) | HIGH、LOW、build 中的阈值判断 | 高/低 20/10；同时修改 DUT 与独立参考，不会自动读取 isp_top 的配置；baseline_dut 的 80/40 用于弱边缘回归对照 |
+| 改无板测试尺寸 | [tb_color_edge_detect_96.sv](sim/tb_color_edge_detect_96.sv)、[run_video_mode.cmd](sim/run_video_mode.cmd) | WIDTH、HEIGHT、SIZE_PARAMS | 默认 64×48；`--no-pause 720` 设为 1280×720、FAST=1；边缘模块要求宽度能被 4 整除 |
 | 移动 Logo | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | LOGO_X、LOGO_Y | (0,0)；位置可先调整。LOGO_W/H=160×160 与 ROM 数据寻址配套，改大小不能仅改两个数字 |
 | 改 Logo 图案 | [anlogic_logo_rom.v](user_source/hdl_source/anlogic_logo_rom.v) | O_pixel、I_addr | 保存 Logo 像素/有效标记，需要与 mixer 的地址计算一致 |
 | 移动动态文字/计数 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | DYN_OSD_X、DYN_OSD_Y | (375,120)；显示区域还受 DYN_OSD_W/H 和内部布局限制 |
@@ -112,24 +117,31 @@ flowchart TD
 Verilog 的模块声明可以写默认参数，但上层实例化时可以覆盖它。例如：
 
 ```verilog
-// edge_detect_96.v 中的默认值
-parameter EDGE_TH = 11'd80
+// color_edge_detect_96.v 中的默认值
+parameter integer EDGE_TH = 20
 
 // isp_top.v 中实例化时的配置，会覆盖默认值
 rgb_edge_switch_96 #(
     .IMG_WIDTH(1280),
     .IMG_HEIGHT(720),
-    .EDGE_TH(11'd80)
+    .EDGE_TH(11'd20)
 ) u_rgb_edge_switch (...);
 ```
 
-所以，要改 TD 系统中的阈值，应改 isp_top.v 的实例参数；要改当前独立仿真的阈值，应改测试台的 THRESHOLD。这两个配置是分别指定的。
+所以，要改 TD 系统中的阈值，应改 isp_top.v 的实例参数；要改当前独立仿真的阈值，应同步修改 tb_color_edge_detect_96.sv 中的 DUT 参数和 build 参考判断。这两个配置是分别指定的。
+
+当前彩色梯度幅值在阈值比较前除以 4。对于纯亮度的水平或垂直梯度，高阈值 20
+近似对应旧灰度 Sobel 的 80；继续使用 80 会提高这类边缘的门槛。该对应关系不代表
+斜向梯度、色度边界、非极大值抑制及局部连接后的结果与旧算法相同。
+
+20/10 阈值已通过 64×48 十三帧和 720p 七帧功能仿真。该阈值版本尚未重跑 TD
+综合；此前彩色边缘 TD 综合、资源和时序报告属于 80/40 阈值版本。
 
 同理，hdmi_mixer 模块默认 H_OFFSET/V_OFFSET=128/60，但顶层实例传入的是 0/0；而当前 `O_video_rd_en = I_video_de`，不能仅凭参数名称认定它实现了画面平移。移动当前 Logo/文字，请从上述 LOGO_*、DYN_OSD_* 入手。
 
 ### 分辨率不是一个全局开关
 
-当前尺寸在摄像头寄存器表、顶层 uial2axis、ISP 的 demosaic/AWB/edge 实例、HDMI 扫描时序及 mixer 中分别指定。更改尺寸还要检查 PLL 像素时钟、数据打包和 DDR 帧地址/读写长度等逻辑。先用现有 1280×720 系统及 320×180 独立仿真学习；不能只改某一处 IMG_WIDTH/IMG_HEIGHT 就视为完成整机分辨率切换。
+当前尺寸在摄像头寄存器表、顶层 uial2axis、ISP 的 demosaic/AWB/edge 实例、HDMI 扫描时序及 mixer 中分别指定。更改尺寸还要检查 PLL 像素时钟、数据打包和 DDR 帧地址/读写长度等逻辑。先用现有 1280×720 系统及 64×48 当前独立仿真学习；不能只改某一处 IMG_WIDTH/IMG_HEIGHT 就视为完成整机分辨率切换。
 
 ## 5. 硬件接口文件何时需要读
 
@@ -172,12 +184,15 @@ rgb_edge_switch_96 #(
 
 ## 7. 无板子时，第一次学习这样做
 
+以下步骤用于学习保留的官方灰度 Sobel 对照，阈值 80 是旧算法配置。当前彩色边缘
+使用高/低阈值 20/10，入口为 `run_video_mode.cmd`，测试台为 `tb_color_edge_detect_96.sv`。
+
 1. 打开 [tb_edge_detect.sv](sim/tb_edge_detect.sv)，找到 `THRESHOLD = 80`，观察它如何传给 DUT；再打开 [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v)，找到 `mag0 >= EDGE_TH`。
 2. 按 [仿真说明](sim/README.md) 运行 run_xsim.cmd，确认输出 PASS；查看本地生成的输入图片与边缘图片。
-3. 可以把测试台 THRESHOLD 改为 160 后重新仿真。对于同一输入，更高阈值通常会留下更少边缘；测试台会按自己的参考计算检查输出。满意后再决定是否把 TD 系统的实例阈值也改为相同值。
+3. 可以把旧测试台 THRESHOLD 改为 160 后重新仿真。对于同一输入，更高阈值通常会留下更少边缘；测试台会按自己的参考计算检查输出。当前 TD 系统使用已缩放的彩色梯度，应单独标定阈值，不要直接照搬旧灰度数值。
 4. 理解边缘模块后，再研究 mixer 的 Logo/文字坐标。现有测试台没有验证 OSD，修改它需要补 OSD 仿真或上板观察。
 
-当前边缘算法阈值保持原设置。独立边缘模块历史仿真见 [validation.txt](sim/validation.txt)；2026-10-02 已适配 SC520CS，并增加可旁路边缘模块的彩色工程，详情见 [SC520CS_TEST.md](SC520CS_TEST.md)。摄像头控制总线仿真已通过，整条视频通路尚未上板验证。
+独立灰度边缘模块历史仿真见 [validation.txt](sim/validation.txt)；2026-10-02 已适配 SC520CS，并增加彩色工程，详情见 [SC520CS_TEST.md](SC520CS_TEST.md)。用户已确认基础版本有板上画面；当前替换算法的版本仍需重新生成 bit 后验证。
 
 ## 8. TD 显式登记的文件索引
 

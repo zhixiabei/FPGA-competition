@@ -15,6 +15,7 @@ module video_in (
     input wire         I_video_out_rd_busy,
     output wire        O_video_in_wr_busy,
     output reg[1:0]    O_video_out_rp,     ///读指针
+    output reg[1:0]    O_write_frame_slot, // Metadata only: actual DDR write slot.
 
     output reg         O_ddr_user_wr_en,
     output reg[24:0]   O_ddr_user_addr,
@@ -97,6 +98,16 @@ module video_in (
     end
 
     assign S_frame_start = ~S_camera_frame_start_extend_3d & S_camera_frame_start_extend_2d;
+
+    // Expose the same slot used by the address block below.  This register
+    // does not participate in the DDR control path.
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if(!I_rst_n)
+            O_write_frame_slot <= 2'd0;
+        else if(S_frame_start)
+            O_write_frame_slot <= I_mipi_rx_error ?
+                S_video_in_wp - 2'd1 : S_video_in_wp;
+    end
 
 	/*
 		如果前一帧图像有误少行了，那么地址回退为之前的，覆盖有问题的那帧图像

@@ -6,7 +6,7 @@ module hdmi_mixer #(
     parameter integer DEBUG_MODE = 0,
     parameter integer SHOW_CAMERA_STATUS = 0,
     parameter integer SHOW_COLOR_TARGET = 0,
-    parameter integer SHOW_RED_MASK = 0,
+    parameter integer SHOW_RED_MASK = 0, // Reserved; front-end mask is not sent over DDR.
     parameter integer TARGET_RED_MIN = 80,
     parameter integer TARGET_RED_DELTA = 30,
     parameter integer TARGET_MIN_PIXELS = 128
@@ -25,6 +25,17 @@ module hdmi_mixer #(
 
     output wire       O_video_rd_en,
     input wire[23:0]  I_video_rd_data,
+
+    // Target result is computed from the AWB RGB stream in the camera clock
+    // domain and transferred here once per frame.
+    input wire        I_target_result_ready,
+    input wire        I_target_found,
+    input wire [11:0] I_target_xmin,
+    input wire [11:0] I_target_xmax,
+    input wire [11:0] I_target_ymin,
+    input wire [11:0] I_target_ymax,
+    input wire [11:0] I_target_center_x,
+    input wire [11:0] I_target_center_y,
 
     output reg        O_hdmi_vsync,
     output reg        O_hdmi_hsync,
@@ -127,10 +138,18 @@ module hdmi_mixer #(
     localparam CHAR_0            = 8'h30;
     localparam CHAR_COLON        = 8'h3a;
 
-    wire S_target_raw_red;
-    wire S_target_result_ready, S_target_result_found;
-    wire [11:0] S_result_xmin, S_result_xmax, S_result_ymin, S_result_ymax;
-    wire [11:0] S_result_center_x, S_result_center_y;
+    // The old HDMI-domain per-pixel detector was removed from the display
+    // path.  It saw the already-processed DDR image and therefore stopped
+    // working in edge mode.  These signals now come from the front-end
+    // detector. Geometry is latched once at the display frame boundary.
+    wire S_target_result_ready = I_target_result_ready;
+    wire S_target_result_found = I_target_found;
+    wire [11:0] S_result_xmin = I_target_xmin;
+    wire [11:0] S_result_xmax = I_target_xmax;
+    wire [11:0] S_result_ymin = I_target_ymin;
+    wire [11:0] S_result_ymax = I_target_ymax;
+    wire [11:0] S_result_center_x = I_target_center_x;
+    wire [11:0] S_result_center_y = I_target_center_y;
     reg S_target_found;
     reg [11:0] S_target_xmin, S_target_xmax, S_target_ymin, S_target_ymax;
     reg [11:0] S_target_center_x, S_target_center_y;
@@ -144,35 +163,6 @@ module hdmi_mixer #(
     integer S_target_digit;
     wire S_display_frame_start = S_video_de_2d &&
                                  (S_x_2d == 0) && (S_y_2d == 0);
-
-    generate if (SHOW_COLOR_TARGET != 0) begin: target_detection
-        color_target_detect #(
-            .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
-            .RED_MIN(TARGET_RED_MIN), .RED_DELTA(TARGET_RED_DELTA),
-            .MIN_PIXELS(TARGET_MIN_PIXELS)
-        ) u_color_target_detect (
-            .I_clk(I_clk), .I_rst_n(I_rst_n), .I_valid(S_video_de_2d),
-            .I_x(S_x_2d), .I_y(S_y_2d), .I_rgb(S_video_data_2d),
-            .O_pixel_red(S_target_raw_red),
-            .O_result_ready(S_target_result_ready),
-            .O_found(S_target_result_found),
-            .O_xmin(S_result_xmin), .O_xmax(S_result_xmax),
-            .O_ymin(S_result_ymin), .O_ymax(S_result_ymax),
-            .O_center_x(S_result_center_x), .O_center_y(S_result_center_y),
-            .O_pixels(), .O_mask_valid(), .O_mask_hit(),
-            .O_mask_x(), .O_mask_y()
-        );
-    end else begin: no_target_detection
-        assign S_target_raw_red = 1'b0;
-        assign S_target_result_ready = 1'b0;
-        assign S_target_result_found = 1'b0;
-        assign S_result_xmin = 12'd0;
-        assign S_result_xmax = 12'd0;
-        assign S_result_ymin = 12'd0;
-        assign S_result_ymax = 12'd0;
-        assign S_result_center_x = 12'd0;
-        assign S_result_center_y = 12'd0;
-    end endgenerate
 
     always @(*) begin
         S_target_bcd_adjust_x = S_target_bcd_work_x;
@@ -735,19 +725,26 @@ module hdmi_mixer #(
             S_x_2d <= 12'd0;
             S_y_1d <= 12'd0;
             S_y_2d <= 12'd0;
+            S_logo_addr <= 15'd0;
         end
         else begin
             S_x_1d <= I_video_user ? 12'd0 : S_x;
             S_x_2d <= S_x_1d;
             S_y_1d <= I_video_user ? 12'd0 : S_y;
             S_y_2d <= S_y_1d;
+            // Compute one stage early; this address matches the new _2d pixel.
+            if(S_video_de_1d &&
+               (S_x_1d >= LOGO_X) && (S_x_1d < LOGO_X + LOGO_W) &&
+               (S_y_1d >= LOGO_Y) && (S_y_1d < LOGO_Y + LOGO_H))
+                S_logo_addr <= (S_y_1d - LOGO_Y) * LOGO_W + (S_x_1d - LOGO_X);
+            else
+                S_logo_addr <= 15'd0;
         end
     end
 
     always @(*) begin
         S_osd_hit   = 1'b0;
         S_osd_color = 24'd0;
-        S_logo_addr = 15'd0;
 
         S_logo_x = 12'd0;
         S_logo_y = 12'd0;
@@ -800,7 +797,6 @@ module hdmi_mixer #(
                (S_y_2d >= LOGO_Y) && (S_y_2d < (LOGO_Y + LOGO_H))) begin
                 S_logo_x = S_x_2d - LOGO_X;
                 S_logo_y = S_y_2d - LOGO_Y;
-                S_logo_addr = S_logo_y * LOGO_W + S_logo_x;
                 if(S_logo_pixel[24]) begin
                     S_osd_hit   = 1'b1;
                     S_osd_color = S_logo_pixel[23:0];
@@ -1118,11 +1114,9 @@ module hdmi_mixer #(
                 else if(S_target_panel_on)
                     O_hdmi_data <= S_target_text_on ? 24'hfff200 : 24'h101010;
                 else if(SHOW_COLOR_TARGET && S_video_de_2d && S_target_box_on)
-                    O_hdmi_data <= 24'h00ff00;
+                    O_hdmi_data <= 24'hff3030;
                 else if(SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
                     O_hdmi_data <= 24'hfff200;
-                else if(SHOW_COLOR_TARGET && SHOW_RED_MASK && S_video_de_2d)
-                    O_hdmi_data <= S_target_raw_red ? 24'hffffff : 24'h000000;
                 else
                     O_hdmi_data <= S_video_data_2d;
             end

@@ -14,7 +14,18 @@ module isp_top #(
     output 			O_tlast			,
     output 			O_tuser			,
     output 			O_tvalid		,
-    output 			I_tready
+    output 			I_tready,
+    output          O_target_result_ready,
+    output          O_target_found,
+    output [11:0]   O_target_xmin,
+    output [11:0]   O_target_xmax,
+    output [11:0]   O_target_ymin,
+    output [11:0]   O_target_ymax,
+    output [11:0]   O_target_center_x,
+    output [11:0]   O_target_center_y,
+    output [23:0]   O_target_pixels,
+    output          O_target_frame_toggle,
+    output          O_edge_mode_active
 );
  
 wire         m_aixs_tvalid;  //synthesis keep 
@@ -36,6 +47,13 @@ wire         m_aixs_tvalid;  //synthesis keep
   wire         awb_O_tvalid_128;  //synthesis keep 
   wire [127:0] awb_O_tdata_128;  //synthesis keep 
 
+  wire         target_result_ready;
+  wire         target_found;
+  wire [11:0]  target_xmin, target_xmax, target_ymin, target_ymax;
+  wire [11:0]  target_center_x, target_center_y;
+  wire [23:0]  target_pixels;
+  wire         target_frame_toggle;
+
     wire         edge_O_tlast;  //synthesis keep
     wire         edge_O_tuser;  //synthesis keep
     wire [ 95:0] edge_O_tdata;  //synthesis keep
@@ -45,6 +63,16 @@ wire         m_aixs_tvalid;  //synthesis keep
   assign O_tlast  = awb_O_tlast    ;
   assign O_tuser  = awb_O_tuser_128    ;
   assign O_tvalid = awb_O_tvalid_128   ;
+  assign O_target_result_ready = target_result_ready;
+  assign O_target_found = target_found;
+  assign O_target_xmin = target_xmin;
+  assign O_target_xmax = target_xmax;
+  assign O_target_ymin = target_ymin;
+  assign O_target_ymax = target_ymax;
+  assign O_target_center_x = target_center_x;
+  assign O_target_center_y = target_center_y;
+  assign O_target_pixels = target_pixels;
+  assign O_target_frame_toggle = target_frame_toggle;
   
   //assign m_aixs_tready = O_tready;
   //assign O_tdata  = m_aixs_tdata;
@@ -102,7 +130,7 @@ awb #(
 rgb_edge_switch_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
-    .EDGE_TH   (11'd80),
+    .EDGE_TH   (11'd20), // Color-gradient magnitude is scaled down by four.
     .DEFAULT_EDGE_MODE(ENABLE_EDGE)
 ) u_rgb_edge_switch (
     .I_clk   (axi4s_video_aclk),
@@ -116,7 +144,31 @@ rgb_edge_switch_96 #(
     .O_tuser (edge_O_tuser),
     .O_tdata (edge_O_tdata),
     .O_tvalid(edge_O_tvalid),
-    .O_edge_mode()
+    .O_edge_mode(O_edge_mode_active)
+);
+
+red_target_detect_96 #(
+    .IMG_WIDTH (1280),
+    .IMG_HEIGHT(720),
+    .RED_MIN(80),
+    .RED_DELTA(30),
+    .MIN_PIXELS(128)
+) u_red_target_detect_96 (
+    .I_clk(axi4s_video_aclk),
+    .I_rst_n(I_rst_n),
+    .I_tuser(awb_O_tuser),
+    .I_tvalid(awb_O_tvalid),
+    .I_tdata(awb_O_tdata),
+    .O_result_ready(target_result_ready),
+    .O_found(target_found),
+    .O_xmin(target_xmin),
+    .O_xmax(target_xmax),
+    .O_ymin(target_ymin),
+    .O_ymax(target_ymax),
+    .O_center_x(target_center_x),
+    .O_center_y(target_center_y),
+    .O_pixels(target_pixels),
+    .O_frame_toggle(target_frame_toggle)
 );
 
 

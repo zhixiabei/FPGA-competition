@@ -8,6 +8,7 @@ module video_out (
     output wire       O_video_out_rd_busy,  
     input wire        I_video_in_wr_busy,   
     input wire[1:0]   I_video_out_rp,
+    output reg[1:0]  O_read_frame_slot, // Metadata only: slot selected for this frame.
     output wire       O_ddr_user_rd_en,
     output reg[24:0]  O_ddr_user_addr,
     input wire        I_ddr_user_ready,
@@ -53,6 +54,14 @@ module video_out (
     end
 
     assign S_video_frame_start = ~S_video_vsync_3d & S_video_vsync_2d;
+
+    // Keep the displayed-frame tag aligned with the DDR base address.
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if(!I_rst_n)
+            O_read_frame_slot <= 2'd0;
+        else if(S_video_frame_start)
+            O_read_frame_slot <= I_video_out_rp;
+    end
 
 
     always @(posedge I_ddr_clk or negedge I_rst_n) begin

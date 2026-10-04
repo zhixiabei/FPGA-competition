@@ -1,50 +1,75 @@
 # 安路 PH1P35 边缘检测 + OSD 合并工程
 
-## 2026-10-03：单个红色目标检测
+## 当前试验版：彩色边缘与红色目标同时显示
 
-当前主工程和彩色工程都启用红色目标检测。重新打开现有 `.al` 工程、编译生成
-新版 bit，再按原来的流程下载。彩色画面中出现足够大的红色卡片时，显示绿色目标框、
-黄色框中心十字，以及底部 `RED:FOUND X:xxxx Y:xxxx`；无目标显示 `RED:NONE`。
-坐标为从左上角 `(0,0)` 开始的十进制**包围框中心**，不是目标质心。
-K1 仍切换彩色/边缘；边缘图没有颜色信息，因此正常显示 `RED:NONE`。
+打开现有 `td_project/anlogic_edge_osd.al`，重新综合、布局布线并生成 bit，
+再使用原来的下载流程。K1 仍在两种画面之间切换：
 
-检测处理的是 **DDR 读出、Logo/OSD 叠加之前** 的 RGB888 画面，全部使用
-HDMI 像素时钟。目标框取上一完整显示帧的结果，有一帧跟随延迟；移走目标后也在
-下一显示帧清除。切换模式时，框可能短暂保留上一帧的结果。
-检测不会把屏幕上的红色 Logo、文字或绿色框再次当成摄像头输入。
+- 彩色模式：摄像头彩色画面 + 红色目标框 + 黄色中心十字及坐标。
+- 边缘模式：黑底白色轮廓 + 同一个红色目标的框、中心十字及坐标。
 
-第一版条件：`R>=80`、`R>=G+30`、`R>=B+30`；再做 3×3 多数判决
-（九个像素至少五个命中）、最小 128 个有效像素以及宽高至少 8 像素的筛选。
-条件是调试起点，实物颜色和照明变化后可能需要调整。画面中的多个同色区域会合成
-一个总包围框；第一版请使用单个红色目标，并避免红色背景。滤波统计忽略图像最外侧
-一圈像素；尚未实现连通域分离或多目标识别。
+红色检测改在 **AWB 后、彩色/边缘选择之前** 并行运行，所以两种模式都使用
+原始彩色信息判定红色。框和坐标按 DDR 实际写槽保存、按实际读槽选择，避免把
+最新采集帧的坐标画在较早的显示帧上。重用槽会先清除旧结果；截断帧不会沿用
+四帧前的框。坐标仍为**包围框中心**，并非目标质心。
 
-本次实际功能源码集中在三处：
+新边缘模块保留亮度与 `R-G`、`B-G` 色度差，采用相邻像素平均、有符号彩色梯度、
+四方向非极大值抑制、双阈值和一次 3×3 邻域强边缘连接。它是论文第二套思路的
+**流式硬件简化版**：没有实现非线性 Lab 转换、迭代矢量全变分去噪或全帧递归
+滞后追踪。官方 `edge_detect_96.v` 留作对照，已不在当前运行通路中。
+
+每拍输入四个 RGB888 像素；边缘模块把相邻两像素平均为一个样本、结果复制为两
+像素，水平细节因此只有半分辨率。RGB/边缘/帧首/行末/模式统一延迟 11 拍。
+三个因果窗口使轮廓向右移 6 像素、向下移 3 行，边缘帧的框同步平移并在图像
+边界夹紧；完整邻域不足的前 12 像素、前 6 行不输出边缘。
+
+红色判断保留 `R>=80`、`R>=G+30`、`R>=B+30`，以及 3×3 多数判决
+（至少五个命中）、最小 128 像素、宽高至少 8 像素筛选。阈值设置入口现在为
+`isp_top.v` 的检测实例；边缘高阈值为 20、低阈值为 10。
+彩色梯度幅值在比较前除以 4，所以对于纯亮度的水平或垂直梯度，高阈值 20
+近似对应旧灰度 Sobel 的 80；斜向及色度边界不保证与旧算法有相同响应。
+多个红色区域仍会合为一个总包围框，尚未加入连通域分离。
+旧 `SHOW_RED_MASK` 参数保留接口兼容，目前不提供逐像素红色掩膜显示。
+
+本次主要源码：
 
 | 文件 | 本次作用 |
 |---|---|
-| [color_target_detect.v](user_source/hdl_source/color_target_detect.v) | 新增：RGB 颜色判断、3×3 去噪、每帧边界和框中心统计 |
-| [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 接入检测、按帧锁存结果、画框/十字、坐标转十进制和文字显示；修正帧首坐标重复计数 |
-| [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 启用检测；`SHOW_RED_MASK=1` 可编译出原始红色分割诊断画面，默认 0 |
+| [color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 新彩色边缘流水线及其行窗口 |
+| [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 四像素并行红色判定、去噪、每帧框统计 |
+| [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 替换边缘模块、对齐两条视频通路、接出检测结果 |
+| [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 坐标跨时钟握手、四槽结果表、边缘位置补偿 |
+| [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 接收前端结果并复用框、十字、坐标 OSD；提前寄存 Logo 地址以缩短显示路径 |
+| [video_in.v](user_source/hdl_source/video_in.v) / [video_out.v](user_source/hdl_source/video_out.v) | 仅增加实际写/读槽的状态输出，原 DDR 控制逻辑不变 |
 
-两份现有 `.al` 仅增加新算法源文件登记；检测阈值在 mixer 实例参数
-`TARGET_RED_MIN`、`TARGET_RED_DELTA`、`TARGET_MIN_PIXELS` 中设置，
-最小宽高在检测模块参数中设置。传感器配置、引脚、DDR 通路、K1 和下载配置没有改动。
-现有官方边缘算法本次保留作对照，最终参赛版本需要另行替换。
-完整文件导航见 [CODE_MAP.md](CODE_MAP.md)。
+两份 `.al` 已登记新算法源文件。摄像头初始化、曝光、白平衡算法、引脚、时钟、
+下载配置及 K1 接法保持原设置。完整导航见 [CODE_MAP.md](CODE_MAP.md)。
+本版上板验证重点：普通室内光下移动红色卡片，切换后目标框应保留，
+其它非红色物品也应显示白色轮廓；移走红色卡片后对应显示帧应清框。
 
-仿真源文件为 [tb_color_target_detect.sv](sim/tb_color_target_detect.sv) 和
-[tb_color_target_mixer.sv](sim/tb_color_target_mixer.sv)。
-独立检测测试用整幅图像计算参考掩码及包围框，覆盖阈值边界/加法溢出、白色高亮背景、
-噪点、移动、消失、小目标、图像边界、空拍、不完整帧和复位。
-显示测试使用 1280×720 输入，检查实际 mixer 的逐像素坐标、目标框/十字、十进制坐标、
-状态/Logo/文字优先级以及读使能与同步信号。
-本次 XSim 检查通过：64×48 和 1280×720 检测各 17 帧，720p 检测逐点比较
-14,681,664 个滤波结果；彩色显示检查 8 帧、7,372,800 个输出像素；黑白分割
-诊断显示另检查 3 帧、2,764,800 个输出像素。主工程已通过 TD 6.2 的
-Read Design、RTL 优化和门级综合；彩色工程通过顶层展开及引脚/时序约束读取。
-检查产物放在系统临时目录 `anlogic_red_target_20261003`；
-未生成或下载新版 bit，实物检测效果和整板布局布线后时序仍需用户验证。
+当前 20/10 阈值已通过 XSim 独立图像参考检查：彩色边缘 64×48 十三帧、
+39,936 个像素及 720p 七帧、6,451,200 个像素，覆盖低对比度灰度边界、
+等亮度色度边界及小扰动抑制；同一输入下，80/40 对照实例会漏掉这些弱边缘。
+此前 ModelSim 验证了红色检测两种尺寸各九帧；720p 显示叠加检查八帧、
+7,372,800 个输出像素，
+覆盖黑白画面保留目标框、原 Logo/文字优先级和十进制坐标。
+帧对应测试通过 30 次读写与显示，覆盖多槽回绕、无目标清框、截断帧、
+异步时钟和边缘位置补偿；该测试使用受控 ISP 结果，不替代真实 MIPI/DDR 数据验证。
+仿真源文件见 `sim/tb_color_edge_detect_96.sv`、`sim/tb_red_target_detect_96.sv`、
+`sim/tb_target_frame_alignment.sv`、`sim/tb_color_target_mixer.sv`。
+检查日志、脚本和中间产物放在系统 TEMP，不参加上板综合。
+最终布局布线时序和摄像头实物效果仍需生成新版 bit 后验证。
+
+阈值校准前的 80/40 版本已完成 TD 的展开、RTL 优化、门级综合、合法化和综合时序检查。
+门级资源估计为 Slice 18,182/21,216（85.70%）、ERAM 40/108、DSP 9/40。
+新边缘行缓存实际映射为分布式 RAM，尚未映射为 ERAM；六条 RAM 推断警告
+说明了这一回退，不能将源码里的 `ram_style="bram"` 当作已经使用 ERAM。
+摄像头时钟域最差建立时间余量为 +1.743 ns，没有建立时间违例；
+全工程最差余量仍为 -0.580 ns，位于 HDMI 显示叠加路径，因此**综合完成不代表
+时序通过**，应继续检查布局布线后的最终报告。Logo 地址提前寄存的改动另通过了
+7,447,901 拍修改前后对照，HDMI 数据、同步和 OSD 行为完全一致。
+上述 TD 报告属于 80/40 版本；当前 20/10 版本只重跑了功能仿真，
+尚未重跑 TD 综合、布局布线或生成 bit。本次没有下载新版 bit。
 
 ## 当前版本：SC520CS（2026-10-02）
 
@@ -67,11 +92,11 @@ TD 用于编译工程；视频显示在 HDMI 接收设备上。用户已确认�
 |---|---|---|
 | 1 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 系统顶层：摄像头、ISP、DDR、HDMI 怎么连接 |
 | 2 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 图像处理流水线：彩色重建、白平衡、边缘检测、数据打包 |
-| 3 | [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 边缘算法：灰度、相邻像素平均、Sobel、阈值判断 |
+| 3 | [color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 新边缘算法：保留色度的梯度、非极大值抑制、双阈值和连接 |
 | 4 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 在图像上加 Logo、文字和帧计数；设置显示位置与调试画面 |
-| 5 | [tb_edge_detect.sv](sim/tb_edge_detect.sv) | 不接板子时如何送入测试图像、检查算法输出 |
+| 5 | [tb_color_edge_detect_96.sv](sim/tb_color_edge_detect_96.sv) | 新彩色边缘和切换器的独立图像参考、像素与时序检查 |
 
-注意：当前边缘阈值由 **isp_top.v 中的 `.EDGE_TH(11'd80)`** 设置。只修改 edge_detect_96.v 中的默认值，会被这个实例参数覆盖。仿真测试台还独立设置了 THRESHOLD。
+注意：当前边缘高阈值由 **isp_top.v 中的 `.EDGE_TH(11'd20)`** 设置，低阈值默认一半，即 10。官方 edge_detect_96.v 不在当前运行通路，修改它不会改变新算法。当前测试台分别为 DUT 和独立参考设置高/低阈值 20/10，不会自动读取系统实例的参数；另有 80/40 对照实例，用于复现未按幅值缩放调整阈值时的弱边缘丢失。
 
 ### 各目录用来做什么
 
@@ -91,7 +116,7 @@ TD 用于编译工程；视频显示在 HDMI 接收设备上。用户已确认�
 
 ## Vivado 图形界面仿真入口
 
-在 Vivado 中打开 [sim/vivado/edge_gui.xpr](sim/vivado/edge_gui.xpr)，点击 **Run Simulation → Run Behavioral Simulation**，即可运行边缘模块测试并查看预设波形。无需手工运行脚本。操作步骤和图片结果位置见 [GUI 仿真说明](sim/VIVADO_GUI.md)。
+在 Vivado 中打开 [sim/vivado/edge_gui.xpr](sim/vivado/edge_gui.xpr)，点击 **Run Simulation → Run Behavioral Simulation**，可运行保留的官方灰度边缘对照测试并查看预设波形。该旧 GUI 工程不验证当前彩色边缘版本；新版本入口为 `sim/run_video_mode.cmd`。操作步骤和图片结果位置见 [GUI 仿真说明](sim/VIVADO_GUI.md)。
 
 ## TD 打开入口
 
@@ -106,7 +131,7 @@ TD 用于编译工程；视频显示在 HDMI 接收设备上。用户已确认�
 
 以 Lab2（lab_ex2_edge）为基础，保留原有摄像头、RAW10 解包、ISP、边缘检测、DDR 和 HDMI 通路。
 使用 Lab3 的 hdmi_mixer.v 替换显示混合模块，并加入 anlogic_logo_rom.v、osd_char_lib.v。
-当前输出通路：SC520CS → ISP → 彩色/边缘帧边界选择 → DDR → 安路 Logo / 字符 / 帧计数叠加 → HDMI。边缘模块持续运行；彩色通路增加一拍延迟与其对齐。
+当前输出通路：SC520CS → ISP → 彩色/边缘帧边界选择 → DDR → 安路 Logo / 字符 / 帧计数叠加 → HDMI。边缘模块持续运行；两条视频通路延迟统一为 11 拍，红色检测独立取 AWB 彩色数据。
 分辨率保持 1280×720；顶层 DEBUG_MODE 保持 0。
 
 已复制全部 user_source，工程文件引用均指向本文件夹内的文件。
@@ -132,7 +157,7 @@ verification/check_td.tcl：使用实际 .al 工程做 TD 源码解析和层次�
 verification/synth_td.tcl：TD 综合资源检查脚本。
 verification/synthesis_console.log：本次综合完整输出，以末尾 PASS/FAIL 标志及资源报告为准。
 
-目前合并保留了原例程的算法和时序行为，不代表完成了功能仿真或实物验证。
+最初合并阶段保留了原例程的算法和时序行为；当前试验版已替换边缘模块，验证范围见本文开头，实物效果仍需新版 bit 上板确认。
 原例程中的未连接输入、位宽等告警需要结合后续仿真和上板调试审查。
 OSD 中的运行计数按显示帧递增，不是秒计时。
 ## 初次 TD 命令行综合记录（2026-09-23，旧 SC500CS 版本）

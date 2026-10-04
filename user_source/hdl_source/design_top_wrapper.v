@@ -2,7 +2,7 @@
 
 module design_top_wrapper #(
     parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
-    parameter integer SHOW_RED_MASK = 0 // 1: diagnostic raw red segmentation view.
+    parameter integer SHOW_RED_MASK = 0 // Reserved for compatibility; no mask frame is stored.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -97,6 +97,71 @@ module design_top_wrapper #(
 	wire 			S_ISP_O_tlast ;
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
+
+    // Per-frame red-target result generated from the AWB RGB stream.
+    wire        S_ISP_target_result_ready;
+    wire        S_ISP_target_found;
+    wire [11:0] S_ISP_target_xmin;
+    wire [11:0] S_ISP_target_xmax;
+    wire [11:0] S_ISP_target_ymin;
+    wire [11:0] S_ISP_target_ymax;
+    wire [11:0] S_ISP_target_center_x;
+    wire [11:0] S_ISP_target_center_y;
+    wire [23:0] S_ISP_target_pixels;
+    wire        S_ISP_target_frame_toggle;
+    wire        S_ISP_edge_mode_active;
+
+    // Three causal 3x3 stages in the edge pipeline shift the visible contour
+    // by three half-resolution samples and three rows.  Store compensated
+    // geometry for an edge frame; RGB frame coordinates are unchanged.
+    wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + 13'd6;
+    wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + 13'd6;
+    wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + 13'd3;
+    wire [12:0] S_target_shift_ymax = {1'b0,S_ISP_target_ymax} + 13'd3;
+    wire [11:0] S_target_display_xmin = !S_ISP_edge_mode_active ? S_ISP_target_xmin :
+        (S_target_shift_xmin > 13'd1279 ? 12'd1279 : S_target_shift_xmin[11:0]);
+    wire [11:0] S_target_display_xmax = !S_ISP_edge_mode_active ? S_ISP_target_xmax :
+        (S_target_shift_xmax > 13'd1279 ? 12'd1279 : S_target_shift_xmax[11:0]);
+    wire [11:0] S_target_display_ymin = !S_ISP_edge_mode_active ? S_ISP_target_ymin :
+        (S_target_shift_ymin > 13'd719 ? 12'd719 : S_target_shift_ymin[11:0]);
+    wire [11:0] S_target_display_ymax = !S_ISP_edge_mode_active ? S_ISP_target_ymax :
+        (S_target_shift_ymax > 13'd719 ? 12'd719 : S_target_shift_ymax[11:0]);
+    wire [12:0] S_target_display_center_x_sum =
+        {1'b0,S_target_display_xmin} + {1'b0,S_target_display_xmax};
+    wire [12:0] S_target_display_center_y_sum =
+        {1'b0,S_target_display_ymin} + {1'b0,S_target_display_ymax};
+
+    // Associate each target result with the DDR slot that holds its image.
+    wire [1:0] S_write_frame_slot;
+    wire [1:0] S_read_frame_slot;
+    (* async_reg = "true" *) reg [1:0] S_write_slot_meta;
+    (* async_reg = "true" *) reg [1:0] S_write_slot_sync;
+    (* async_reg = "true" *) reg [1:0] S_read_slot_meta;
+    (* async_reg = "true" *) reg [1:0] S_read_slot_sync;
+
+    // Bundled-data mailbox.  The camera domain holds all coordinates and
+    // the slot tag until the HDMI domain acknowledges their capture.
+    reg [75:0] S_target_mailbox;
+    reg S_target_request;
+    reg S_target_ack;
+    reg S_target_frame_pending;
+    reg [5:0] S_target_frame_wait;
+    (* async_reg = "true" *) reg S_target_ack_meta;
+    (* async_reg = "true" *) reg S_target_ack_sync;
+    (* async_reg = "true" *) reg S_target_toggle_meta;
+    (* async_reg = "true" *) reg S_target_toggle_sync;
+    reg [72:0] S_target_slots [0:3];
+    reg [3:0] S_target_slots_valid;
+    integer S_target_slot_index;
+    wire S_target_result_valid_hdmi = S_target_slots_valid[S_read_slot_sync];
+    wire [72:0] S_target_display_result = S_target_slots[S_read_slot_sync];
+    wire S_target_found_hdmi = S_target_display_result[72];
+    wire [11:0] S_target_xmin_hdmi = S_target_display_result[71:60];
+    wire [11:0] S_target_xmax_hdmi = S_target_display_result[59:48];
+    wire [11:0] S_target_ymin_hdmi = S_target_display_result[47:36];
+    wire [11:0] S_target_ymax_hdmi = S_target_display_result[35:24];
+    wire [11:0] S_target_center_x_hdmi = S_target_display_result[23:12];
+    wire [11:0] S_target_center_y_hdmi = S_target_display_result[11:0];
 	
 
     wire        S_ddr_clk;
@@ -409,6 +474,78 @@ module design_top_wrapper #(
         end
     end
 
+    // The write-slot status is only consumed at the end of the camera frame,
+    // long after its two-bit value changes at frame start.
+    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
+        if(!S_rst_n) begin
+            S_write_slot_meta <= 2'd0;
+            S_write_slot_sync <= 2'd0;
+            S_target_mailbox <= 76'd0;
+            S_target_request <= 1'b0;
+            S_target_frame_pending <= 1'b0;
+            S_target_frame_wait <= 6'd0;
+            S_target_ack_meta <= 1'b0;
+            S_target_ack_sync <= 1'b0;
+        end else begin
+            S_write_slot_meta <= S_write_frame_slot;
+            S_write_slot_sync <= S_write_slot_meta;
+            S_target_ack_meta <= S_target_ack;
+            S_target_ack_sync <= S_target_ack_meta;
+            if(S_ISP_O_tuser) begin
+                S_target_frame_pending <= 1'b1;
+                S_target_frame_wait <= 6'd0;
+            end else if(S_target_frame_pending && S_target_frame_wait != 6'd31)
+                S_target_frame_wait <= S_target_frame_wait + 1'b1;
+
+            if(S_ISP_target_result_ready &&
+               (S_target_request == S_target_ack_sync)) begin
+                S_target_mailbox <= {1'b1, S_write_slot_sync, S_ISP_target_found,
+                    S_target_display_xmin, S_target_display_xmax,
+                    S_target_display_ymin, S_target_display_ymax,
+                    S_target_display_center_x_sum[12:1],
+                    S_target_display_center_y_sum[12:1]};
+                S_target_request <= ~S_target_request;
+                S_target_frame_pending <= 1'b0;
+            end else if(S_target_frame_pending && S_target_frame_wait == 6'd31 &&
+                        (S_target_request == S_target_ack_sync)) begin
+                // Invalidate reused slot metadata after the DDR frame-start
+                // synchronizer has assigned the write slot.  A truncated
+                // frame must not retain the box from four frames earlier.
+                // 32 CSI clocks covers the existing DDR/CSI sync latency.
+                S_target_mailbox <= {1'b0, S_write_slot_sync, 73'd0};
+                S_target_request <= ~S_target_request;
+                S_target_frame_pending <= 1'b0;
+            end
+        end
+    end
+
+    // The displayed slot is selected during vertical blanking by video_out;
+    // it is stable well before hdmi_mixer latches the geometry at pixel (0,0).
+    // Keep one result per DDR slot so the box follows the stored frame rather
+    // than the camera's newer, still-undisplayed frame.
+    always @(posedge S_hdmi_pixel_clk or negedge S_hdmi_rst_n) begin
+        if(!S_hdmi_rst_n) begin
+            S_target_toggle_meta <= 1'b0;
+            S_target_toggle_sync <= 1'b0;
+            S_target_ack <= 1'b0;
+            S_read_slot_meta <= 2'd0;
+            S_read_slot_sync <= 2'd0;
+            S_target_slots_valid <= 4'd0;
+            for(S_target_slot_index=0; S_target_slot_index<4; S_target_slot_index=S_target_slot_index+1)
+                S_target_slots[S_target_slot_index] <= 73'd0;
+        end else begin
+            S_target_toggle_meta <= S_target_request;
+            S_target_toggle_sync <= S_target_toggle_meta;
+            S_read_slot_meta <= S_read_frame_slot;
+            S_read_slot_sync <= S_read_slot_meta;
+            if(S_target_toggle_sync != S_target_ack) begin
+                S_target_slots[S_target_mailbox[74:73]] <= S_target_mailbox[72:0];
+                S_target_slots_valid[S_target_mailbox[74:73]] <= S_target_mailbox[75];
+                S_target_ack <= S_target_toggle_sync;
+            end
+        end
+    end
+
     assign S_lane_error_any = |S_lane_error;
 
     assign S_vo_dbg_fifo_rst = 1'b0;
@@ -679,6 +816,17 @@ isp_top #(
 .O_tlast         (S_ISP_O_tlast ),
 .O_tuser         (S_ISP_O_tuser ),
 .O_tvalid        (S_ISP_O_tvalid),
+.O_target_result_ready (S_ISP_target_result_ready),
+.O_target_found        (S_ISP_target_found),
+.O_target_xmin         (S_ISP_target_xmin),
+.O_target_xmax         (S_ISP_target_xmax),
+.O_target_ymin         (S_ISP_target_ymin),
+.O_target_ymax         (S_ISP_target_ymax),
+.O_target_center_x     (S_ISP_target_center_x),
+.O_target_center_y     (S_ISP_target_center_y),
+.O_target_pixels       (S_ISP_target_pixels),
+.O_target_frame_toggle (S_ISP_target_frame_toggle),
+.O_edge_mode_active    (S_ISP_edge_mode_active),
 .I_tready        ()
   );
 
@@ -697,6 +845,7 @@ isp_top #(
         .I_video_out_rd_busy  ( S_video_out_rd_busy   ),
         .O_video_in_wr_busy   ( S_video_in_wr_busy    ),
         .O_video_out_rp       ( S_video_out_rp        ),
+        .O_write_frame_slot   ( S_write_frame_slot    ),
 
         .O_ddr_user_wr_en     ( S_vi_ddr_wr_en        ),
         .O_ddr_user_addr      ( S_vi_ddr_wr_addr      ),
@@ -725,6 +874,7 @@ isp_top #(
         .O_video_out_rd_busy ( S_video_out_rd_busy  ),
         .I_video_in_wr_busy  ( S_video_in_wr_busy   ),
         .I_video_out_rp      ( S_video_out_rp       ),
+        .O_read_frame_slot   ( S_read_frame_slot    ),
  
         .O_ddr_user_rd_en    ( S_vo_ddr_rd_en       ),
         .O_ddr_user_addr     ( S_vo_ddr_rd_addr     ),
@@ -832,7 +982,7 @@ isp_top #(
         .DEBUG_MODE ( 0    ),
         .SHOW_CAMERA_STATUS ( 1 ),
         .SHOW_COLOR_TARGET  ( 1 ),
-        .SHOW_RED_MASK      ( SHOW_RED_MASK )
+        .SHOW_RED_MASK      ( 0 ) // Front-end metadata carries no per-pixel mask.
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
         .I_rst_n         ( S_hdmi_rst_n       ),
@@ -845,6 +995,14 @@ isp_top #(
         .I_cam_fail_index( S_cam_fail_sync    ),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),
+        .I_target_result_ready ( S_target_result_valid_hdmi ),
+        .I_target_found        ( S_target_found_hdmi ),
+        .I_target_xmin         ( S_target_xmin_hdmi ),
+        .I_target_xmax         ( S_target_xmax_hdmi ),
+        .I_target_ymin         ( S_target_ymin_hdmi ),
+        .I_target_ymax         ( S_target_ymax_hdmi ),
+        .I_target_center_x     ( S_target_center_x_hdmi ),
+        .I_target_center_y     ( S_target_center_y_hdmi ),
         .O_hdmi_vsync    ( S_hdmi_out_vsync   ),
         .O_hdmi_hsync    ( S_hdmi_out_hsync   ),
         .O_hdmi_de       ( S_hdmi_out_de      ),

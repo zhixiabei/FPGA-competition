@@ -13,6 +13,7 @@
         <Verilog>
             <File Path="../user_source/hdl_source/color_target_detect.v">
                 <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
@@ -303,13 +304,14 @@
             </File>
             <File Path="../user_source/hdl_source/isp/edge_detect_96.v">
                 <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
                     <Attr Name="CompileOrder" Val="52"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/anlogic_logo_rom.v">
+            <File Path="../user_source/hdl_source/isp/color_edge_detect_96.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -317,7 +319,7 @@
                     <Attr Name="CompileOrder" Val="53"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/osd_char_lib.v">
+            <File Path="../user_source/hdl_source/isp/red_target_detect_96.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -325,7 +327,7 @@
                     <Attr Name="CompileOrder" Val="54"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/video_mode_control.v">
+            <File Path="../user_source/hdl_source/anlogic_logo_rom.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
@@ -333,12 +335,28 @@
                     <Attr Name="CompileOrder" Val="55"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/isp/rgb_edge_switch_96.v">
+            <File Path="../user_source/hdl_source/osd_char_lib.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
                     <Attr Name="CompileOrder" Val="56"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/video_mode_control.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="57"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/isp/rgb_edge_switch_96.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="58"/>
                 </FileInfo>
             </File>
         </Verilog>

@@ -2,17 +2,24 @@
 setlocal
 set "SIM_BIN=D:\XILINX\Vivado\2021.1\bin"
 if defined VIVADO_SIM_BIN set "SIM_BIN=%VIVADO_SIM_BIN%"
-pushd "%~dp0"
-set "SIM_OUT=out_video_mode"
+if not exist "%SIM_BIN%\xvlog.bat" (
+    echo XSim not found. Set VIVADO_SIM_BIN or edit SIM_BIN.
+    if /I not "%~1"=="--no-pause" pause
+    exit /b 1
+)
+set "SIM_SRC=%~dp0"
+for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
+set "SIM_OUT=%TEMP%\anlogic_video_mode_%RANDOM%_%RANDOM%"
 set "SIZE_PARAMS="
 if /I "%~2"=="720" (
-    set "SIM_OUT=out_video_mode_720p"
-    set "SIZE_PARAMS=-generic_top "WIDTH=1280" -generic_top "HEIGHT=720""
+    set "SIZE_PARAMS=-generic_top "WIDTH=1280" -generic_top "HEIGHT=720" -generic_top "FAST=1""
 )
-if not exist "%SIM_OUT%" mkdir "%SIM_OUT%"
-cd "%SIM_OUT%"
+mkdir "%SIM_OUT%"
+if errorlevel 1 exit /b 1
+pushd "%SIM_OUT%"
+if errorlevel 1 exit /b 1
 >result.txt echo RUNNING
-call "%SIM_BIN%\xvlog.bat" -sv "../../user_source/hdl_source/video_mode_control.v" "../../user_source/hdl_source/isp/rgb_edge_switch_96.v" "../../user_source/hdl_source/isp/edge_detect_96.v" "../../user_source/hdl_source/isp/data96_128/data96_128.v" "../tb_video_mode_control.sv" "../tb_rgb_edge_switch.sv" -log xvlog.log >compile_console.log 2>&1
+call "%SIM_BIN%\xvlog.bat" -sv "%PROJECT_ROOT%\user_source\hdl_source\video_mode_control.v" "%PROJECT_ROOT%\user_source\hdl_source\isp\rgb_edge_switch_96.v" "%PROJECT_ROOT%\user_source\hdl_source\isp\color_edge_detect_96.v" "%SIM_SRC%tb_video_mode_control.sv" "%SIM_SRC%tb_color_edge_detect_96.sv" -log xvlog.log >compile_console.log 2>&1
 if errorlevel 1 goto failed
 call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps work.tb_video_mode_control -s mode_button_sim -log button_elab.log >button_elab_console.log 2>&1
 if errorlevel 1 goto failed
@@ -20,27 +27,23 @@ call "%SIM_BIN%\xsim.bat" mode_button_sim -runall -log button_sim.log >button_co
 if errorlevel 1 goto failed
 findstr /c:"VIDEO_MODE_BUTTON_TEST_PASS" button_console.log >nul
 if errorlevel 1 goto failed
-call :video_test 1
+call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps %SIZE_PARAMS% work.tb_color_edge_detect_96 -s color_video_mode -log video_elab.log >video_elab_console.log 2>&1
 if errorlevel 1 goto failed
-call :video_test 0
+call "%SIM_BIN%\xsim.bat" color_video_mode -runall -log video_sim.log >video_console.log 2>&1
+if errorlevel 1 goto failed
+findstr /c:"COLOR_EDGE_DETECT_TEST_PASS" video_console.log >nul
 if errorlevel 1 goto failed
 >result.txt echo PASS
 type result.txt
-type button_console.log
-findstr /c:"FRAME_PASS" /c:"RGB_EDGE_SWITCH_TEST_PASS" video_1_console.log video_0_console.log
+findstr /c:"VIDEO_MODE_BUTTON_TEST_PASS" button_console.log
+findstr /c:"FRAME_SENT" /c:"COLOR_EDGE_DETECT_TEST_PASS" /c:"LOW_CONTRAST_PASS" video_console.log
+echo Simulation output: %SIM_OUT%
 popd
 if /I not "%~1"=="--no-pause" pause
 exit /b 0
-:video_test
-call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps %SIZE_PARAMS% -generic_top "DEFAULT_EDGE=%~1" work.tb_rgb_edge_switch -s video_mode_%~1 -log video_%~1_elab.log >video_%~1_elab_console.log 2>&1
-if errorlevel 1 exit /b 1
-call "%SIM_BIN%\xsim.bat" video_mode_%~1 -runall -log video_%~1_sim.log >video_%~1_console.log 2>&1
-if errorlevel 1 exit /b 1
-findstr /c:"RGB_EDGE_SWITCH_TEST_PASS" video_%~1_console.log >nul
-exit /b %errorlevel%
 :failed
 >result.txt echo FAIL
-echo Video mode simulation FAILED. Read sim\%SIM_OUT% logs.
+echo Video mode simulation FAILED. Read %SIM_OUT% logs.
 popd
 if /I not "%~1"=="--no-pause" pause
 exit /b 1
