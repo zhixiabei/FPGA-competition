@@ -130,7 +130,7 @@ awb #(
 rgb_edge_switch_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
-    .EDGE_TH   (11'd20), // Color-gradient magnitude is scaled down by four.
+    .EDGE_TH   (20), // Scharr: compare |Gx|+|Gy| against 16*EDGE_TH.
     .DEFAULT_EDGE_MODE(ENABLE_EDGE)
 ) u_rgb_edge_switch (
     .I_clk   (axi4s_video_aclk),

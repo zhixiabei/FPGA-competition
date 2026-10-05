@@ -66,7 +66,7 @@ module tb_target_frame_alignment;
         frame_ymax = id == 28 ? 719 : frame_ymin(id)+30;
     endfunction
     function automatic integer display_x(input integer value, input bit edge_on);
-        display_x = edge_on ? (value+6 > 1279 ? 1279 : value+6) : value;
+        display_x = edge_on ? (value+3 > 1279 ? 1279 : value+3) : value;
     endfunction
     function automatic integer display_y(input integer value, input bit edge_on);
         display_y = edge_on ? (value+3 > 719 ? 719 : value+3) : value;

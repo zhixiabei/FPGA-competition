@@ -111,11 +111,11 @@ module design_top_wrapper #(
     wire        S_ISP_target_frame_toggle;
     wire        S_ISP_edge_mode_active;
 
-    // Three causal 3x3 stages in the edge pipeline shift the visible contour
-    // by three half-resolution samples and three rows.  Store compensated
+    // Three full-resolution 3x3 stages shift the visible contour
+    // by three pixels and three rows. Store compensated
     // geometry for an edge frame; RGB frame coordinates are unchanged.
-    wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + 13'd6;
-    wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + 13'd6;
+    wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + 13'd3;
+    wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + 13'd3;
     wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + 13'd3;
     wire [12:0] S_target_shift_ymax = {1'b0,S_ISP_target_ymax} + 13'd3;
     wire [11:0] S_target_display_xmin = !S_ISP_edge_mode_active ? S_ISP_target_xmin :

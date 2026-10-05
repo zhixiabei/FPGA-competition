@@ -19,7 +19,7 @@ if errorlevel 1 exit /b 1
 pushd "%SIM_OUT%"
 if errorlevel 1 exit /b 1
 >result.txt echo RUNNING
-call "%SIM_BIN%\xvlog.bat" -sv "%PROJECT_ROOT%\user_source\hdl_source\video_mode_control.v" "%PROJECT_ROOT%\user_source\hdl_source\isp\rgb_edge_switch_96.v" "%PROJECT_ROOT%\user_source\hdl_source\isp\color_edge_detect_96.v" "%SIM_SRC%tb_video_mode_control.sv" "%SIM_SRC%tb_color_edge_detect_96.sv" -log xvlog.log >compile_console.log 2>&1
+call "%SIM_BIN%\xvlog.bat" -sv -d SCHARR_PORTABLE_RAM "%PROJECT_ROOT%\user_source\hdl_source\video_mode_control.v" "%PROJECT_ROOT%\user_source\hdl_source\isp\rgb_edge_switch_96.v" "%PROJECT_ROOT%\user_source\hdl_source\isp\scharr_edge_detect_96.v" "%SIM_SRC%tb_video_mode_control.sv" "%SIM_SRC%tb_scharr_edge_detect_96.sv" -log xvlog.log >compile_console.log 2>&1
 if errorlevel 1 goto failed
 call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps work.tb_video_mode_control -s mode_button_sim -log button_elab.log >button_elab_console.log 2>&1
 if errorlevel 1 goto failed
@@ -27,16 +27,16 @@ call "%SIM_BIN%\xsim.bat" mode_button_sim -runall -log button_sim.log >button_co
 if errorlevel 1 goto failed
 findstr /c:"VIDEO_MODE_BUTTON_TEST_PASS" button_console.log >nul
 if errorlevel 1 goto failed
-call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps %SIZE_PARAMS% work.tb_color_edge_detect_96 -s color_video_mode -log video_elab.log >video_elab_console.log 2>&1
+call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps %SIZE_PARAMS% work.tb_scharr_edge_detect_96 -s color_video_mode -log video_elab.log >video_elab_console.log 2>&1
 if errorlevel 1 goto failed
 call "%SIM_BIN%\xsim.bat" color_video_mode -runall -log video_sim.log >video_console.log 2>&1
 if errorlevel 1 goto failed
-findstr /c:"COLOR_EDGE_DETECT_TEST_PASS" video_console.log >nul
+findstr /c:"SCHARR_EDGE_TEST_PASS" video_console.log >nul
 if errorlevel 1 goto failed
 >result.txt echo PASS
 type result.txt
 findstr /c:"VIDEO_MODE_BUTTON_TEST_PASS" button_console.log
-findstr /c:"FRAME_SENT" /c:"COLOR_EDGE_DETECT_TEST_PASS" /c:"LOW_CONTRAST_PASS" video_console.log
+findstr /c:"SCHARR_EDGE_TEST_PASS" /c:"SCHARR_CONTOURS" video_console.log
 echo Simulation output: %SIM_OUT%
 popd
 if /I not "%~1"=="--no-pause" pause
