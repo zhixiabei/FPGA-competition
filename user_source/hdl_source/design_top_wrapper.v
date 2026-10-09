@@ -273,10 +273,8 @@ module design_top_wrapper #(
     wire[3:0]   S_hdmi_debug_status;
     reg         S_cam_ae_started;
     reg [3:0]   S_cam_status;
-    (* async_reg = "true" *) reg [3:0] S_cam_status_meta;
-    (* async_reg = "true" *) reg [3:0] S_cam_status_sync;
-    (* async_reg = "true" *) reg [7:0] S_cam_fail_meta;
-    (* async_reg = "true" *) reg [7:0] S_cam_fail_sync;
+    wire [11:0] S_cam_diag_sync;
+    wire [7:0]  S_cam_fail_sync;
     wire        S_lane_error_any;
 
 
@@ -576,21 +574,15 @@ module design_top_wrapper #(
         end
     end
 
-    // These are slow diagnostic flags, not pixel data or control signals.
-    always @(posedge S_hdmi_pixel_clk or negedge S_hdmi_rst_n) begin
-        if (!S_hdmi_rst_n) begin
-            S_cam_status_meta <= 4'b0000;
-            S_cam_status_sync <= 4'b0000;
-            S_cam_fail_meta <= 8'd0;
-            S_cam_fail_sync <= 8'd0;
-        end else begin
-            S_cam_status_meta <= S_cam_status;
-            S_cam_status_sync <= S_cam_status_meta;
-            S_cam_fail_meta <= S_cam_fail_index;
-            S_cam_fail_sync <= S_cam_fail_meta;
-        end
-    end
-    assign S_hdmi_debug_status = S_cam_status_sync;
+    camera_diag_cdc #(.WIDTH(12)) u_camera_diag_cdc (
+        .I_src_clk(S_24m_clk),
+        .I_dst_clk(S_hdmi_pixel_clk),
+        .I_rst_n(S_pll_lock),
+        .I_src_data({S_cam_status, S_cam_fail_index}),
+        .O_dst_data(S_cam_diag_sync)
+    );
+    assign S_hdmi_debug_status = S_cam_diag_sync[11:8];
+    assign S_cam_fail_sync = S_cam_diag_sync[7:0];
 	
 	// SC520CS上电后先保持PWDNB/XSHUTDN为低，再释放并等待内部上电完成，
 	// 避免PLL刚锁定就开始I2C初始化而造成寄存器偶发写入失败。

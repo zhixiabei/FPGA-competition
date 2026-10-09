@@ -26,7 +26,7 @@ ModelSim 覆盖参数应写为 `-g/tb_scharr_edge_detect_96/GAUSSIAN_ENABLE=0`�
 
 ## 目标框与 DDR 帧对齐
 
-`tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。测试台以 `force` 提供 ISP 结果、图像标志和异步时钟，因此不覆盖 ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。
+`tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。新增 14 项检查核对摄像头 4 位状态和 8 位错误码经诊断 CDC 后到达实际 mixer 输入。测试台以 `force` 提供 ISP 结果、诊断源值、图像标志和异步时钟，因此不覆盖摄像头 I2C/ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。
 
 在 PowerShell 运行以下命令；产物只写到系统临时目录，不需要安装厂商 IP 仿真库：
 
@@ -38,6 +38,7 @@ New-Item -ItemType Directory -Path $simWork | Out-Null
 Push-Location $simWork
 & "$simBin/xvlog.bat" -sv -d TARGET_ALIGNMENT_STUBS `
   "$simRoot/user_source/hdl_source/design_top_wrapper.v" `
+  "$simRoot/user_source/hdl_source/camera_diag_cdc.v" `
   "$simRoot/user_source/hdl_source/video_in.v" `
   "$simRoot/user_source/hdl_source/video_out.v" `
   "$simRoot/user_source/hdl_source/hdmi_mixer.v" `
@@ -51,6 +52,27 @@ Write-Output $simWork
 ```
 
 每一步都应无 ERROR，最终成功标志为 `TARGET_FRAME_ALIGNMENT_PASS`。`TARGET_ALIGNMENT_STUBS` 只启用测试台末尾的空外围模块；只编译上面列出的文件，不可同时编译同名真实外围/IP 模块。空模块使用统一宽度的输入端口，宽度不匹配警告属于测试边界声明，不代表生产 RTL 接线。测试台没有加入 TD 工程。
+
+## 摄像头诊断状态跨时钟
+
+`tb_camera_diag_cdc.sv` 检查 12 位诊断快照的请求/确认握手，
+覆盖所有 4096 种值、发送端更快、快速变化合并、两端时钟暂停和传输中复位。
+独立队列记录每次发送值，逐次核对接收值，并检查数据在确认前保持稳定。
+RTL 仿真不模拟亚稳态；同步级结构、约束匹配和实际路径延迟需结合 TD 报告检查。
+
+使用上面的 `$simRoot`、`$simBin` 设置，在新的 TEMP 目录执行：
+
+```powershell
+$diagWork = Join-Path $env:TEMP ('anlogic_camera_diag_' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $diagWork | Out-Null
+Push-Location $diagWork
+& "$simBin/xvlog.bat" -sv "$simRoot/user_source/hdl_source/camera_diag_cdc.v" "$simRoot/sim/tb_camera_diag_cdc.sv"
+& "$simBin/xelab.bat" -timescale 1ns/1ps -debug typical work.tb_camera_diag_cdc -s camera_diag_cdc_sim
+& "$simBin/xsim.bat" camera_diag_cdc_sim -runall
+Pop-Location
+```
+
+成功标志为 `PASS tb_camera_diag_cdc`。测试台不加入 TD 工程。
 
 旧 `tb_color_edge_detect_96.sv` 保留为历史参考，需匹配旧彩色边缘选择器，
 不能直接与当前 Scharr 选择器混用；当前运行入口不编译该测试台。

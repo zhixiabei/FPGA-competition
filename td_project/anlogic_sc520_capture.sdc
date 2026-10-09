@@ -12,6 +12,12 @@ rename_clock -name {HDMI_SERIAL_CLK} [get_clocks {u_video/u_PLL/ph1p_phy_pll_wra
 
 rename_clock -name {MIPI_RX_BYTE_CLK} [get_clocks {u_video/u_mipi_dphy_rx_ph1p_mipiio_wrapper/u_ph1p_mipiio_rx_wrapper/u_PH1P_LOGIC_DPHY_MIPI_RX.o_fabric_div4_8_clk}]
 
+# Keep diagnostic toggle exceptions limited to the first synchronizer.
+set_false_path -from [get_regs {u_video/u_camera_diag_cdc/req_toggle}] -to [get_regs {u_video/u_camera_diag_cdc/req_meta}]
+set_false_path -from [get_regs {u_video/u_camera_diag_cdc/ack_toggle}] -to [get_regs {u_video/u_camera_diag_cdc/ack_meta}]
+# The stable snapshot is still constrained, independently of clock phase.
+set_max_delay -datapath_only -from [get_regs {u_video/u_camera_diag_cdc/payload_hold[*]}] -to [get_regs {u_video/u_camera_diag_cdc/O_dst_data[*]}] 13.000
+
 
 set_clock_groups -asynchronous \
     -group [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] \

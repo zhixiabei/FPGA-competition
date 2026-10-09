@@ -319,8 +319,17 @@
                     <Attr Name="CompileOrder" Val="59"/>
                 </FileInfo>
             </File>
+            <File Path="../user_source/hdl_source/camera_diag_cdc.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="60"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/isp/color_edge_detect_96.v">
                 <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>

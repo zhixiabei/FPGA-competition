@@ -24,6 +24,8 @@ module tb_target_frame_alignment;
     reg hdmi_user = 0, hdmi_last = 0;
     reg camera_error = 0, camera_pause = 0;
     reg edge_mode = 0;
+    reg [3:0] diagnostic_status = 0;
+    reg [7:0] diagnostic_fail = 0;
 
     integer ref_frame [0:3];
     bit ref_valid [0:3];
@@ -32,6 +34,7 @@ module tb_target_frame_alignment;
     integer active_frame = -1;
     integer write_events = 0, read_events = 0, display_checks = 0;
     integer result_checks = 0, invalidate_checks = 0;
+    integer diagnostic_checks = 0;
     integer actual_write_slot = -1, actual_read_slot = -1;
     integer request_count = 0;
     reg request_seen = 0;
@@ -282,6 +285,30 @@ module tb_target_frame_alignment;
         end
     endtask
 
+    task automatic diagnostic_send(input [3:0] status, input [7:0] fail_index);
+        integer cycles;
+        begin
+            @(negedge csi_clk);
+            #0.173;
+            diagnostic_status = status;
+            diagnostic_fail = fail_index;
+            cycles = 0;
+            while (dut.S_hdmi_debug_status !== status ||
+                   dut.S_cam_fail_sync !== fail_index) begin
+                @(negedge hdmi_clk);
+                cycles = cycles + 1;
+                if (cycles > 50)
+                    $fatal(1, "Diagnostic CDC failed: got %h/%h expected %h/%h",
+                        dut.S_hdmi_debug_status, dut.S_cam_fail_sync,
+                        status, fail_index);
+            end
+            if (dut.u_hdmi_mixer.I_debug_status !== status ||
+                dut.u_hdmi_mixer.I_cam_fail_index !== fail_index)
+                $fatal(1, "Mixer diagnostic inputs disagree with CDC outputs");
+            diagnostic_checks = diagnostic_checks + 1;
+        end
+    endtask
+
     initial begin
         // The force points intentionally exclude slot pointers, mailbox,
         // table validity, synchronizers, addresses and mixer geometry.
@@ -290,6 +317,8 @@ module tb_target_frame_alignment;
         force dut.S_hdmi_serial_clk = hdmi_clk;
         force dut.S_ddr_clk = ddr_clk;
         force dut.S_24m_clk = csi_clk;
+        force dut.S_cam_status = diagnostic_status;
+        force dut.S_cam_fail_index = diagnostic_fail;
         force dut.S_100m_clk = ddr_clk;
         force dut.S_pll_lock = rst_n;
         force dut.S_ISP_O_tuser = camera_user;
@@ -357,12 +386,19 @@ module tb_target_frame_alignment;
             repeat (13) @(negedge csi_clk);
         end
         mailbox_idle();
+        for (integer bit_index = 0; bit_index < 4; bit_index = bit_index+1) begin
+            diagnostic_send(4'b0001 << bit_index, 8'h03);
+            diagnostic_send(4'b0001 << bit_index, 8'hA5);
+            diagnostic_send(4'b0001 << bit_index, 8'hFF);
+        end
+        diagnostic_send(4'hF, 8'h00);
+        diagnostic_send(4'h0, 8'h00);
         if (write_events < 30 || display_checks < 30 ||
             result_checks < 28 || invalidate_checks < 29)
             $fatal(1, "Coverage counters did not reach required scenarios");
-        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d",
+        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d",
             write_events, read_events, display_checks, result_checks,
-            invalidate_checks, request_count);
+            invalidate_checks, request_count, diagnostic_checks);
         $finish;
     end
 
