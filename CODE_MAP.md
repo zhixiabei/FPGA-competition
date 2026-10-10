@@ -16,6 +16,7 @@
 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 帧对应及坐标跨时钟传输 | `S_target_mailbox` 请求/确认 → `S_target_slots` 四槽表 → 当前读槽结果 |
 | [camera_diag_cdc.v](user_source/hdl_source/camera_diag_cdc.v) | 摄像头 4 位配置状态及 8 位错误码的整组跨时钟传输 | `payload_hold` → 请求两级同步 → HDMI 接收 → 确认两级同步；由顶层 `u_camera_diag_cdc` 实例化 |
 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 叠加前端框、十字和坐标 | `I_target_*` → `S_display_frame_start` → 框/十字/文字 |
+| [anlogic_logo_rom.v](user_source/hdl_source/anlogic_logo_rom.v) | 精确保留原 Logo 颜色和透明度，用 ERAM 保存索引及调色板 | `index_addr_d` → `index_rom` → `palette_rom`；两拍读取，由 mixer 提前提供输入坐标 |
 | [video_in.v](user_source/hdl_source/video_in.v) / [video_out.v](user_source/hdl_source/video_out.v) | 提供当前图像的 DDR 槽标记 | `O_write_frame_slot` / `O_read_frame_slot`；原地址与 FIFO 控制不变 |
 
 检测在 **AWB 后、彩色/边缘切换前**，因此边缘模式仍能识别红色物体。
@@ -53,7 +54,7 @@ flowchart TD
 - **RAW/Bayer**：摄像头给出的原始感光数据，每个采样位置只对应一种颜色。demosaic 利用周围采样点重建 RGB。
 - **ISP**：图像处理流水线的统称。本工程中包含彩色重建、白平衡、边缘检测和数据格式转换。
 - **DDR**：存放图像帧，配合读写逻辑连接采集与显示的不同节拍。
-- **OSD**：在原画面上叠加文字、数字、Logo。
+- **OSD**：在原画面上叠加文字、数字、Logo。当前 Logo 使用两拍 ERAM 查表；mixer 从输入坐标提前寻址，最终 HDMI、视频数据及框的延迟保持原来的三拍。
 - **IP**：工具或厂家提供的模块。一个 PLL、FIFO 或 DDR IP 可能需要配置文件、封装和多个下层源码，所以会占很多文件。
 
 ## 2. 最先读的五个文件
@@ -135,6 +136,14 @@ rgb_edge_switch_96 #(
 TD 参数在 isp_top 实例中，独立仿真参数在 tb_scharr_edge_detect_96 的 TH 中。
 比较前不截断梯度；阈值扩大 16 倍后比较。不要照搬旧 Sobel 或旧色差算法阈值。
 本轮仿真及资源结果见 README。旧彩色色差报告不能代替 Scharr 的验证。
+
+Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
+`palette_rom[0]` 为透明，其他索引保存原始 25 位像素（有效位及 RGB）。
+输入仍是原图线性地址 `y*160+x`，裁剪范围外返回透明。
+改图案时要同时更新索引、调色板和裁剪范围，不能只改一个 RGB 常量。
+两份 TD 工程仍直接登记同一个 ROM 文件，不依赖外部 `.mem` 文件。
+`F_scale24_to16` 是原字号 `floor(16*x/24)` 的精确映射，
+数字横向和冒号横向分别直接取坐标及左移一位；不改变字体的有效像素。
 
 同理，hdmi_mixer 模块默认 H_OFFSET/V_OFFSET=128/60，但顶层实例传入的是 0/0；而当前 `O_video_rd_en = I_video_de`，不能仅凭参数名称认定它实现了画面平移。移动当前 Logo/文字，请从上述 LOGO_*、DYN_OSD_* 入手。
 

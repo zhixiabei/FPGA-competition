@@ -24,6 +24,36 @@ ModelSim 覆盖参数应写为 `-g/tb_scharr_edge_detect_96/GAUSSIAN_ENABLE=0`�
 生产工程不定义该宏，行窗口和彩色延迟直接使用安路 ERAM。
 资源与最终时序结论见工程 README。
 
+## OSD 资源优化的输出等价验证
+
+`tb_hdmi_mixer_equivalence.sv` 同时运行旧版和候选版 mixer，
+逐拍比较读使能、DE、HS、VS 和 RGB，包括消隐及复位。
+覆盖六种配置、四个完整 1280×720 帧、16 种诊断状态、
+256 个错误码、帧计数多种数字与回卷、12 组目标坐标场景。
+字库另核对全部 4096 个字符/行组合，Logo 核对全部 32768 个地址。
+测试台不参与 TD 综合。
+
+参考必须是优化前独立保存的 `hdmi_mixer.v`、`anlogic_logo_rom.v`
+和 `osd_char_lib.v`，不能把候选自己作为参考。运行入口：
+
+```powershell
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_hdmi_mixer_equivalence.ps1' `
+  -BaselineDir 'C:/Users/1/AppData/Local/Temp/anlogic_mixer_baseline_20261010_144803'
+```
+
+入口把参考和候选冻结到独立 TEMP 目录，只在参考副本中改模块名字。
+成功标志为 `HDMI_MIXER_EQUIVALENCE_PASS`。
+本轮通过 5,493,339 个有效输入像素、1,042,020 个消隐检查周期；
+复位中按原行为取消两拍未输出像素。
+已通过全套测试的 mixer 与最终生产 mixer 文件完全相同。
+最终 Logo 只把第一拍从保存索引改为保存地址以适配 TD 的 ERAM 推断；
+它与全套测试版本另经全部 32768 地址、4096 次随机跳转和裁剪范围外地址
+逐拍对照，共 36,868 拍通过。两版本像素表相同。
+最终整机网表的 10 个 Logo ERAM 初始化另经逐地址解码核对，
+全部索引和调色板数据与最终 RTL 相同，重建 32768 个像素与原版一致。
+最终整机布局布线在现有约束下通过，建立/保持余量为 +0.564/+0.020 ns；
+资源、约束审计范围及 TEMP 报告位置见工程 README，实物显示仍需上板验证。
+
 ## 目标框与 DDR 帧对齐
 
 `tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。新增 14 项检查核对摄像头 4 位状态和 8 位错误码经诊断 CDC 后到达实际 mixer 输入。测试台以 `force` 提供 ISP 结果、诊断源值、图像标志和异步时钟，因此不覆盖摄像头 I2C/ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。

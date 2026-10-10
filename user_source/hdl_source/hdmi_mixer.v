@@ -73,7 +73,11 @@ module hdmi_mixer #(
     reg [3:0]  S_logo_red_band;
     reg [11:0] S_logo_red_x_start;
     reg [11:0] S_logo_red_x_end;
-    reg [14:0] S_logo_addr;
+    wire [11:0] S_logo_input_x = I_video_user ? 12'd0 : S_x;
+    wire [11:0] S_logo_input_y = I_video_user ? 12'd0 : S_y;
+    // The index and palette ROMs each take one clock. Read from the input
+    // coordinates so their result still matches S_x_2d/S_y_2d.
+    wire [14:0] S_logo_addr;
     wire[24:0] S_logo_pixel;
     reg [31:0] S_frame_cnt;
     reg [11:0] S_dyn_x;
@@ -113,8 +117,6 @@ module hdmi_mixer #(
     reg [3:0]  S_pf_row;
     wire [15:0] S_pf_row_bits;
     reg        S_pf_on;
-    reg [9:0]  S_pf_scale_x;
-    reg [9:0]  S_pf_scale_y;
 
     localparam LOGO_X = 12'd0;
     localparam LOGO_Y = 12'd0;
@@ -641,7 +643,42 @@ module hdmi_mixer #(
 
     assign O_video_rd_en = I_video_de;
 
+    assign S_logo_addr =
+        (I_video_de &&
+         (S_logo_input_x >= LOGO_X) && (S_logo_input_x < LOGO_X + LOGO_W) &&
+         (S_logo_input_y >= LOGO_Y) && (S_logo_input_y < LOGO_Y + LOGO_H)) ?
+        (S_logo_input_y - LOGO_Y) * LOGO_W + (S_logo_input_x - LOGO_X) :
+        15'd0;
+
+    // Exact 24-to-16 glyph scaling: floor(16*x/24), for x in 0..23.
+    // A small coordinate map avoids wide constant dividers in the pixel path.
+    function [3:0] F_scale24_to16;
+        input [4:0] coordinate;
+        begin
+            case (coordinate)
+                5'd0, 5'd1:   F_scale24_to16 = 4'd0;
+                5'd2:         F_scale24_to16 = 4'd1;
+                5'd3, 5'd4:   F_scale24_to16 = 4'd2;
+                5'd5:         F_scale24_to16 = 4'd3;
+                5'd6, 5'd7:   F_scale24_to16 = 4'd4;
+                5'd8:         F_scale24_to16 = 4'd5;
+                5'd9, 5'd10:  F_scale24_to16 = 4'd6;
+                5'd11:        F_scale24_to16 = 4'd7;
+                5'd12, 5'd13: F_scale24_to16 = 4'd8;
+                5'd14:        F_scale24_to16 = 4'd9;
+                5'd15, 5'd16: F_scale24_to16 = 4'd10;
+                5'd17:        F_scale24_to16 = 4'd11;
+                5'd18, 5'd19: F_scale24_to16 = 4'd12;
+                5'd20:        F_scale24_to16 = 4'd13;
+                5'd21, 5'd22: F_scale24_to16 = 4'd14;
+                5'd23:        F_scale24_to16 = 4'd15;
+                default:      F_scale24_to16 = 4'd0;
+            endcase
+        end
+    endfunction
+
     anlogic_logo_rom u_anlogic_logo_rom(
+        .I_clk   ( I_clk        ),
         .I_addr  ( S_logo_addr  ),
         .O_pixel ( S_logo_pixel )
     );
@@ -725,20 +762,12 @@ module hdmi_mixer #(
             S_x_2d <= 12'd0;
             S_y_1d <= 12'd0;
             S_y_2d <= 12'd0;
-            S_logo_addr <= 15'd0;
         end
         else begin
             S_x_1d <= I_video_user ? 12'd0 : S_x;
             S_x_2d <= S_x_1d;
             S_y_1d <= I_video_user ? 12'd0 : S_y;
             S_y_2d <= S_y_1d;
-            // Compute one stage early; this address matches the new _2d pixel.
-            if(S_video_de_1d &&
-               (S_x_1d >= LOGO_X) && (S_x_1d < LOGO_X + LOGO_W) &&
-               (S_y_1d >= LOGO_Y) && (S_y_1d < LOGO_Y + LOGO_H))
-                S_logo_addr <= (S_y_1d - LOGO_Y) * LOGO_W + (S_x_1d - LOGO_X);
-            else
-                S_logo_addr <= 15'd0;
         end
     end
 
@@ -789,8 +818,6 @@ module hdmi_mixer #(
         S_pf_col = 4'd0;
         S_pf_row = 4'd0;
         S_pf_on = 1'b0;
-        S_pf_scale_x = 10'd0;
-        S_pf_scale_y = 10'd0;
 
         if(S_video_de_2d) begin
             if((S_x_2d >= LOGO_X) && (S_x_2d < (LOGO_X + LOGO_W)) &&
@@ -828,10 +855,8 @@ module hdmi_mixer #(
                         end
 
                         if((S_pf_local_x < 5'd24) && (S_pf_local_y < 5'd24)) begin
-                            S_pf_scale_x = S_pf_local_x * 10'd16;
-                            S_pf_scale_y = S_pf_local_y * 10'd16;
-                            S_pf_col = S_pf_scale_x / 10'd24;
-                            S_pf_row = S_pf_scale_y / 10'd24;
+                            S_pf_col = F_scale24_to16(S_pf_local_x);
+                            S_pf_row = F_scale24_to16(S_pf_local_y);
                             case(S_pf_col)
                                 4'd0:  S_pf_on = S_pf_row_bits[15];
                                 4'd1:  S_pf_on = S_pf_row_bits[14];
@@ -893,8 +918,7 @@ module hdmi_mixer #(
                         S_pf_char = CHAR_COLON;
                         S_pf_local_x = S_dyn_x - 12'd100;
                         S_pf_local_y = S_dyn_y - 12'd4;
-                        S_pf_scale_x = S_pf_local_x * 10'd16;
-                        S_pf_col = S_pf_scale_x / 10'd8;
+                        S_pf_col = {S_pf_local_x[2:0], 1'b0};
                         S_pf_row = S_pf_local_y[3:0];
                         case(S_pf_col)
                             4'd0:  S_pf_on = S_pf_row_bits[15];
@@ -960,10 +984,9 @@ module hdmi_mixer #(
                         S_pf_char = CHAR_0 + {4'd0, S_dyn_dec_digit};
                         S_pf_local_x = S_dyn_digit_x[4:0];
                         S_pf_local_y = S_dyn_y[4:0];
-                        S_pf_scale_x = S_pf_local_x * 10'd16;
-                        S_pf_scale_y = S_pf_local_y * 10'd16;
-                        S_pf_col = S_pf_scale_x / 10'd15;
-                        S_pf_row = S_pf_scale_y / 10'd24;
+                        // floor(16*x/15) equals x throughout the 0..14 box.
+                        S_pf_col = S_pf_local_x[3:0];
+                        S_pf_row = F_scale24_to16(S_pf_local_y);
                         case(S_pf_col)
                             4'd0:  S_pf_on = S_pf_row_bits[15];
                             4'd1:  S_pf_on = S_pf_row_bits[14];
