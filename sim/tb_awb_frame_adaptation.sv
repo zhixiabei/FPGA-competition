@@ -3,6 +3,7 @@
 // The small frame has 65 beats, so its final beat is also a sample point.
 module tb_awb_frame_adaptation;
     localparam integer WIDTH = 20, HEIGHT = 13, BEATS = 65;
+    localparam integer VIDEO_LATENCY = 54;
     reg clk = 0;
     always #5 clk = ~clk;
     reg rst_n = 0;
@@ -34,11 +35,12 @@ module tb_awb_frame_adaptation;
     bit expected_pending = 0;
     integer frames = 0, pixel_checks = 0, large_beats = 0;
     integer pending_checks = 0, hold_checks = 0, resets = 0;
-    reg ref_v1 = 0, ref_v2 = 0, large_ref_v1 = 0, large_ref_v2 = 0;
-    reg [95:0] ref_d1 = 0, ref_d2 = 0;
-    reg [95:0] large_ref_d1 = 0, large_ref_d2 = 0;
+    reg [VIDEO_LATENCY-1:0] ref_valid = 0, large_ref_valid = 0;
+    reg [95:0] ref_data [0:VIDEO_LATENCY-1];
+    reg [95:0] large_ref_data [0:VIDEO_LATENCY-1];
     reg [10:0] previous_gain_r = 256, previous_gain_b = 256;
     reg sampled_user;
+    integer reference_stage;
 
     function automatic integer smooth(input integer current, input integer target);
         smooth = target >= current ?
@@ -66,28 +68,34 @@ module tb_awb_frame_adaptation;
     always @(posedge clk) begin
         sampled_user = user;
         if (!rst_n) begin
-            ref_v1 = 0; ref_v2 = 0; ref_d1 = 0; ref_d2 = 0;
-            large_ref_v1 = 0; large_ref_v2 = 0;
-            large_ref_d1 = 0; large_ref_d2 = 0;
+            ref_valid = 0; large_ref_valid = 0;
+            for (reference_stage=0; reference_stage<VIDEO_LATENCY;
+                 reference_stage=reference_stage+1) begin
+                ref_data[reference_stage] = 0;
+                large_ref_data[reference_stage] = 0;
+            end
             previous_gain_r = 256; previous_gain_b = 256;
         end else begin
-            ref_v2 = ref_v1;
-            ref_v1 = valid;
-            ref_d2 = ref_d1;
-            ref_d1 = corrected(data, expected_r, expected_b);
-            large_ref_v2 = large_ref_v1;
-            large_ref_v1 = large_valid;
-            large_ref_d2 = large_ref_d1;
-            large_ref_d1 = large_data; // First 720p frame uses unity gain.
+            ref_valid = {ref_valid[VIDEO_LATENCY-2:0], valid};
+            large_ref_valid = {large_ref_valid[VIDEO_LATENCY-2:0], large_valid};
+            for (reference_stage=VIDEO_LATENCY-1; reference_stage>0;
+                 reference_stage=reference_stage-1) begin
+                ref_data[reference_stage] = ref_data[reference_stage-1];
+                large_ref_data[reference_stage] = large_ref_data[reference_stage-1];
+            end
+            ref_data[0] = corrected(data, expected_r, expected_b);
+            large_ref_data[0] = large_data; // First 720p frame uses unity gain.
         end
         #1;
-        if (out_valid !== ref_v2 || out_user !== user ||
-            out_last !== (ref_v2 && !ref_v1) || in_ready !== ready)
+        if (out_valid !== ref_valid[VIDEO_LATENCY-1] || out_user !== user ||
+            out_last !== (ref_valid[VIDEO_LATENCY-1] &&
+                          !ref_valid[VIDEO_LATENCY-2]) || in_ready !== ready)
             $fatal(1, "AWB stream markers/latency mismatch at %0t", $time);
-        if (out_data !== (ref_v2 ? ref_d2 : 96'd0))
+        if (out_data !== (ref_valid[VIDEO_LATENCY-1] ?
+                         ref_data[VIDEO_LATENCY-1] : 96'd0))
             $fatal(1, "AWB pixel mismatch at %0t got=%h expected=%h gains=%0d,%0d",
-                   $time, out_data, ref_d2, expected_r, expected_b);
-        if (ref_v2) pixel_checks = pixel_checks + 4;
+                   $time, out_data, ref_data[VIDEO_LATENCY-1], expected_r, expected_b);
+        if (ref_valid[VIDEO_LATENCY-1]) pixel_checks = pixel_checks + 4;
         if (rst_n) begin
             if (!sampled_user &&
                 (dut.gain_r_q8 !== previous_gain_r ||
@@ -99,12 +107,15 @@ module tb_awb_frame_adaptation;
             previous_gain_r = dut.gain_r_q8;
             previous_gain_b = dut.gain_b_q8;
         end
-        if (large_out_valid !== large_ref_v2 || large_out_user !== large_user ||
-            large_out_last !== (large_ref_v2 && !large_ref_v1))
+        if (large_out_valid !== large_ref_valid[VIDEO_LATENCY-1] ||
+            large_out_user !== large_user ||
+            large_out_last !== (large_ref_valid[VIDEO_LATENCY-1] &&
+                               !large_ref_valid[VIDEO_LATENCY-2]))
             $fatal(1, "720p stream marker mismatch");
-        if (large_out_data !== (large_ref_v2 ? large_ref_d2 : 96'd0))
+        if (large_out_data !== (large_ref_valid[VIDEO_LATENCY-1] ?
+                               large_ref_data[VIDEO_LATENCY-1] : 96'd0))
             $fatal(1, "720p data mismatch");
-        if (large_ref_v2) large_beats = large_beats+1;
+        if (large_ref_valid[VIDEO_LATENCY-1]) large_beats = large_beats+1;
     end
 
     task automatic tick(
@@ -237,8 +248,9 @@ module tb_awb_frame_adaptation;
         end
         idle(90);
 
-        // No blank cycles between frames. The shared divider may still be
-        // busy, but gains cannot change halfway through any frame.
+        // The AWB arithmetic and delayed pixels also survive adjacent input
+        // frames. The complete camera/DDR path requires vertical blanking
+        // because its SOF is an early reset token, not a delayed pixel tag.
         reset_all();
         for (f=0; f<4; f=f+1) begin
             if (f==3) begin

@@ -1,4 +1,7 @@
-param([string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin')
+param(
+    [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
+    [string] $TdSimLib = 'D:\TD\sim_release\ph1p'
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -23,6 +26,18 @@ foreach($relative in $sources) {
 }
 $testbench=Join-Path $simulationDir 'tb_isp_lighting_integration.sv'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tb_isp_lighting_integration.sv') -Destination $testbench
+# Compile the vendor's unchanged, plaintext functional DRAM module.
+$primitiveText = [System.IO.File]::ReadAllText((Join-Path $TdSimLib 'ph1p_logic_dram.v'))
+$primitiveModule = [regex]::Match($primitiveText, '(?s)\A.*?\bendmodule\b')
+if (-not $primitiveModule.Success -or
+    -not $primitiveModule.Value.Contains('module PH1P_LOGIC_DRAM')) {
+    throw 'TD distributed RAM functional model was not found'
+}
+$primitiveSource = Join-Path $simulationDir 'ph1p_logic_dram.v'
+[System.IO.File]::WriteAllText($primitiveSource,
+    $primitiveModule.Value + [Environment]::NewLine,
+    [System.Text.UTF8Encoding]::new($false))
+$compiledSources += $primitiveSource
 Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir
 try {

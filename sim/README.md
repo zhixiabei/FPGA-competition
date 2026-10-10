@@ -1,5 +1,47 @@
 # 无板仿真：先验证边缘检测模块
 
+## 2026-10-10 真实视频 FIFO 与右侧接缝回归
+
+```powershell
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_video_fifo_frame_integrity.ps1'
+```
+
+此入口使用 ModelSim 和 TD 厂商功能模型；所有日志、库、导出图像字和像素参考写入
+打印出的 TEMP 目录。`tb_video_fifo_frame_integrity.sv` 内包含写入和读出两个测试顶层：
+
+- 写入测试使用生产 AWB、厂商 DRAM/ERAM、彩色/Scharr 选择器、注册式 96→128 打包、
+  `video_in`、实际 `w128_d512_fifo` 及其原 RAM 源码。输入为像素编号编码的 RGB，
+  彩色逐像素先核对输入坐标；Scharr 输出在打包前另存像素参考，再逐字节比较 DDR 写入。
+- 103.52 MHz 摄像头域、66.667 MHz DDR 域；四种 DDR 相位分别运行 1280×32 彩色和边缘帧，
+  完整 1280×720 两帧导出实际 DDR 写入内容。每行 320 组连续有效、约 1725 个摄像头
+  时钟周期，帧间空白允许延迟像素排空；DDR ready 有间歇停顿。
+- 读出测试将上一步实际写入的 128 位字交给生产 `video_out` 及原 FIFO，
+  以约 75.002 MHz 扫描，模拟 40 个 DDR 时钟的返回延迟与 240 字突发。
+  彩色、边缘各核对 921,600 个像素，每幅逐行左右 16 像素额外计 23,040 次检查；
+  双槽压力场景核对 1,843,200 个像素，检查空读、满写及突发长度。
+
+成功必须同时出现写入 `FIFO_FRAME_INTEGRITY_PASS` 和读出 `FIFO_FRAME_READER_PASS`，
+像素不一致、FIFO 溢出/空读、帧首复位与数据重叠均失败。
+最终验证共比较写入 6,512,640 字节、读回 3,686,400 像素，其中逐行左右
+边界 92,160 像素；像素错误、空读、满写及突发长度错误均为 0。
+日志目录为 `anlogic_video_fifo_integrity_15e7940d43f441f3b8388847af74bd0f/`：
+`console.log` 包含五个写入场景，`reader_exact_console.log` 包含修正为实际
+1650 拍行周期后的三个读回场景。这次补跑只调整读回消隐计数，写入测试模块未变。
+最终编译的测试台与当前源码哈希一致；入口脚本已采用相同读回时序。
+本测试不模拟 MIPI/RAW 去马赛克、传感器 I²C、DDR 控制器/电气或 HDMI PHY。
+Scharr 算法的独立图像域正确性仍由下方专用测试覆盖，这里检查它的输出经缓存后未错位。
+
+修复前的 TEMP 负例使用原 `video_in`/FIFO，按真实打包器 3/4 节拍写入：
+SOF 到第一写入仅 3 个摄像头时钟时，四种 DDR 相位的首个保留字均为源 word9，
+即丢失 9×16 字节、48 个完整 RGB 像素；恢复原提前量 55 拍时首字均为 word0。
+复现日志为 `anlogic_video_in_prefix_eaa693de995443009bf279eb3845a8b0/console_real_pattern.log`。
+另从最终 AWB 副本只移除新增延迟，以工程登记的打包器和真实厂商 RAM/FIFO
+重跑完整模块连接；四种相位的 DDR 首像素均为源像素 48、应为 0。
+该反向验证为 `anlogic_video_fifo_unguarded_3844b9f46bdc4ccfaff37859536a3cdc/console.log`，
+未改动生产文件。
+修复在 AWB 增加 52 拍分布式 RAM 延迟，总像素延迟恢复 54 拍；
+没有通过修改红色门限、裁剪侧边或框坐标来隐藏问题。
+
 ## 2026-10-10 光照适应回归
 
 新增四个 PowerShell 入口均使用 XSim 2021.1，把日志、展开文件和波形写入打印出的
@@ -18,7 +60,7 @@ TEMP 目录，不加入 TD 综合工程：
 | 入口 | 实际验证内容 | 成功标志 |
 |---|---|---|
 | `run_auto_exposure.ps1` | 4 个测试台：完整帧亮度统计、控制器闭环/写握手、64 位异步邮箱、统计→CDC→AE→原增益/曝光表的反馈集成 | `AUTO_EXPOSURE_CONTROL_PASS`、`AE_FRAME_STATS_PASS`、`AE_STATS_CDC_PASS`、`AE_LIGHTING_LOOP_PASS` |
-| `run_awb_frame_adaptation.ps1` | 按帧计算与提交红/蓝增益、近中性样本选择、平滑/限幅、整帧增益固定、四像素输出和两拍数据延迟、无空拍帧及完整 720p | `AWB_FRAME_ADAPTATION_PASS` |
+| `run_awb_frame_adaptation.ps1` | 按帧计算与提交红/蓝增益、近中性样本选择、平滑/限幅、整帧增益固定、四像素输出和 54 拍总延迟、相邻输入帧的 AWB 算术及完整 720p；延迟缓存使用厂商 DRAM 功能模型 | `AWB_FRAME_ADAPTATION_PASS` |
 | `run_red_target_lighting.ps1` | 独立逐像素 RGB 判定及 3×3 多数滤波参考，暗红、强粉红、非红颜色、门限边界、valid 空拍、截断/连续帧、目标框和像素计数 | `RED_TARGET_LIGHTING_PASS` |
 | `run_isp_lighting_integration.ps1` | 真实 `isp_top` 内预 AWB AE 统计、AWB、彩色/Scharr 切换、红色检测和 96→128 打包，在三个完整 720p 场景中检查帧标志、像素/字节总数及目标结果 | `ISP_LIGHTING_INTEGRATION_PASS` |
 
@@ -78,17 +120,21 @@ AE_LEGACY_MIXED_REPRO_PASS fraction=6/40 source_illumination=1000 background_ill
 当前源码的 AWB 与 ISP 回归结果：
 
 ```text
-AWB_FRAME_ADAPTATION_PASS frames=102 pixels=26944 full720p_beats=230400 candidates=91 holds=8 resets=4
+AWB_FRAME_ADAPTATION_PASS frames=102 pixels=26868 full720p_beats=230400 candidates=91 holds=8 resets=4
 ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=691200 edge_groups=691200 packed_words=518400 bytes=8294400 ae=3 targets=3 edge_white=556
 ```
 
 本次 ISP 回归重新核对仅累加非高光的统计语义；最新 TEMP 为
-`anlogic_isp_lighting_7f4daef93b7349ba928cf2e176540998/`。
+`anlogic_isp_lighting_495d2056dbe445cdae4e854ac503f2ba/`。
+AWB 54 拍回归位于 `anlogic_awb_frame_2781817f774c45a09be6527c41f6fe11/`；
+测试中的复位会主动取消尚未输出的延迟像素，因此检查像素数与旧两拍版不同。
 AWB 与 ISP 集成测试不模拟 MIPI/RAW 到 RGB 的真实去马赛克过程。
 ISP 测试只在去马赛克后的 RGB 边界提供输入，外围 demosaic 使用测试 stub，
-Scharr RAM 使用 `SCHARR_PORTABLE_RAM` 行为模型；
-它验证当前 AWB 两拍像素/valid 延迟的接口和后续真实模块连接，
-不代表厂商 RAM、DDR、HDMI 或整机时序已经验证。
+Scharr RAM 使用 `SCHARR_PORTABLE_RAM` 行为模型；AWB 的 52 拍缓存使用
+`D:/TD/sim_release/ph1p/ph1p_logic_dram.v` 内未修改的功能模块。
+它验证 AWB 54 拍像素/valid 延迟和后续模块连接，帧间消隐为 68 拍，
+允许旧帧排空且保留既有白平衡提交场景。
+它不单独代表 Scharr 厂商 RAM、DDR、HDMI 或整机时序已经验证。
 统计流水或增益计算修改后，必须重新运行 AWB/ISP 入口；
 最终面积和时序需以对应源码的 TD 报告为准。
 

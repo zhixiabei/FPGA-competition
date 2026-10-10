@@ -4,8 +4,11 @@
 // subsequent clocks; a pending result is committed only at the next input SOF.
 //
 // This camera pipeline uses an EARLY frame marker: retain O_tuser=I_tuser.
-// Pixel data/valid have two registered stages. O_tlast retains the original
-// last-valid-cycle convention derived from the falling edge of valid.
+// Pixel data/valid retain the original 54-clock delay: two correction stages
+// plus a 52-clock distributed-RAM delay. video_in needs this lead time to
+// finish its frame FIFO reset before the first pixel arrives. Vertical
+// blanking must let the preceding frame's delayed pixels drain before SOF.
+// O_tlast retains the last-valid-cycle convention derived from valid's fall.
 module awb #(
     parameter integer IMG_HEIGHT = 1080,
     parameter integer IMG_WIDTH = 1920,
@@ -64,7 +67,7 @@ module awb #(
     wire frame_complete = stats_valid &&
         (I_tuser ? FRAME_BEATS == 1 : beat_count == FRAME_BEATS-1);
 
-    // Statistics are pipelined independently of the two-clock video path.
+    // Statistics are pipelined independently of the delayed video path.
     // Never combine lane selection, neutral filtering, accumulation, zero
     // detection and divider launch into one MIPI-clock combinational path.
     reg [23:0] sample_rgb_d0, sample_rgb_d1, sample_rgb_d2;
@@ -327,9 +330,40 @@ module awb #(
         end
     end
 
+    // Preserve the early frame-start marker and the old pixel arrival time.
+    // A fixed delay shifts bubbles too, so row lengths and byte order stay
+    // unchanged. 64x96 distributed RAM avoids the old 2048-word frame buffer
+    // and a 4992-flip-flop pixel shift register.
+    reg [5:0] video_write_address, video_read_address;
+    reg [51:0] video_valid_delay;
+    wire [95:0] video_delayed_data;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            video_write_address <= 6'd0;
+            // 51 stored clocks behind the write pointer plus one read FF.
+            video_read_address <= 6'd13;
+            video_valid_delay <= 52'd0;
+        end else begin
+            video_write_address <= video_write_address + 1'b1;
+            video_read_address <= video_read_address + 1'b1;
+            video_valid_delay <= {video_valid_delay[50:0], valid_d2};
+        end
+    end
+    PH1P_LOGIC_DRAM #(
+        .DATA_WIDTH_W(96), .DATA_WIDTH_R(96),
+        .ADDR_WIDTH_W(6), .ADDR_WIDTH_R(6),
+        .DATA_DEPTH_W(64), .DATA_DEPTH_R(64),
+        .READREG("ENABLE"), .RESETMODE("ASYNC"),
+        .INIT_FILE("NONE"), .FILL_ALL("NONE")
+    ) u_video_start_guard (
+        .di(output_data), .waddr(video_write_address), .we(I_rst_n), .wclk(I_clk),
+        .raddr(video_read_address), .rclk(I_clk), .rrst(!I_rst_n), .rce(1'b1),
+        .rdo(), .rdoq(video_delayed_data)
+    );
+
     assign I_tready = O_tready;
     assign O_tuser = I_tuser;
-    assign O_tvalid = valid_d2;
-    assign O_tdata = valid_d2 ? output_data : 96'd0;
-    assign O_tlast = valid_d2 && !valid_d1;
+    assign O_tvalid = video_valid_delay[51];
+    assign O_tdata = O_tvalid ? video_delayed_data : 96'd0;
+    assign O_tlast = video_valid_delay[51] && !video_valid_delay[50];
 endmodule

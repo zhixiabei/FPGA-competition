@@ -5,6 +5,7 @@
 module tb_isp_lighting_integration;
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
+    localparam integer AWB_LATENCY=54;
     reg clk=0;
     always #5 clk=~clk;
     reg rst_n=0, request_edge=0;
@@ -40,11 +41,12 @@ module tb_isp_lighting_integration;
     reg [7:0] byte_queue[0:127];
     integer byte_tag[0:127];
     integer byte_write=0, byte_read=0;
-    reg reference_v1=0,reference_v2=0;
-    reg [95:0] reference_d1=0,reference_d2=0;
+    reg [AWB_LATENCY-1:0] reference_valid=0;
+    reg [95:0] reference_data[0:AWB_LATENCY-1];
     reg [95:0] sampled_edge_data;
     reg sampled_edge_valid,sampled_edge_user,sampled_edge_mode;
     integer sampled_frame,byte_index,lane;
+    integer reference_stage;
     bit previous_toggle=0;
 
     function automatic [23:0] scene(
@@ -70,7 +72,9 @@ module tb_isp_lighting_integration;
     );
         integer n,r,b,rg,bg;
         begin
-            // Frames are separated only by four line-blank clocks. Division
+            // Vertical blanking is 68 clocks, shorter than AWB division.
+            // Its early SOF still precedes all of the new frame's pixels.
+            // Division
             // from frame0 finishes during frame1, and commits at frame2 SOF.
             rg=frame_id==2 ? 249 : 256;
             bg=frame_id==2 ? 260 : 256;
@@ -91,12 +95,16 @@ module tb_isp_lighting_integration;
         sampled_edge_data=dut.edge_O_tdata;
         sampled_edge_mode=mode;
         if(!rst_n) begin
-            reference_v1=0;reference_v2=0;
-            reference_d1=0;reference_d2=0;
+            reference_valid=0;
+            for(reference_stage=0;reference_stage<AWB_LATENCY;
+                reference_stage=reference_stage+1)
+                reference_data[reference_stage]=0;
         end else begin
-            reference_v2=reference_v1;reference_v1=injected_valid;
-            reference_d2=reference_d1;
-            reference_d1=awb_reference(injected_data,source_frame);
+            reference_valid={reference_valid[AWB_LATENCY-2:0],injected_valid};
+            for(reference_stage=AWB_LATENCY-1;reference_stage>0;
+                reference_stage=reference_stage-1)
+                reference_data[reference_stage]=reference_data[reference_stage-1];
+            reference_data[0]=awb_reference(injected_data,source_frame);
             if(injected_user) begin
                 if(awb_frame>=0 && awb_count[awb_frame]!=FRAME_GROUPS)
                     $fatal(1,"AWB preceding frame lost groups");
@@ -130,8 +138,9 @@ module tb_isp_lighting_integration;
         end
         #1;
         if(rst_n) begin
-            if(dut.awb_O_tvalid!==reference_v2 ||
-                dut.awb_O_tdata!==(reference_v2?reference_d2:96'd0) ||
+            if(dut.awb_O_tvalid!==reference_valid[AWB_LATENCY-1] ||
+                dut.awb_O_tdata!==(reference_valid[AWB_LATENCY-1] ?
+                    reference_data[AWB_LATENCY-1] : 96'd0) ||
                 dut.awb_O_tuser!==injected_user)
                 $fatal(1,"Real ISP AWB stream/reference mismatch");
             if(dut.awb_O_tvalid) begin
@@ -232,6 +241,9 @@ module tb_isp_lighting_integration;
                 end
                 repeat(4) tick(0,0,0,0); // Complete pack groups at every line.
             end
+            // Allow the old frame's delayed pixels/results to drain before
+            // the next early SOF can reset downstream frame state.
+            repeat(64) tick(0,0,0,0);
         end
         repeat(100) tick(0,0,0,0);
         if(ae_results!=3 || target_results!=3 || byte_write!=byte_read ||

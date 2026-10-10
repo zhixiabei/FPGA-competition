@@ -17,7 +17,7 @@
 | [ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | 每完整 720p 帧抽取 7,200 像素，累加 AWB 前非高光亮度并计总数/高光数；异常或截断帧不发布 | `first_beat`、`sample_beat`、`pixel_bright`、`sum_next`、`O_stats_valid` |
 | [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v) | 将 64 位帧结果整组送到约 23.81 MHz 域；相同值也产生更新脉冲 | `payload_hold`、`pending_data`、`req_toggle`、`ack_toggle` |
 | [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 强光减亮、暗光增亮；等待实际 I²C 写入完成和 3 帧稳定时间 | `stats_ok`、`reduce_light`、`increase_light`、`state` |
-| [awb.v](user_source/hdl_source/awb.v) | 近中性色采样、共享顺序除法、增益按帧提交和平滑；四像素输出为两拍 | `sample_neutral_d1`、`stats_ready`、`div_state`、`pixel_gain_r` |
+| [awb.v](user_source/hdl_source/awb.v) | 近中性色采样、共享顺序除法、增益按帧提交和平滑；四像素输出保持 54 拍 | `sample_neutral_d1`、`stats_ready`、`div_state`、`pixel_gain_r`、`u_video_start_guard` |
 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 以通道比例和红色色相范围识别暗红，排除低饱和粉色；原多数滤波和框统计保留 | `gen_red`、`twice_red`、`hue_green_limit`、`votes` |
 
 AE 默认写入曝光 1000、增益 16，控制范围分别为 4..1991、16..144。
@@ -30,7 +30,9 @@ AE 默认写入曝光 1000、增益 16，控制范围分别为 4..1991、16..144
 只豁免请求/确认进入各自第一级同步寄存器的路径。
 
 AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流水除法器 IP；
-旧 AWB 延迟 RAM 也不再实例化。统计流水与像素流水相互独立，视频有效延迟为两拍。
+旧 AWB 延迟 RAM 也不再实例化。统计流水与像素流水相互独立，视频为两拍颜色运算
+加 52 拍分布式 RAM 延迟。总延迟 54 拍保留原帧首提前量，避免 `video_in`
+帧复位丢失 9 个数据字、造成画面左移 48 像素及右侧接缝。
 完整参数、测试范围和实物验证限制见 [SC520CS_TEST.md](SC520CS_TEST.md)、
 [sim/README.md](sim/README.md) 和 [README.md](README.md) 的最新章节。
 
@@ -111,7 +113,7 @@ flowchart TD
 | 像素格式转换 | [data128_96.v](user_source/hdl_source/isp/data128_96/data128_96.v) | 从四个 32 位位置取出 RGB888，并按代码规定的顺序拼成 96 位 |
 | 曝光亮度统计 | [ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | AWB 前的完整帧亮度/高光采样，独立接出统计 |
 | 曝光反馈控制 | [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v)、[auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 64 位握手跨域后更新摄像头曝光/增益 |
-| 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 近中性色采样，红/蓝增益按帧更新；四个 RGB888 像素组成的 96 位数据保持两拍输出 |
+| 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 近中性色采样，红/蓝增益按帧更新；四个 RGB888 像素组成的 96 位数据保持 54 拍输出，帧首提前透传 |
 | 边缘检测 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | 96 位 RGB 输入，亮度高斯、Scharr、NMS后输出同宽黑白边缘图 |
 | 红色目标检测 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 与边缘支路共享 AWB RGB 输入，不依赖显示模式 |
 | 模式切换 | [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘模块持续运行；将彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
