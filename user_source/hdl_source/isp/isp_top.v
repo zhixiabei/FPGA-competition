@@ -25,7 +25,11 @@ module isp_top #(
     output [11:0]   O_target_center_y,
     output [23:0]   O_target_pixels,
     output          O_target_frame_toggle,
-    output          O_edge_mode_active
+    output          O_edge_mode_active,
+    output          O_ae_stats_valid,
+    output [31:0]   O_ae_sum_y,
+    output [15:0]   O_ae_sample_count,
+    output [15:0]   O_ae_bright_count
 );
  
 wire         m_aixs_tvalid;  //synthesis keep 
@@ -109,6 +113,23 @@ data128_96 u_data128_96 (
     .O_tdata(m_aixs_tdata_96)
 );
 
+// Meter the unbalanced RGB stream. AWB must not alter exposure feedback.
+ae_frame_stats_96 #(
+    .IMG_WIDTH(1280),
+    .IMG_HEIGHT(720)
+) u_ae_frame_stats (
+    .I_clk(axi4s_video_aclk),
+    .I_rst_n(I_rst_n),
+    .I_tuser(m_aixs_tuser),
+    .I_tlast(m_aixs_tlast),
+    .I_tvalid(m_aixs_tvalid),
+    .I_tdata(m_aixs_tdata_96),
+    .O_stats_valid(O_ae_stats_valid),
+    .O_sum_y(O_ae_sum_y),
+    .O_sample_count(O_ae_sample_count),
+    .O_bright_count(O_ae_bright_count)
+);
+
 awb #(
     .IMG_HEIGHT(720),
     .IMG_WIDTH (1280)
@@ -150,8 +171,8 @@ rgb_edge_switch_96 #(
 red_target_detect_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
-    .RED_MIN(80),
-    .RED_DELTA(30),
+    .RED_MIN(24),
+    .RED_DELTA(6),
     .MIN_PIXELS(128)
 ) u_red_target_detect_96 (
     .I_clk(axi4s_video_aclk),

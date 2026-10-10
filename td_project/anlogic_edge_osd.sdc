@@ -21,8 +21,19 @@ set_false_path -from [get_regs {u_camera_diag_cdc/ack_toggle}] -to [get_regs {u_
 # stages, so 13 ns is conservatively below the guaranteed settling time.
 set_max_delay -datapath_only -from [get_regs {u_camera_diag_cdc/payload_hold[*]}] -to [get_regs {u_camera_diag_cdc/O_dst_data[*]}] 13.000
 
+# AE statistics are held until ACK; two 24 MHz request stages precede
+# capture (at least 84 ns). Bound the payload to 20 ns and only exempt
+# the direct asynchronous request/acknowledgement first stages.
+set_false_path -from [get_regs {u_ae_stats_cdc/req_toggle}] -to [get_regs {u_ae_stats_cdc/req_meta}]
+set_false_path -from [get_regs {u_ae_stats_cdc/ack_toggle}] -to [get_regs {u_ae_stats_cdc/ack_meta}]
+set_max_delay -datapath_only -from [get_regs {u_ae_stats_cdc/payload_hold[*]}] -to [get_regs {u_ae_stats_cdc/O_dst_data[*]}] 20.000
 
+# Leave pll_clk_24m out of the MIPI group exception so it cannot override
+# the AE payload bound. Its DDR crossings retain their original exception.
 set_clock_groups -asynchronous \
     -group [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] \
-    -group [get_clocks {sys_clk_50m pll_clk_100m pll_clk_24m HDMI_PIXEL_CLK HDMI_SERIAL_CLK}] \
+    -group [get_clocks {sys_clk_50m pll_clk_100m HDMI_PIXEL_CLK HDMI_SERIAL_CLK}] \
+    -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]
+set_clock_groups -asynchronous \
+    -group [get_clocks {pll_clk_24m}] \
     -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]

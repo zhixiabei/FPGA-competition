@@ -26,6 +26,9 @@ module tb_target_frame_alignment;
     reg edge_mode = 0;
     reg [3:0] diagnostic_status = 0;
     reg [7:0] diagnostic_fail = 0;
+    reg status_i2c_ready = 0, status_cfg_done = 0, status_ae_done = 1;
+    reg status_sensor_ok = 0, status_i2c_error = 0;
+    reg [15:0] status_exposure = 1000, status_gain = 16;
 
     integer ref_frame [0:3];
     bit ref_valid [0:3];
@@ -35,6 +38,7 @@ module tb_target_frame_alignment;
     integer write_events = 0, read_events = 0, display_checks = 0;
     integer result_checks = 0, invalidate_checks = 0;
     integer diagnostic_checks = 0;
+    integer actual_status_checks = 0;
     integer actual_write_slot = -1, actual_read_slot = -1;
     integer request_count = 0;
     reg request_seen = 0;
@@ -309,6 +313,96 @@ module tb_target_frame_alignment;
         end
     endtask
 
+    // Observe the production status state machine and its real diagnostic
+    // CDC after releasing the synthetic status stimulus used above. Camera
+    // configuration/write handshake inputs remain explicitly controlled.
+    task automatic check_actual_status(input [3:0] expected,
+                                       input bit expected_applied);
+        integer cycles;
+        begin
+            repeat (3) @(negedge csi_clk);
+            if (dut.S_cam_status !== expected ||
+                dut.S_cam_ae_applied !== expected_applied)
+                $fatal(1, "Actual camera status mismatch: status=%h applied=%b expected=%h/%b",
+                       dut.S_cam_status, dut.S_cam_ae_applied, expected, expected_applied);
+            cycles = 0;
+            while (dut.S_hdmi_debug_status !== expected ||
+                   dut.S_cam_fail_sync !== diagnostic_fail) begin
+                @(negedge hdmi_clk);
+                cycles = cycles+1;
+                if (cycles > 50)
+                    $fatal(1, "Actual camera status did not reach HDMI: got=%h expected=%h",
+                           dut.S_hdmi_debug_status, expected);
+            end
+            if (dut.u_hdmi_mixer.I_debug_status !== expected ||
+                dut.u_hdmi_mixer.I_cam_fail_index !== diagnostic_fail)
+                $fatal(1, "Actual camera status differs at mixer input");
+            actual_status_checks = actual_status_checks+1;
+        end
+    endtask
+
+    task automatic test_actual_status;
+        begin
+            @(negedge csi_clk);
+            force dut.S_cam_i2c_ready = status_i2c_ready;
+            force dut.S_cam_cfg_done = status_cfg_done;
+            force dut.S_ae_cfg_done = status_ae_done;
+            force dut.S_cam_sensor_id_ok = status_sensor_ok;
+            force dut.S_cam_i2c_error = status_i2c_error;
+            force dut.S_ae = status_exposure;
+            force dut.S_ag = status_gain;
+            release dut.S_cam_status;
+            check_actual_status(4'h0, 0);
+
+            status_i2c_ready = 1;
+            check_actual_status(4'h8, 0);
+            status_sensor_ok = 1; status_cfg_done = 1;
+            // Initial high "done" has never completed an exposure write.
+            // The values intentionally differ from the old 1991/144 test.
+            check_actual_status(4'hB, 0);
+            status_ae_done = 0;
+            check_actual_status(4'hB, 0);
+            status_ae_done = 1;
+            check_actual_status(4'hF, 1);
+
+            // Later closed-loop updates keep the applied indication green
+            // across busy intervals, with varying exposure/gain values.
+            status_exposure = 300; status_gain = 32; status_ae_done = 0;
+            check_actual_status(4'hF, 1);
+            status_ae_done = 1;
+            check_actual_status(4'hF, 1);
+            status_exposure = 1500; status_gain = 64; status_ae_done = 0;
+            check_actual_status(4'hF, 1);
+            status_ae_done = 1;
+            check_actual_status(4'hF, 1);
+
+            // An I2C failure invalidates prior successful application.
+            // Clearing the error alone cannot declare a fresh write done.
+            status_i2c_error = 1;
+            check_actual_status(4'h3, 0);
+            status_i2c_error = 0;
+            check_actual_status(4'hB, 0);
+            status_ae_done = 0;
+            check_actual_status(4'hB, 0);
+            status_ae_done = 1;
+            check_actual_status(4'hF, 1);
+
+            // Camera reconfiguration also requires a new busy/done pair.
+            status_cfg_done = 0;
+            check_actual_status(4'h9, 0);
+            status_cfg_done = 1;
+            check_actual_status(4'hB, 0);
+            status_ae_done = 0;
+            check_actual_status(4'hB, 0);
+            status_ae_done = 1;
+            check_actual_status(4'hF, 1);
+            status_i2c_ready = 0;
+            check_actual_status(4'h0, 0);
+            status_i2c_ready = 1;
+            check_actual_status(4'hB, 0);
+        end
+    endtask
+
     initial begin
         // The force points intentionally exclude slot pointers, mailbox,
         // table validity, synchronizers, addresses and mixer geometry.
@@ -393,12 +487,14 @@ module tb_target_frame_alignment;
         end
         diagnostic_send(4'hF, 8'h00);
         diagnostic_send(4'h0, 8'h00);
+        test_actual_status();
         if (write_events < 30 || display_checks < 30 ||
-            result_checks < 28 || invalidate_checks < 29)
+            result_checks < 28 || invalidate_checks < 29 ||
+            diagnostic_checks != 14 || actual_status_checks != 19)
             $fatal(1, "Coverage counters did not reach required scenarios");
-        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d",
+        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d",
             write_events, read_events, display_checks, result_checks,
-            invalidate_checks, request_count, diagnostic_checks);
+            invalidate_checks, request_count, diagnostic_checks, actual_status_checks);
         $finish;
     end
 
@@ -420,8 +516,12 @@ endmodule
 module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0)
     (input wire [127:0] I_clk, I_rst_n, I_key_n, O_edge_mode);
 endmodule
-module ae_set(input wire [127:0] I_clk, I_rst, I_btn, I_cam_cfg_done,
-    I_ae_cfg_done, O_ae_req, O_ae, O_ag);
+module auto_exposure_control(input wire [127:0] I_clk, I_rst, I_cam_cfg_done,
+    I_ae_cfg_done, I_stats_valid, I_sum_y, I_sample_count, I_bright_count,
+    O_ae_req, O_ae, O_ag);
+endmodule
+module ae_stats_cdc(input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
+    I_src_valid, I_src_data, O_dst_valid, O_dst_data);
 endmodule
 module uicfgcs520 #(parameter CLK_DIV=0)
     (input wire [127:0] I_clk, I_rst_n, I_ae_req, I_ae, I_ag, O_cam_scl,
@@ -455,7 +555,8 @@ module isp_top #(parameter ENABLE_EDGE=0)
     O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
     O_target_center_x, O_target_center_y, O_target_pixels,
-    O_target_frame_toggle, O_edge_mode_active, I_tready);
+    O_target_frame_toggle, O_edge_mode_active, I_tready,
+    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count);
 endmodule
 module mc_to_user_interface(input wire [127:0] I_clk, I_rst_n,
     I_ddr_user_wr_en, I_ddr_user_rd_en, I_ddr_user_addr, I_ddr_user_wr_data,

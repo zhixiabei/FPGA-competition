@@ -18,8 +18,17 @@ set_false_path -from [get_regs {u_video/u_camera_diag_cdc/ack_toggle}] -to [get_
 # The stable snapshot is still constrained, independently of clock phase.
 set_max_delay -datapath_only -from [get_regs {u_video/u_camera_diag_cdc/payload_hold[*]}] -to [get_regs {u_video/u_camera_diag_cdc/O_dst_data[*]}] 13.000
 
+# AE statistics remain stable until ACK; the two destination request
+# stages guarantee at least 84 ns before capture. Do not group away the
+# 20 ns payload constraint.
+set_false_path -from [get_regs {u_video/u_ae_stats_cdc/req_toggle}] -to [get_regs {u_video/u_ae_stats_cdc/req_meta}]
+set_false_path -from [get_regs {u_video/u_ae_stats_cdc/ack_toggle}] -to [get_regs {u_video/u_ae_stats_cdc/ack_meta}]
+set_max_delay -datapath_only -from [get_regs {u_video/u_ae_stats_cdc/payload_hold[*]}] -to [get_regs {u_video/u_ae_stats_cdc/O_dst_data[*]}] 20.000
 
 set_clock_groups -asynchronous \
     -group [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] \
-    -group [get_clocks {sys_clk_50m pll_clk_100m pll_clk_24m HDMI_PIXEL_CLK HDMI_SERIAL_CLK}] \
+    -group [get_clocks {sys_clk_50m pll_clk_100m HDMI_PIXEL_CLK HDMI_SERIAL_CLK}] \
+    -group [get_clocks {u_video/u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_video/u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]
+set_clock_groups -asynchronous \
+    -group [get_clocks {pll_clk_24m}] \
     -group [get_clocks {u_video/u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_video/u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]

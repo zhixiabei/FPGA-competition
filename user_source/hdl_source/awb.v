@@ -1,383 +1,335 @@
-/*****************************************************************
-Company : MiLianKe Electronic Technology Co., Ltd.
-WebSite:https://www.milianke.com
-TechWeb:https://www.uisrc.com
-tmall-shop:https://milianke.tmall.com
-jd-shop:https://milianke.jd.com
-taobao-shop: https://milianke.taobao.com
-Description: 
-The reference demo provided by Milianke is only used for learning. 
-We cannot ensure that the demo itself is free of bugs, so users 
-should be responsible for the technical problems and consequences
-caused by the use of their own products.
-@Author      :   XiaoQingquan 
-@Time        :   2024/10 
-version:     :   
-@Description :   在原基础上删去了一些赘余的代码，并且优化了时序，加入BRAM IP核，
-                 让从除法器出来的每一个数据都可以对上相应的像素数据进行增益，使
-                 得它的适用行更加广泛了。
-*****************************************************************/
-module awb  #(   
-    parameter IMG_HEIGHT = 1080,
-    parameter IMG_WIDTH  = 1920
-) 
-(
-    input                   I_clk  ,
-    input                   I_rst_n,
-
-
-    input                   I_tlast  ,
-    input                   I_tuser  ,
-    input [95:0]            I_tdata  ,
-    input                   I_tvalid , 
-    output                  I_tready ,
-
-    output                  O_tlast  ,
-    output                  O_tuser  ,
-    output [95:0]           O_tdata  ,
-    output                  O_tvalid ,
-    input                   O_tready
+// Four RGB888 pixels per clock, with frame-stable automatic white balance.
+// Only complete frames with enough unsaturated, approximately neutral samples
+// update the gains. A single sequential divider computes G/R then G/B during
+// subsequent clocks; a pending result is committed only at the next input SOF.
+//
+// This camera pipeline uses an EARLY frame marker: retain O_tuser=I_tuser.
+// Pixel data/valid have two registered stages. O_tlast retains the original
+// last-valid-cycle convention derived from the falling edge of valid.
+module awb #(
+    parameter integer IMG_HEIGHT = 1080,
+    parameter integer IMG_WIDTH = 1920,
+    parameter integer SAMPLE_LOG2 = 4,
+    parameter integer MIN_GAIN_Q8 = 128,
+    parameter integer MAX_GAIN_Q8 = 1024
+) (
+    input wire I_clk,
+    input wire I_rst_n,
+    input wire I_tlast,
+    input wire I_tuser,
+    input wire [95:0] I_tdata,
+    input wire I_tvalid,
+    output wire I_tready,
+    output wire O_tlast,
+    output wire O_tuser,
+    output wire [95:0] O_tdata,
+    output wire O_tvalid,
+    input wire O_tready
 );
+    localparam integer FRAME_BEATS = (IMG_HEIGHT * IMG_WIDTH + 3) / 4;
+    localparam integer COUNT_BITS = $clog2(FRAME_BEATS + 1);
+    localparam integer MAX_SAMPLES =
+        (FRAME_BEATS + (1 << SAMPLE_LOG2) - 1) >> SAMPLE_LOG2;
+    localparam integer MIN_SAMPLES =
+        MAX_SAMPLES >= 128 ? MAX_SAMPLES / 32 :
+        MAX_SAMPLES >= 4 ? 4 : MAX_SAMPLES;
+    localparam [1:0] DIV_IDLE = 2'd0, DIV_RED = 2'd1, DIV_BLUE = 2'd2;
 
-/*****************************************************************
-                          RGB565תRGB888                                        
-*****************************************************************/
+    reg frame_active;
+    reg [COUNT_BITS-1:0] beat_count;
+    reg [SAMPLE_LOG2-1:0] sample_phase;
+    reg [1:0] sample_lane;
+    reg [31:0] sum_r, sum_g, sum_b;
+    reg [31:0] sample_count;
 
-    // //RGB565??????888
-    // wire [4:0]  rgb565_r   = I_st_data[11+:5];
-    // wire [5:0]  rgb565_g   = I_st_data[5+:6];
-    // wire [4:0]  rgb565_b   = I_st_data[0+:5];
-    
-    // wire [23:0] rgb888     = {{rgb565_r[4:0],rgb565_r[2:0]},{rgb565_g[5:0],rgb565_g[1:0]},{rgb565_b[4:0],rgb565_b[2:0]}};
-    
-    // wire [7:0]  rgb888_r   = rgb888[16+:8];
-    // wire [7:0]  rgb888_g   = rgb888[8+:8] ;
-    // wire [7:0]  rgb888_b   = rgb888[0+:8] ;
-    
-  /*****************************************************************
-                          中间信号                                        
-*****************************************************************/
+    reg [10:0] gain_r_q8, gain_b_q8;
+    reg [10:0] pending_r_q8, pending_b_q8;
+    reg pending_ready;
 
+    reg [1:0] div_state;
+    reg [5:0] div_bit_count;
+    reg [39:0] div_quotient;
+    reg [32:0] div_remainder;
+    reg [31:0] div_denominator;
+    reg [31:0] div_green_sum, div_blue_denominator;
+    reg [10:0] div_red_result;
 
-  reg         I_tvalid_r0,I_tvalid_r1;
-  reg  [95:0] I_tdata_d0,I_tdata_d1;
+    // Selecting a different lane at successive sample points avoids sampling
+    // only one of the four Bayer reconstruction positions.
+    wire [1:0] selected_lane = I_tuser ? 2'd0 : sample_lane;
+    wire [23:0] sample_rgb = I_tdata >> (selected_lane * 24);
+    wire stats_valid = I_tvalid && (frame_active || I_tuser);
+    wire take_sample = stats_valid &&
+        (I_tuser || sample_phase == {SAMPLE_LOG2{1'b0}});
+    wire frame_complete = stats_valid &&
+        (I_tuser ? FRAME_BEATS == 1 : beat_count == FRAME_BEATS-1);
 
+    // Statistics are pipelined independently of the two-clock video path.
+    // Never combine lane selection, neutral filtering, accumulation, zero
+    // detection and divider launch into one MIPI-clock combinational path.
+    reg [23:0] sample_rgb_d0, sample_rgb_d1, sample_rgb_d2;
+    reg sample_take_d0, sample_take_d1, sample_accept_d2;
+    reg stats_start_d0, stats_start_d1, stats_start_d2;
+    reg stats_end_d0, stats_end_d1, stats_end_d2;
+    reg [7:0] sample_max_d1, sample_min_d1;
+    reg stats_ready;
+    wire [7:0] red_d0 = sample_rgb_d0[23:16];
+    wire [7:0] green_d0 = sample_rgb_d0[15:8];
+    wire [7:0] blue_d0 = sample_rgb_d0[7:0];
+    wire [7:0] max_rg_d0 = red_d0 > green_d0 ? red_d0 : green_d0;
+    wire [7:0] min_rg_d0 = red_d0 < green_d0 ? red_d0 : green_d0;
+    wire [7:0] red_d1 = sample_rgb_d1[23:16];
+    wire [7:0] green_d1_stats = sample_rgb_d1[15:8];
+    wire [7:0] blue_d1 = sample_rgb_d1[7:0];
+    wire [7:0] sample_spread_d1 = sample_max_d1 - sample_min_d1;
+    wire [8:0] neutral_upper_d1 =
+        {1'b0, green_d1_stats} + (green_d1_stats >> 1);
+    wire [7:0] neutral_lower_d1 = green_d1_stats >> 1;
+    wire sample_neutral_d1 =
+        sample_max_d1 >= 8'd40 && sample_max_d1 <= 8'd220 &&
+        sample_spread_d1 <= (sample_max_d1 >> 1) &&
+        {1'b0, red_d1} <= neutral_upper_d1 && red_d1 >= neutral_lower_d1 &&
+        {1'b0, blue_d1} <= neutral_upper_d1 && blue_d1 >= neutral_lower_d1;
 
-  //累加RGB通道的�??
-  reg  [31:0]         sum_r[0:3];
-  reg  [31:0]         sum_g[0:3];
-  reg  [31:0]         sum_b[0:3];
-
-  
-  wire  [95:0]        data_d0 ;
-  wire                valid_d0;
-  wire                I_tuser_r0;    
-
-  reg                 I_tuser_r1;
-
-  reg   [95:0]        data_d1 ;
-  reg                 valid_d1;
-  reg   [9:0]         rgb_sum[0:3];//每个像素点RGB的和
-  /*****************************************************************
-                            平均值计�??                                      
-*****************************************************************/
-
-// 对输入数据和有效信号进行寄存，形成流水线
-always @(posedge I_clk or negedge I_rst_n) begin
-    if (!I_rst_n) begin
-        I_tdata_d0  <= 0;
-        I_tdata_d1  <= 0;
-        {I_tvalid_r0,I_tvalid_r1} <= 0;
-    end else begin
-        I_tdata_d0  <= I_tdata   ;
-        I_tdata_d1  <= I_tdata_d0;
-        I_tvalid_r0 <= I_tvalid;
-        I_tvalid_r1 <= I_tvalid_r0;
-    end
-end
-
-// 将输入数据拆分为4个像素的RGB分量
-wire [7:0] rgb888_r_d[0:3];
-wire [7:0] rgb888_g_d[0:3];
-wire [7:0] rgb888_b_d[0:3];
-
-assign  rgb888_r_d[0] = I_tdata[16+:8];
-assign  rgb888_g_d[0] = I_tdata[8+:8];
-assign  rgb888_b_d[0] = I_tdata[0+:8];
-
-
-// 将输入数据拆分为4个像素的RGB分量
-wire [7:0] rgb888_r_d0[0:3];
-wire [7:0] rgb888_g_d0[0:3];
-wire [7:0] rgb888_b_d0[0:3];
-
-assign  rgb888_r_d0[0] = I_tdata_d0[16+:8];
-assign  rgb888_g_d0[0] = I_tdata_d0[8+:8];
-assign  rgb888_b_d0[0] = I_tdata_d0[0+:8];
-
-
-        ///削弱白色
-        always @(posedge I_clk or negedge I_rst_n) begin
-            if(!I_rst_n) begin
-                rgb_sum[0] <= 0;
-            end
-            else if(I_tvalid)begin
-                rgb_sum[0] <= rgb888_r_d[0] + rgb888_g_d[0] + rgb888_b_d[0];
-            end
-        end
-
-        // 对每个通道的值进行累加，用于计算平均值
-        always @(posedge I_clk or negedge I_rst_n) begin
-            if (!I_rst_n || I_tuser) begin
-                // 复位或行开始信号有效时，清零累加器
-                sum_r[0] <= 1;
-                sum_g[0] <= 1;
-                sum_b[0] <= 1;
-            end else if (I_tvalid_r0 && (rgb_sum[0] < 720)) begin
-                // 当输入有效时，累加RGB分量的值
-                sum_r[0] <= sum_r[0] + rgb888_r_d0[0];
-                sum_g[0] <= sum_g[0] + rgb888_g_d0[0];
-                sum_b[0] <= sum_b[0] + rgb888_b_d0[0];
-            end
-        end
-
-  /*****************************************************************
-                           计算增益                                       
-*****************************************************************/
-
-  wire [47:0] dout_R[3:0];
-  wire [47:0] dout_B[3:0];
-
-  wire done[3:0];
-
-  wire [47:0] in_r_x1;
-  wire [47:0] in_b_x1;
-  assign in_r_x1 = dout_R[0][47:0];
-  assign in_b_x1 = dout_B[0][47:0];
-
-
-
-/*****************************************************************
-                   IP 调用                                    
-*****************************************************************/
-    //为了保证合理的延迟，这里使用了除法器
-
-      divider div_gen_G_R_r1 (
-          .clk(I_clk),  // input wire aclk
-          .rst(!I_rst_n),
-          .start(I_tvalid_r1),
-          .denominator(sum_r[0]),  // input wire [31 : 0] s_axis_divisor_tdata
-          .numerator({sum_g[0],16'd0}),  // input wire [47 : 0] s_axis_dividend_tdata
-          .quotient(dout_R[0]),  // output wire [79 : 0] m_axis_dout_tdata
-          .done(done[0])
-      );
-
-      divider divide_G_B_r1 (
-          .clk(I_clk),  // input wire aclk
-          .rst(!I_rst_n),
-          .start(I_tvalid_r1),
-          .denominator(sum_b[0]),  // input wire [31 : 0] s_axis_divisor_tdata
-          .numerator({sum_g[0],16'd0}),  // input wire [47 : 0] s_axis_dividend_tdata
-          .quotient(dout_B[0]),  // output wire [79 : 0] m_axis_dout_tdata
-          .done()
-      );
-
-     
-    signal_delay #(
-        .IMG_HEIGHT   (IMG_HEIGHT),
-        .IMG_WIDTH    (IMG_WIDTH ),
-        .DATA_WIDTH   (96  ),
-        .DELAY_CYCLE  (50)
-    )signal_delay_d (
-        /*input                       */ .I_clk  (I_clk  ),
-        /*input                       */ .I_rst_n(I_rst_n),
-        /*input                       */ .I_tuser(I_tuser),  //synthesis keep 
-        /*input  wire                 */ .I_valid(I_tvalid_r1),  //synthesis keep 
-        /*input  wire [DATA_WIDTH-1:0]*/ .I_data (I_tdata_d1 ),   //synthesis keep 
-        /*output wire                 */ .O_valid(valid_d0   ),  //synthesis keep 
-        /*output wire [DATA_WIDTH-1:0]*/ .O_data (data_d0    ),   //synthesis keep 
-        /*output wire                 */ .O_tuser(I_tuser_r0 )
-    );
-
-    
-
-/*****************************************************************
-                            ��������                                      
-*****************************************************************/
-
-    reg  [19:0]   in_r_r1;
-    reg  [19:0]   in_b_r1;
-    always @(posedge I_clk or negedge I_rst_n)begin 
-        if(!I_rst_n || I_tuser)begin
-            in_r_r1 <= 20'h10000;
-            in_b_r1 <= 20'h10000;
-        end
-        else if(done[0])begin
-            if(|in_r_x1[47:20])
-                in_r_r1 <= 20'hfffff;
-            else 
-                in_r_r1 <= in_r_x1[19:0];
-            if(|in_b_x1[47:20])
-                in_b_r1 <= 20'hfffff;
-            else 
-                in_b_r1 <= in_b_x1[19:0];
-        end
-    end
-
-
-    ////信号同步
     always @(posedge I_clk or negedge I_rst_n) begin
-      if (!I_rst_n) begin
-          valid_d1 <= 0;
-          data_d1  <= 0;
-          I_tuser_r1 <= 0;
-      end else begin
-          valid_d1 <= valid_d0;
-          data_d1  <= data_d0 ;
-          I_tuser_r1 <= I_tuser_r0;
-      end
-    end
-/*****************************************************************
-                           ��������                                       
-*****************************************************************/
-
-    reg [27:0] R_new_r1;
-    reg [27:0] G_new_r1;
-    reg [27:0] B_new_r1;
-
-    reg [27:0] R_new_r2;
-    reg [27:0] G_new_r2;
-    reg [27:0] B_new_r2;
-
-    reg [27:0] R_new_r3;
-    reg [27:0] G_new_r3;
-    reg [27:0] B_new_r3;
-
-    reg [27:0] R_new_r4;
-    reg [27:0] G_new_r4;
-    reg [27:0] B_new_r4;
-
-
-    wire   [7:0] rgb888_r_d1[0:3];
-    wire   [7:0] rgb888_g_d1[0:3];
-    wire   [7:0] rgb888_b_d1[0:3];
-
-    assign  rgb888_r_d1[0] = data_d1[16+:8];
-    assign  rgb888_g_d1[0] = data_d1[8+:8];
-    assign  rgb888_b_d1[0] = data_d1[0+:8];
-
-    assign  rgb888_r_d1[1] = data_d1[40+:8];
-    assign  rgb888_g_d1[1] = data_d1[32+:8];
-    assign  rgb888_b_d1[1] = data_d1[24+:8];
-
-    assign  rgb888_r_d1[2] = data_d1[64+:8];
-    assign  rgb888_g_d1[2] = data_d1[56+:8];
-    assign  rgb888_b_d1[2] = data_d1[48+:8];
-
-    assign  rgb888_r_d1[3] = data_d1[88+:8];
-    assign  rgb888_g_d1[3] = data_d1[80+:8];
-    assign  rgb888_b_d1[3] = data_d1[72+:8];
-    always @(posedge I_clk or negedge I_rst_n)begin 
-        if(!I_rst_n)begin
-            R_new_r1 <= 0;
-            G_new_r1 <= 0;
-            B_new_r1 <= 0;
-
-            R_new_r2 <= 0;
-            G_new_r2 <= 0;
-            B_new_r2 <= 0;
-
-            R_new_r3 <= 0;
-            G_new_r3 <= 0;
-            B_new_r3 <= 0;
-
-            R_new_r4 <= 0;
-            G_new_r4 <= 0;
-            B_new_r4 <= 0;
-        end
-        else if(valid_d1) begin
-            R_new_r1 <= in_r_r1 * rgb888_r_d1[0];
-            G_new_r1 <=           rgb888_g_d1[0];
-            B_new_r1 <= in_b_r1 * rgb888_b_d1[0];
-
-            R_new_r2 <= in_r_r1 * rgb888_r_d1[1];
-            G_new_r2 <=           rgb888_g_d1[1];
-            B_new_r2 <= in_b_r1 * rgb888_b_d1[1];
-
-            R_new_r3 <= in_r_r1 * rgb888_r_d1[2];
-            G_new_r3 <=           rgb888_g_d1[2];
-            B_new_r3 <= in_b_r1 * rgb888_b_d1[2];
-
-            R_new_r4 <= in_r_r1 * rgb888_r_d1[3];
-            G_new_r4 <=           rgb888_g_d1[3];
-            B_new_r4 <= in_b_r1 * rgb888_b_d1[3];
+        if (!I_rst_n) begin
+            sample_rgb_d0 <= 0;
+            sample_rgb_d1 <= 0;
+            sample_rgb_d2 <= 0;
+            sample_max_d1 <= 0;
+            sample_min_d1 <= 0;
+            sample_take_d0 <= 1'b0;
+            sample_take_d1 <= 1'b0;
+            sample_accept_d2 <= 1'b0;
+            stats_start_d0 <= 1'b0;
+            stats_start_d1 <= 1'b0;
+            stats_start_d2 <= 1'b0;
+            stats_end_d0 <= 1'b0;
+            stats_end_d1 <= 1'b0;
+            stats_end_d2 <= 1'b0;
+        end else begin
+            // Stage 0: select and capture one of the four input pixels.
+            sample_rgb_d0 <= sample_rgb;
+            sample_take_d0 <= take_sample;
+            stats_start_d0 <= I_tuser;
+            stats_end_d0 <= frame_complete;
+            // Stage 1: channel extrema, aligned with the sample and tokens.
+            sample_rgb_d1 <= sample_rgb_d0;
+            sample_max_d1 <= max_rg_d0 > blue_d0 ? max_rg_d0 : blue_d0;
+            sample_min_d1 <= min_rg_d0 < blue_d0 ? min_rg_d0 : blue_d0;
+            sample_take_d1 <= sample_take_d0;
+            stats_start_d1 <= stats_start_d0;
+            stats_end_d1 <= stats_end_d0;
+            // Stage 2: qualify a non-clipped, approximately neutral sample.
+            sample_rgb_d2 <= sample_rgb_d1;
+            sample_accept_d2 <= sample_take_d1 && sample_neutral_d1;
+            stats_start_d2 <= stats_start_d1;
+            stats_end_d2 <= stats_end_d1;
         end
     end
 
-/*****************************************************************
-                            �������???                                      
-*****************************************************************/
-
-    wire [7:0] R_new_x1;
-    wire [7:0] G_new_x1;
-    wire [7:0] B_new_x1;
-
-    wire [7:0] R_new_x2;
-    wire [7:0] G_new_x2;
-    wire [7:0] B_new_x2;
-
-    wire [7:0] R_new_x3;
-    wire [7:0] G_new_x3;
-    wire [7:0] B_new_x3;
-
-    wire [7:0] R_new_x4;
-    wire [7:0] G_new_x4;
-    wire [7:0] B_new_x4;
-
-    assign R_new_x1 = (R_new_r1[27:24])?255:R_new_r1[23:16];
-    assign G_new_x1 =  G_new_r1;
-    assign B_new_x1 = (B_new_r1[27:24])?255:B_new_r1[23:16];
-
-    assign R_new_x2 = (R_new_r2[27:24])?255:R_new_r2[23:16];
-    assign G_new_x2 =  G_new_r2;
-    assign B_new_x2 = (B_new_r2[27:24])?255:B_new_r2[23:16];
-
-    assign R_new_x3 = (R_new_r3[27:24])?255:R_new_r3[23:16];
-    assign G_new_x3 =  G_new_r3;
-    assign B_new_x3 = (B_new_r3[27:24])?255:B_new_r3[23:16];
-
-    assign R_new_x4 = (R_new_r4[27:24])?255:R_new_r4[23:16];
-    assign G_new_x4 =  G_new_r4;
-    assign B_new_x4 = (B_new_r4[27:24])?255:B_new_r4[23:16];
-/*****************************************************************
-                           ͬ���ź�                                       
-*****************************************************************/
-
-    reg valid_d2,I_tuser_r2;
+    // Stage 3: sum accepted samples. The last sample is accumulated before
+    // stats_ready can launch division at stage 4. A following frame's SOF
+    // may reset these sums at stage 3 while stage 4 reads the completed OLD
+    // registered sums; this remains correct for back-to-back valid frames.
     always @(posedge I_clk or negedge I_rst_n) begin
-        if(!I_rst_n)begin
-            valid_d2 <= 0;
-            I_tuser_r2 <= 0;
+        if (!I_rst_n) begin
+            sum_r <= 0;
+            sum_g <= 0;
+            sum_b <= 0;
+            sample_count <= 0;
+            stats_ready <= 1'b0;
+        end else begin
+            stats_ready <= stats_end_d2;
+            if (stats_start_d2) begin
+                sum_r <= 0;
+                sum_g <= 0;
+                sum_b <= 0;
+                sample_count <= 0;
+            end
+            if (sample_accept_d2) begin
+                sum_r <= (stats_start_d2 ? 32'd0 : sum_r) +
+                    {24'd0, sample_rgb_d2[23:16]};
+                sum_g <= (stats_start_d2 ? 32'd0 : sum_g) +
+                    {24'd0, sample_rgb_d2[15:8]};
+                sum_b <= (stats_start_d2 ? 32'd0 : sum_b) +
+                    {24'd0, sample_rgb_d2[7:0]};
+                sample_count <= (stats_start_d2 ? 32'd0 : sample_count) + 1'b1;
+            end
         end
-        else begin
+    end
+
+    // Restoring division: one quotient bit each clock, using one subtractor.
+    // Keep all 40 numerator bits; G<<8 must not lose its high bits.
+    wire [32:0] div_trial =
+        {div_remainder[31:0], div_quotient[39]};
+    wire div_subtract = div_trial >= {1'b0, div_denominator};
+    wire [32:0] div_next_remainder = div_subtract ?
+        div_trial - {1'b0, div_denominator} : div_trial;
+    wire [39:0] div_next_quotient =
+        {div_quotient[38:0], div_subtract};
+
+    function [10:0] F_limit_gain;
+        input [39:0] quotient;
+        begin
+            if (quotient < MIN_GAIN_Q8)
+                F_limit_gain = MIN_GAIN_Q8;
+            else if (quotient > MAX_GAIN_Q8)
+                F_limit_gain = MAX_GAIN_Q8;
+            else
+                F_limit_gain = quotient[10:0];
+        end
+    endfunction
+
+    // One eighth of the difference, rounded towards the target. A minimum
+    // one-LSB step prevents a small residual colour error from becoming stuck.
+    function [10:0] F_smooth_gain;
+        input [10:0] current_gain;
+        input [10:0] target_gain;
+        reg [11:0] difference;
+        reg [11:0] step;
+        begin
+            if (target_gain >= current_gain) begin
+                difference = target_gain - current_gain;
+                step = (difference + 12'd7) >> 3;
+                F_smooth_gain = current_gain + step;
+            end else begin
+                difference = current_gain - target_gain;
+                step = (difference + 12'd7) >> 3;
+                F_smooth_gain = current_gain - step;
+            end
+        end
+    endfunction
+
+    wire [10:0] committed_gain_r =
+        F_smooth_gain(gain_r_q8, pending_r_q8);
+    wire [10:0] committed_gain_b =
+        F_smooth_gain(gain_b_q8, pending_b_q8);
+    // When SOF and the first valid pixel coincide, that pixel already belongs
+    // to the new frame and must use the same gain as the rest of that frame.
+    wire [10:0] pixel_gain_r = I_tuser && pending_ready ?
+        committed_gain_r : gain_r_q8;
+    wire [10:0] pixel_gain_b = I_tuser && pending_ready ?
+        committed_gain_b : gain_b_q8;
+
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            frame_active <= 1'b0;
+            beat_count <= 0;
+            sample_phase <= 0;
+            sample_lane <= 0;
+            gain_r_q8 <= 11'd256;
+            gain_b_q8 <= 11'd256;
+            pending_r_q8 <= 11'd256;
+            pending_b_q8 <= 11'd256;
+            pending_ready <= 1'b0;
+            div_state <= DIV_IDLE;
+            div_bit_count <= 0;
+            div_quotient <= 0;
+            div_remainder <= 0;
+            div_denominator <= 0;
+            div_green_sum <= 0;
+            div_blue_denominator <= 0;
+            div_red_result <= 11'd256;
+        end else begin
+            if (I_tuser) begin
+                frame_active <= 1'b1;
+                beat_count <= 0;
+                sample_phase <= 0;
+                sample_lane <= 0;
+                if (pending_ready) begin
+                    gain_r_q8 <= committed_gain_r;
+                    gain_b_q8 <= committed_gain_b;
+                    pending_ready <= 1'b0;
+                end
+            end
+
+            if (stats_valid) begin
+                beat_count <= (I_tuser ? 0 : beat_count) + 1'b1;
+                sample_phase <= (I_tuser ? 0 : sample_phase) + 1'b1;
+                if (take_sample)
+                    sample_lane <= (I_tuser ? 0 : sample_lane) + 1'b1;
+                if (frame_complete) begin
+                    // Ignore extra valid pixels until the next marker, and
+                    // discard a truncated frame when that marker arrives.
+                    frame_active <= 1'b0;
+                end
+            end
+
+            // Stage 4: use registered complete-frame statistics only.
+            if (stats_ready && sample_count >= MIN_SAMPLES &&
+                sum_r != 0 && sum_b != 0 &&
+                div_state == DIV_IDLE && !pending_ready) begin
+                div_state <= DIV_RED;
+                div_bit_count <= 6'd39;
+                div_quotient <= {sum_g, 8'd0};
+                div_remainder <= 0;
+                div_denominator <= sum_r;
+                div_green_sum <= sum_g;
+                div_blue_denominator <= sum_b;
+            end
+
+            if (div_state != DIV_IDLE) begin
+                div_quotient <= div_next_quotient;
+                div_remainder <= div_next_remainder;
+                if (div_bit_count != 0) begin
+                    div_bit_count <= div_bit_count - 1'b1;
+                end else if (div_state == DIV_RED) begin
+                    div_red_result <= F_limit_gain(div_next_quotient);
+                    div_state <= DIV_BLUE;
+                    div_bit_count <= 6'd39;
+                    div_quotient <= {div_green_sum, 8'd0};
+                    div_remainder <= 0;
+                    div_denominator <= div_blue_denominator;
+                end else begin
+                    pending_r_q8 <= div_red_result;
+                    pending_b_q8 <= F_limit_gain(div_next_quotient);
+                    pending_ready <= 1'b1;
+                    div_state <= DIV_IDLE;
+                end
+            end
+        end
+    end
+
+    reg valid_d1, valid_d2;
+    reg [18:0] product_r [0:3];
+    reg [18:0] product_b [0:3];
+    reg [7:0] green_d1 [0:3];
+    reg [95:0] output_data;
+    integer lane;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            valid_d1 <= 1'b0;
+            valid_d2 <= 1'b0;
+            output_data <= 0;
+            for (lane = 0; lane < 4; lane = lane+1) begin
+                product_r[lane] <= 0;
+                product_b[lane] <= 0;
+                green_d1[lane] <= 0;
+            end
+        end else begin
+            valid_d1 <= I_tvalid;
             valid_d2 <= valid_d1;
-            I_tuser_r2 <= I_tuser_r1;
+            for (lane = 0; lane < 4; lane = lane+1) begin
+                product_r[lane] <=
+                    I_tdata[lane*24+16 +: 8] * pixel_gain_r;
+                product_b[lane] <=
+                    I_tdata[lane*24 +: 8] * pixel_gain_b;
+                green_d1[lane] <= I_tdata[lane*24+8 +: 8];
+                output_data[lane*24+16 +: 8] <=
+                    |product_r[lane][18:16] ? 8'd255 :
+                    product_r[lane][15:8];
+                output_data[lane*24+8 +: 8] <= green_d1[lane];
+                output_data[lane*24 +: 8] <=
+                    |product_b[lane][18:16] ? 8'd255 :
+                    product_b[lane][15:8];
+            end
         end
     end
 
-
-    assign  O_tlast  = (valid_d1 == 0) && (valid_d2 == 1);   
-    assign  O_tuser  = I_tuser ;   
-    assign  O_tvalid = valid_d2;
-
-    assign  O_tdata = O_tvalid?{R_new_x4,G_new_x4,B_new_x4,
-                       R_new_x3,G_new_x3,B_new_x3,
-                       R_new_x2,G_new_x2,B_new_x2,
-                       R_new_x1,G_new_x1,B_new_x1}:0;
-    // assign O_t_data = {R_new[7-:5],G_new[7-:6],B_new[7-:5]};
-    assign  I_tready = O_tready;
- 
+    assign I_tready = O_tready;
+    assign O_tuser = I_tuser;
+    assign O_tvalid = valid_d2;
+    assign O_tdata = valid_d2 ? output_data : 96'd0;
+    assign O_tlast = valid_d2 && !valid_d1;
 endmodule
-
-
-

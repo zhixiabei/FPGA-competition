@@ -6,6 +6,34 @@
 
 本说明依据当前的 [TD 工程文件](td_project/anlogic_edge_osd.al)、[系统顶层](user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 当前光照适应通路（2026-10-10）
+
+曝光由 **AWB 前的亮度统计 → 请求/确认 CDC → AE 控制器 → 原 SC520CS I²C 表**
+闭环调整；检测仍在 AWB 后、彩色/边缘选择之前。两种显示模式都使用同一份彩色
+信息识别红色，Scharr 的核、阈值、11 拍选择器延迟和框补偿均保持原设置。
+
+| 文件 | 当前功能 | 阅读入口 |
+|---|---|---|
+| [ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | 每完整 720p 帧抽取 7,200 像素，累加 AWB 前非高光亮度并计总数/高光数；异常或截断帧不发布 | `first_beat`、`sample_beat`、`pixel_bright`、`sum_next`、`O_stats_valid` |
+| [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v) | 将 64 位帧结果整组送到约 23.81 MHz 域；相同值也产生更新脉冲 | `payload_hold`、`pending_data`、`req_toggle`、`ack_toggle` |
+| [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 强光减亮、暗光增亮；等待实际 I²C 写入完成和 3 帧稳定时间 | `stats_ok`、`reduce_light`、`increase_light`、`state` |
+| [awb.v](user_source/hdl_source/awb.v) | 近中性色采样、共享顺序除法、增益按帧提交和平滑；四像素输出为两拍 | `sample_neutral_d1`、`stats_ready`、`div_state`、`pixel_gain_r` |
+| [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 以通道比例和红色色相范围识别暗红，排除低饱和粉色；原多数滤波和框统计保留 | `gen_red`、`twice_red`、`hue_green_limit`、`votes` |
+
+AE 默认写入曝光 1000、增益 16，控制范围分别为 4..1991、16..144。
+`sum_y` 只累计 `Y<232` 的亮度；总采样数减去高光数即非高光数，
+以非高光均值 96..128 为目标。非高光至少占 25% 才能偏暗增亮，
+低于 12.5% 时减亮；达到 12.5% 但未到 25% 且偏暗时保持。
+不再因少量亮屏/灯泡直接压暗整帧。
+帧统计/CDC 不插入视频等待。原 `ae_set.v` 的手动控制已不再实例化，
+顶层端口保留；K1 的彩色/边缘切换不变。两份 SDC 对 AE 载荷约束 20 ns，
+只豁免请求/确认进入各自第一级同步寄存器的路径。
+
+AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流水除法器 IP；
+旧 AWB 延迟 RAM 也不再实例化。统计流水与像素流水相互独立，视频有效延迟为两拍。
+完整参数、测试范围和实物验证限制见 [SC520CS_TEST.md](SC520CS_TEST.md)、
+[sim/README.md](sim/README.md) 和 [README.md](README.md) 的最新章节。
+
 ## 当前试验版：红色目标与 Scharr 边缘并行
 
 | 文件 | 当前功能 | 阅读入口 |
@@ -26,9 +54,10 @@
 留作历史对照，不在当前运行通路内。本版为高斯、Scharr、NMS及固定单阈值，
 没有自适应阈值、色度边缘或 Canny 追踪；红色检测仍使用原始 RGB。
 两份 `.al` 已登记新增算法；`sim/tb_*` 仅供仿真，不参与上板综合。
-本次未改变摄像头配置、曝光、AWB 算法、板卡引脚或下载方式。
-本轮生产源码改动为新增 Scharr、选择器更换实例和延迟存储实现、
-ISP 阈值注释和顶层横向补偿；RGB/模式/标记延迟仍为 11 拍。
+10 月 5 日 Scharr 替换时未改变摄像头配置、曝光、AWB 算法、板卡引脚或下载方式。
+10 月 10 日曝光、AWB 和红色判定的更新见上节；初始化表、板卡引脚和下载设置保持。
+Scharr 替换的改动为新增算法、选择器更换实例和延迟存储实现、
+ISP 阈值注释和顶层横向补偿；RGB/模式/标记选择器延迟仍为 11 拍。
 上表的红色检测、显示叠加及 DDR 槽管理均为已有功能。
 
 ## 1. 先认识整条数据通路
@@ -38,6 +67,8 @@ flowchart TD
     CAM[SC520CS 摄像头] --> RX[MIPI 接收与 CSI-2 解包]
     RX --> RAW[RAW10 解包与像素流整理]
     RAW --> ISP[ISP：重建彩色图像、白平衡、边缘检测]
+    ISP -. AWB 前 RGB .-> AE[帧亮度统计 → CDC → 自动曝光]
+    AE -. 参数更新 .-> CFG
     ISP --> DET[AWB RGB：红色检测、去噪、框统计]
     ISP --> VIN[video_in：彩色或 Scharr 边缘写入图像]
     VIN --> MEM[DDR 帧缓存]
@@ -78,7 +109,9 @@ flowchart TD
 | 构造图像窗口 | [raw_matrix_3x3_buffer.v](user_source/hdl_source/isp/demosaic_4x_2_0/raw_matrix_3x3_buffer.v)、[line_buffer_demosaic.v](user_source/hdl_source/isp/demosaic_4x_2_0/line_buffer_demosaic.v) | 保留相邻行的数据，形成算法所需的邻域 |
 | 插值计算 | [bilinear_interpolation.v](user_source/hdl_source/isp/demosaic_4x_2_0/bilinear_interpolation.v) | 根据 Bayer 排列和邻域数据计算彩色像素 |
 | 像素格式转换 | [data128_96.v](user_source/hdl_source/isp/data128_96/data128_96.v) | 从四个 32 位位置取出 RGB888，并按代码规定的顺序拼成 96 位 |
-| 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 统计和调整颜色通道，处理四个 RGB888 像素组成的 96 位数据 |
+| 曝光亮度统计 | [ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | AWB 前的完整帧亮度/高光采样，独立接出统计 |
+| 曝光反馈控制 | [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v)、[auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 64 位握手跨域后更新摄像头曝光/增益 |
+| 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 近中性色采样，红/蓝增益按帧更新；四个 RGB888 像素组成的 96 位数据保持两拍输出 |
 | 边缘检测 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | 96 位 RGB 输入，亮度高斯、Scharr、NMS后输出同宽黑白边缘图 |
 | 红色目标检测 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 与边缘支路共享 AWB RGB 输入，不依赖显示模式 |
 | 模式切换 | [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘模块持续运行；将彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
@@ -98,7 +131,9 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
 | 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 单阈值 20；原始 Scharr 幅值门槛为 320 |
-| 改红色判定 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_red_target_detect_96 | RED_MIN=80、RED_DELTA=30、MIN_PIXELS=128 |
+| 改红色判定 | [isp_top.v](user_source/hdl_source/isp/isp_top.v)、[red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | u_red_target_detect_96、gen_red | RED_MIN=24、RED_DELTA=6、MIN_PIXELS=128，另有通道比例及红色色相 ±20° 条件 |
+| 改自动曝光目标/范围 | [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | TARGET_LOW/HIGH、EXPOSURE_*、GAIN_*、SETTLE_FRAMES | 非高光均亮 96..128；曝光 4..1991、增益 16..144；写完等待 3 个完整帧 |
+| 改白平衡 | [awb.v](user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
 | 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 0=彩色；如设为 1 则上电边缘；二者均可按 K1 切换 |
 | 改边缘算法 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | gaussian、scharr、nms | 修改流水级数须同步切换延迟；修改窗口须同步顶层框补偿 |
 | 改仿真阈值 | [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv) | TH、reference | 默认 20，不自动读取 isp_top；修改后需重新标定场景断言 |
@@ -155,7 +190,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 
 | 任务 | 文件或目录 | 作用 |
 |---|---|---|
-| 摄像头没初始化 | [uics520_cfg/](user_source/hdl_source/uics520_cfg/)、[ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 芯片 ID、初始化寄存器、I2C 错误、曝光/增益配置请求；通用 I2C 底层仍在 uics500_cfg/uii2c.v |
+| 摄像头没初始化 | [uics520_cfg/](user_source/hdl_source/uics520_cfg/)、[auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 芯片 ID、初始化寄存器、I2C 错误及曝光/增益请求；实际 I²C 底层为 uicfgcs520.v 内的 sc520_i2c |
 | MIPI 没收到数据 | [mipi_dphy_rx/](user_source/hdl_source/mipi_dphy_rx/) | 安路 MIPI 物理接收及字节/通道对齐，含加密 IP |
 | 收到字节却没有像素帧 | [csi_unpacket_2lane.v](user_source/hdl_source/isp/csi_unpacket_2lane.v)、[raw10_unpacket_2lane.v](user_source/hdl_source/isp/raw10_unpacket_2lane.v)、[uial2axis.v](user_source/hdl_source/isp/uial2axis.v) | CSI-2 包解析、RAW10 像素提取、帧/行有效信号整理 |
 | 图像写入/读出缓存异常 | [video_in.v](user_source/hdl_source/video_in.v)、[video_out.v](user_source/hdl_source/video_out.v) | FIFO、帧缓存指针、DDR 读写请求和数据宽度适配 |
@@ -170,7 +205,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | 模块 | 当前使用的路径 | 容易误打开的另一份 |
 |---|---|---|
 | awb | [hdl_source/awb.v](user_source/hdl_source/awb.v) | [hdl_source/isp/awb/awb.v](user_source/hdl_source/isp/awb/awb.v) |
-| signal_delay | [hdl_source/signal_delay.v](user_source/hdl_source/signal_delay.v) | [hdl_source/isp/awb/signal_delay.v](user_source/hdl_source/isp/awb/signal_delay.v) |
+| signal_delay（历史保留，当前 AWB 不使用） | [hdl_source/signal_delay.v](user_source/hdl_source/signal_delay.v) | [hdl_source/isp/awb/signal_delay.v](user_source/hdl_source/isp/awb/signal_delay.v) |
 | data_96bit_to_128bit | [hdl_source/isp/data96_128/data96_128.v](user_source/hdl_source/isp/data96_128/data96_128.v) | [hdl_source/data_96bit_to_128bit.v](user_source/hdl_source/data_96bit_to_128bit.v) |
 | csi_unpacket_2lane | [hdl_source/isp/csi_unpacket_2lane.v](user_source/hdl_source/isp/csi_unpacket_2lane.v) | [hdl_source/uiisp_beta/csi_unpacket_2lane.v](user_source/hdl_source/uiisp_beta/csi_unpacket_2lane.v) |
 | raw10_unpacket_2lane | [hdl_source/isp/raw10_unpacket_2lane.v](user_source/hdl_source/isp/raw10_unpacket_2lane.v) | [hdl_source/uiisp_beta/raw10_unpacket_2lane.v](user_source/hdl_source/uiisp_beta/raw10_unpacket_2lane.v) |
@@ -207,7 +242,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 下面的索引从当前 .al 提取；新增模块或更换 IP 后，应与 .al 一起更新。它列出登记入口，不展开 IP 的所有内部依赖，也不等同于最终综合网表中保留的模块。
 
 <details>
-<summary>展开：当前 TD 主工程的 61 个登记文件及作用</summary>
+<summary>展开：当前 TD 主工程的 65 个登记文件及作用</summary>
 
 | 文件 | 作用 | 登记状态 |
 |---|---|---|
@@ -215,8 +250,12 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/video_in.v](user_source/hdl_source/video_in.v) | 输入图像 FIFO、写帧指针与 DDR 写请求 | 已登记 |
 | [user_source/hdl_source/video_out.v](user_source/hdl_source/video_out.v) | DDR 读请求、输出 FIFO 与显示像素读出 | 已登记 |
 | [user_source/hdl_source/mc_to_user_interface.v](user_source/hdl_source/mc_to_user_interface.v) | 用户读写请求转换为 DDR 控制器接口 | 已登记 |
-| [user_source/hdl_source/signal_delay.v](user_source/hdl_source/signal_delay.v) | 信号延迟对齐模块 | 已登记 |
-| [user_source/hdl_source/awb.v](user_source/hdl_source/awb.v) | 自动白平衡 | 已登记 |
+| [user_source/hdl_source/signal_delay.v](user_source/hdl_source/signal_delay.v) | 旧 AWB 延迟模块；当前不使用 | AutoExcluded=true |
+| [user_source/hdl_source/awb.v](user_source/hdl_source/awb.v) | 近中性色采样及帧稳定自动白平衡 | 已登记 |
+| [user_source/hdl_source/isp/ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | 完整帧曝光亮度/高光采样 | 已登记 |
+| [user_source/hdl_source/ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v) | 曝光统计握手跨时钟邮箱 | 已登记 |
+| [user_source/hdl_source/auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 帧反馈曝光/增益控制器 | 已登记 |
+| [user_source/hdl_source/camera_diag_cdc.v](user_source/hdl_source/camera_diag_cdc.v) | 12 位摄像头状态/故障码握手跨时钟 | 已登记 |
 | [user_source/hdl_source/ph1p35_ddr/ph1p35_324_ddr_wrapper.v](user_source/hdl_source/ph1p35_ddr/ph1p35_324_ddr_wrapper.v) | 安路 PH1P35 DDR 封装 | 已登记 |
 | [user_source/hdl_source/isp/csi_unpacket_2lane.v](user_source/hdl_source/isp/csi_unpacket_2lane.v) | 双 lane CSI-2 包解析 | 已登记 |
 | [user_source/hdl_source/isp/isp_top.v](user_source/hdl_source/isp/isp_top.v) | 图像处理流水线顶层 | 已登记 |
@@ -235,8 +274,8 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/uics520_cfg/uicfgcs520.v](user_source/hdl_source/uics520_cfg/uicfgcs520.v) | 芯片 ID 检查、初始化、曝光/增益配置及错误处理 | 已登记 |
 | [user_source/hdl_source/uics520_cfg/uics520reg_720p60.v](user_source/hdl_source/uics520_cfg/uics520reg_720p60.v) | SC520CS 720p60 初始化寄存器表 | 已登记 |
 | [user_source/hdl_source/uics520_cfg/uics520regAE.v](user_source/hdl_source/uics520_cfg/uics520regAE.v) | SC520CS 曝光/增益及 group hold 数据生成 | 已登记 |
-| [user_source/hdl_source/uics500_cfg/uii2c.v](user_source/hdl_source/uics500_cfg/uii2c.v) | I2C 传输 | 已登记 |
-| [user_source/hdl_source/uiisp_beta/ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 曝光/增益设置请求与控制 | 已登记 |
+| [user_source/hdl_source/uics500_cfg/uii2c.v](user_source/hdl_source/uics500_cfg/uii2c.v) | 旧通用 I2C；当前使用 sc520_i2c | AutoExcluded=true |
+| [user_source/hdl_source/uiisp_beta/ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 旧手动曝光/增益请求；当前未实例化 | AutoExcluded=true |
 | [user_source/hdl_source/hdmi_tx.v](user_source/hdl_source/hdmi_tx.v) | HDMI 发送子系统封装 | 已登记 |
 | [user_source/hdl_source/hdmi_1_4b_transmitter_core_wrapper.enc.v](user_source/hdl_source/hdmi_1_4b_transmitter_core_wrapper.enc.v) | 加密 HDMI 发送内核封装 | 已登记 |
 | [user_source/hdl_source/hdmi_phy_warpper.v](user_source/hdl_source/hdmi_phy_warpper.v) | HDMI 物理输出封装 | 已登记 |
@@ -246,9 +285,9 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/I2S_receiver.v](user_source/hdl_source/I2S_receiver.v) | HDMI 子系统的 I2S 音频接收配套模块 | 已登记 |
 | [user_source/hdl_source/audio_arc_calculate.v](user_source/hdl_source/audio_arc_calculate.v) | HDMI 音频时钟恢复参数计算 | 已登记 |
 | [user_source/hdl_source/key_remove_shakes.v](user_source/hdl_source/key_remove_shakes.v) | HDMI 子系统配套按键消抖 | 已登记 |
-| [user_source/hdl_source/isp/edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 四像素输入的 Sobel 边缘检测 | 已登记 |
+| [user_source/hdl_source/isp/edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v) | 历史 Sobel 边缘检测 | AutoExcluded=true |
 | [user_source/hdl_source/isp/scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | 当前高斯、Scharr、NMS 和 ERAM 行窗口 | 已登记 |
-| [user_source/hdl_source/isp/color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 旧彩色色差边缘；未在当前通路实例化 | 已登记 |
+| [user_source/hdl_source/isp/color_edge_detect_96.v](user_source/hdl_source/isp/color_edge_detect_96.v) | 旧彩色色差边缘；未在当前通路实例化 | AutoExcluded=true |
 | [user_source/hdl_source/isp/red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 当前独立 RGB 红色目标检测 | 已登记 |
 | [user_source/hdl_source/color_target_detect.v](user_source/hdl_source/color_target_detect.v) | 旧目标检测；未在当前通路实例化 | AutoExcluded=true |
 | [user_source/hdl_source/isp/rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 彩色/边缘对齐及帧边界选择 | 已登记 |
@@ -267,15 +306,15 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/ip_source/PLL/PLL.xml](user_source/ip_source/PLL/PLL.xml) | 系统时钟 PLL 的 IP 配置入口 | 已登记 |
 | [user_source/ip_source/w128_d512_fifo/w128_d512_fifo.xml](user_source/ip_source/w128_d512_fifo/w128_d512_fifo.xml) | 128 位、512 深度 FIFO 的 IP 配置入口 | 已登记 |
 | [user_source/ip_source/w155_d512_fifo/w155_d512_fifo.xml](user_source/ip_source/w155_d512_fifo/w155_d512_fifo.xml) | 155 位、512 深度 FIFO 的 IP 配置入口 | 已登记 |
-| [user_source/ip_source/blk_mem_gen_awb_delay_signal/blk_mem_gen_awb_delay_signal.xml](user_source/ip_source/blk_mem_gen_awb_delay_signal/blk_mem_gen_awb_delay_signal.xml) | AWB 配套 RAM 的 IP 配置入口 | 已登记 |
-| [user_source/ip_source/divider/divider.ipc](user_source/ip_source/divider/divider.ipc) | 除法器 IP 配置入口 | 已登记 |
+| [user_source/ip_source/blk_mem_gen_awb_delay_signal/blk_mem_gen_awb_delay_signal.xml](user_source/ip_source/blk_mem_gen_awb_delay_signal/blk_mem_gen_awb_delay_signal.xml) | 旧 AWB 延迟 RAM；当前不使用 | AutoExcluded=true |
+| [user_source/ip_source/divider/divider.ipc](user_source/ip_source/divider/divider.ipc) | 旧 AWB 流水除法器；当前不使用 | AutoExcluded=true |
 | [user_source/hdl_source/ph1p35_ddr/ddr2/ddr2.xml](user_source/hdl_source/ph1p35_ddr/ddr2/ddr2.xml) | DDR2 控制器 IP 配置入口 | 已登记 |
 | [user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_zhenghe/blk_mem_gen_zhenghe.xml](user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_zhenghe/blk_mem_gen_zhenghe.xml) | 数据整合配套 RAM 的 IP 配置入口 | 已登记 |
 | [user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_demosaic/blk_mem_gen_demosaic.xml](user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_demosaic/blk_mem_gen_demosaic.xml) | 彩色重建配套 RAM 的 IP 配置入口 | 已登记 |
 
 </details>
 
-当前 Scharr、红色检测、按键及选择器均已登记到两个工程。主工程现有 61 个登记入口。
+当前 Scharr、红色检测、按键、选择器及三个 AE 模块均已登记到两个工程。主工程现有 65 个登记入口；上表的 AutoExcluded 状态按主工程记录。
 
-彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 62 个登记入口。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数现在只指定复位后的模式，运行中均可按板载 K1（D5）切换。
+彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 66 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数现在只指定复位后的模式，运行中均可按板载 K1（D5）切换。
 

@@ -4,8 +4,8 @@
 module red_target_detect_96 #(
     parameter integer IMG_WIDTH = 1280,
     parameter integer IMG_HEIGHT = 720,
-    parameter integer RED_MIN = 80,
-    parameter integer RED_DELTA = 30,
+    parameter integer RED_MIN = 24,
+    parameter integer RED_DELTA = 6,
     parameter integer MIN_PIXELS = 128,
     parameter integer MIN_WIDTH = 8,
     parameter integer MIN_HEIGHT = 8
@@ -49,18 +49,46 @@ module red_target_detect_96 #(
 
     // data128_96 puts the earliest pixel in bits 95:72, and AWB preserves
     // that order. video_out displays the most-significant bytes first.
+    //
+    // Use normalized chroma/hue bounds instead of a large absolute channel
+    // difference, so dim red retains the same color decision as bright red.
+    // For red as the largest channel these integer comparisons require:
+    //   max(G,B) <= 2R/3 and |G-B| <= (R-min(G,B))/3.
+    // The latter is the +/-20 degree red HSV hue interval. No divider, DSP,
+    // hue conversion or maximum/minimum datapath is needed. RED_MIN and the
+    // small RED_DELTA remain as a floor against dark channel noise.
+    // Low-saturation pink/white and orange/purple are outside these bounds;
+    // genuinely clipped pixels cannot recover their original color here.
     wire [3:0] red_mask;
     genvar p;
     generate
         for (p = 0; p < 4; p = p + 1) begin : gen_red
             wire [8:0] red;
+            wire [7:0] green;
+            wire [7:0] blue;
             wire [8:0] green_limit;
             wire [8:0] blue_limit;
+            wire [9:0] twice_red;
+            wire [9:0] triple_green;
+            wire [9:0] triple_blue;
+            wire [9:0] hue_green_limit;
+            wire [9:0] hue_blue_limit;
             assign red = {1'b0,I_tdata[95-p*24-:8]};
-            assign green_limit = {1'b0,I_tdata[87-p*24-:8]} + RED_DELTA_9;
-            assign blue_limit = {1'b0,I_tdata[79-p*24-:8]} + RED_DELTA_9;
+            assign green = I_tdata[87-p*24-:8];
+            assign blue = I_tdata[79-p*24-:8];
+            assign green_limit = {1'b0,green} + RED_DELTA_9;
+            assign blue_limit = {1'b0,blue} + RED_DELTA_9;
+            assign twice_red = {1'b0,red[7:0],1'b0};
+            assign triple_green = {2'b0,green} + {1'b0,green,1'b0};
+            assign triple_blue = {2'b0,blue} + {1'b0,blue,1'b0};
+            assign hue_green_limit = {1'b0,red} + {1'b0,blue,1'b0};
+            assign hue_blue_limit = {1'b0,red} + {1'b0,green,1'b0};
             assign red_mask[p] = (red >= RED_MIN_9) &&
-                                (red >= green_limit) && (red >= blue_limit);
+                                (red >= green_limit) && (red >= blue_limit) &&
+                                (twice_red >= triple_green) &&
+                                (twice_red >= triple_blue) &&
+                                (triple_green <= hue_green_limit) &&
+                                (triple_blue <= hue_blue_limit);
         end
     endgenerate
 

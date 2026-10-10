@@ -1,5 +1,99 @@
 # 无板仿真：先验证边缘检测模块
 
+## 2026-10-10 光照适应回归
+
+新增四个 PowerShell 入口均使用 XSim 2021.1，把日志、展开文件和波形写入打印出的
+TEMP 目录，不加入 TD 综合工程：
+
+```powershell
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_auto_exposure.ps1'
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_awb_frame_adaptation.ps1'
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_red_target_lighting.ps1'
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_isp_lighting_integration.ps1'
+```
+
+每个入口遇到编译、展开、运行失败或缺少成功标志都会报错；
+日志可见不等于测试通过，需对应版本完成后的 PASS 标志。
+
+| 入口 | 实际验证内容 | 成功标志 |
+|---|---|---|
+| `run_auto_exposure.ps1` | 4 个测试台：完整帧亮度统计、控制器闭环/写握手、64 位异步邮箱、统计→CDC→AE→原增益/曝光表的反馈集成 | `AUTO_EXPOSURE_CONTROL_PASS`、`AE_FRAME_STATS_PASS`、`AE_STATS_CDC_PASS`、`AE_LIGHTING_LOOP_PASS` |
+| `run_awb_frame_adaptation.ps1` | 按帧计算与提交红/蓝增益、近中性样本选择、平滑/限幅、整帧增益固定、四像素输出和两拍数据延迟、无空拍帧及完整 720p | `AWB_FRAME_ADAPTATION_PASS` |
+| `run_red_target_lighting.ps1` | 独立逐像素 RGB 判定及 3×3 多数滤波参考，暗红、强粉红、非红颜色、门限边界、valid 空拍、截断/连续帧、目标框和像素计数 | `RED_TARGET_LIGHTING_PASS` |
+| `run_isp_lighting_integration.ps1` | 真实 `isp_top` 内预 AWB AE 统计、AWB、彩色/Scharr 切换、红色检测和 96→128 打包，在三个完整 720p 场景中检查帧标志、像素/字节总数及目标结果 | `ISP_LIGHTING_INTEGRATION_PASS` |
+
+红色检测还可按生产分辨率运行：
+
+```powershell
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_red_target_lighting.ps1' -Width 1280 -Height 720
+```
+
+AE 的生产统计位于 AWB 前，每完整 720p 帧抽取 7,200 像素，
+输出 `{sum32, count16, bright16}`，`sum` 仅累加 `Y<232`，
+`count` 仍统计全部采样，`bright` 为 `Y>=232` 数量。
+控制端默认写曝光 1000/增益 16，范围 4..1991/16..144，非高光均亮目标
+96..128；非高光至少 25% 才能偏暗增亮，少于 12.5% 时减亮，
+非高光达到 12.5% 但未到 25% 且偏暗时保持。每次实际 I²C done 先低后高后忽略 3 帧统计。
+帧统计测试覆盖空闲帧首、帧首与像素同时到达、保持的帧首、最终像素、
+错误行尾、截断帧、新帧重新同步、未标记额外数据、停止及复位。
+
+AE 回归本轮结果：
+
+```text
+AUTO_EXPOSURE_CONTROL_PASS requests=63 commits=61 checks=596
+AE_FRAME_STATS_PASS small_frames=7 large_frames=1 production_samples=7200 checks=10
+AE_STATS_CDC_PASS captures=301 checks=301 repeated=16 walking=128 random=128 stream=300 stalled_latest=50 resets=2
+AE_LIGHTING_LOOP_PASS frames=1571 requests=139 commits=139 stable_checks=4448 convergences=6 mixed=10 boundaries=4 color_fields=4
+```
+
+邮箱测试核对相同值的连续帧也有 valid 脉冲，逐位和随机 64 位 payload、
+快速连续输入有序合并、目的钟停止后先接收在途快照再接收最新 pending 快照，
+以及复位取消在途事务。AE 反馈测试运行 100 MHz 视频域和约 23.81 MHz 控制域，
+通过真实 `SC520GainTbl`、`uics520regAE` 表模拟 8 项写入和 group release，
+亮→暗→亮、源时钟停止/恢复、复位恢复、全白恢复共六个场景均进入目标亮度范围。
+混合场景以 128×40 的实际 RGB 帧输入统计模块，按 32 像素×4 行块组成
+40 个采样块，光源照度 1000、背景照度 16。光源占 15%/30%/50%/75%
+并改变位置时，背景亮度 103 连续 8 帧达标，随后 20 帧没有新增调节请求。
+85%/90% 边界从光源实际亮度 255 进入，并检查首帧高光计数分别 34/36；
+85% 保持背景 103，90% 为防近全白降至背景 2、光源 133 后停止调节。
+这四项边界测试证明没有反复明暗请求，不证明高光占满画面时背景仍能看清。
+四项饱和 RGB/粉红固定输入只验证高光计量，不模拟其随曝光变化的色彩，
+也不验证单个通道防过曝。
+这是逻辑反馈及寄存器语义验证，不模拟 SCL/SDA 电气、噪声、镜头或真实传感器感光响应；
+具体收敛帧数不代表实物验证结果。
+
+最新四项 AE 回归日志位于 TEMP 的
+`anlogic_auto_exposure_de1491ffdb20414784be88abd43da9c9/`。
+旧策略使用冻结的旧统计和旧控制器，以同一混合场景另编译
+`AE_LEGACY_POLICY_REPRO` 分支，复现结果：
+
+```text
+AE_LEGACY_MIXED_REPRO_PASS fraction=6/40 source_illumination=1000 background_illumination=16 background_min=2 background_max=4 AE=180 AG=16 requests=70
+```
+
+完整记录保存在 TEMP 的
+`anlogic_ae_legacy_mixed_loop_77101abc37de46b9b5ecbb7939574492/`；
+此分支需同时使用旧统计与旧控制器，仅用于保留问题证据，不属于正常入口。
+
+当前源码的 AWB 与 ISP 回归结果：
+
+```text
+AWB_FRAME_ADAPTATION_PASS frames=102 pixels=26944 full720p_beats=230400 candidates=91 holds=8 resets=4
+ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=691200 edge_groups=691200 packed_words=518400 bytes=8294400 ae=3 targets=3 edge_white=556
+```
+
+本次 ISP 回归重新核对仅累加非高光的统计语义；最新 TEMP 为
+`anlogic_isp_lighting_7f4daef93b7349ba928cf2e176540998/`。
+AWB 与 ISP 集成测试不模拟 MIPI/RAW 到 RGB 的真实去马赛克过程。
+ISP 测试只在去马赛克后的 RGB 边界提供输入，外围 demosaic 使用测试 stub，
+Scharr RAM 使用 `SCHARR_PORTABLE_RAM` 行为模型；
+它验证当前 AWB 两拍像素/valid 延迟的接口和后续真实模块连接，
+不代表厂商 RAM、DDR、HDMI 或整机时序已经验证。
+统计流水或增益计算修改后，必须重新运行 AWB/ISP 入口；
+最终面积和时序需以对应源码的 TD 报告为准。
+
+## 当前 Scharr 独立回归
+
 当前入口：双击 `run_video_mode.cmd`；720p 运行 `run_video_mode.cmd --no-pause 720`。
 使用 XSim 2021.1，先验证按键，再运行 `tb_scharr_edge_detect_96.sv`。
 独立参考在图像域计算灰度、高斯、Scharr 和 NMS，再补偿 (3,3) 坐标；
@@ -43,7 +137,7 @@ ModelSim 覆盖参数应写为 `-g/tb_scharr_edge_detect_96/GAUSSIAN_ENABLE=0`�
 
 入口把参考和候选冻结到独立 TEMP 目录，只在参考副本中改模块名字。
 成功标志为 `HDMI_MIXER_EQUIVALENCE_PASS`。
-本轮通过 5,493,339 个有效输入像素、1,042,020 个消隐检查周期；
+OSD 优化时通过 5,493,339 个有效输入像素、1,042,020 个消隐检查周期；
 复位中按原行为取消两拍未输出像素。
 已通过全套测试的 mixer 与最终生产 mixer 文件完全相同。
 最终 Logo 只把第一拍从保存索引改为保存地址以适配 TD 的 ERAM 推断；
@@ -51,12 +145,13 @@ ModelSim 覆盖参数应写为 `-g/tb_scharr_edge_detect_96/GAUSSIAN_ENABLE=0`�
 逐拍对照，共 36,868 拍通过。两版本像素表相同。
 最终整机网表的 10 个 Logo ERAM 初始化另经逐地址解码核对，
 全部索引和调色板数据与最终 RTL 相同，重建 32768 个像素与原版一致。
-最终整机布局布线在现有约束下通过，建立/保持余量为 +0.564/+0.020 ns；
+OSD 优化版本的整机布局布线在现有约束下通过，建立/保持余量为 +0.564/+0.020 ns；
+这是增加本轮光照自适应之前的报告，不能当作当前 AE/AWB 版本的最终结果。
 资源、约束审计范围及 TEMP 报告位置见工程 README，实物显示仍需上板验证。
 
 ## 目标框与 DDR 帧对齐
 
-`tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。新增 14 项检查核对摄像头 4 位状态和 8 位错误码经诊断 CDC 后到达实际 mixer 输入。测试台以 `force` 提供 ISP 结果、诊断源值、图像标志和异步时钟，因此不覆盖摄像头 I2C/ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。
+`tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。14 项检查核对摄像头 4 位状态和 8 位错误码经诊断 CDC 后到达实际 mixer 输入；另 19 项检查运行真实顶层状态逻辑，验证初始化 done 不冒充首次 AE 应用、实际 busy→done 置位、后续曝光/增益变化与写 busy 保持已应用状态、持续 I²C 错误/配置失效清除状态及复位恢复。测试台以 `force` 提供 ISP 结果、摄像头配置握手、诊断值、图像标志和异步时钟，因此不覆盖摄像头 I2C/AE/ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。
 
 在 PowerShell 运行以下命令；产物只写到系统临时目录，不需要安装厂商 IP 仿真库：
 
@@ -81,7 +176,14 @@ Pop-Location
 Write-Output $simWork
 ```
 
-每一步都应无 ERROR，最终成功标志为 `TARGET_FRAME_ALIGNMENT_PASS`。`TARGET_ALIGNMENT_STUBS` 只启用测试台末尾的空外围模块；只编译上面列出的文件，不可同时编译同名真实外围/IP 模块。空模块使用统一宽度的输入端口，宽度不匹配警告属于测试边界声明，不代表生产 RTL 接线。测试台没有加入 TD 工程。
+每一步都应无 ERROR，最终成功标志为 `TARGET_FRAME_ALIGNMENT_PASS`，
+当前应包含 `diagnostic=14 actual_status=19`。
+`TARGET_ALIGNMENT_STUBS` 只启用测试台末尾的空外围模块，
+包括 AE 控制器、AE 统计 CDC、ISP、摄像头控制及其它外围/IP；
+真实顶层状态逻辑和 `camera_diag_cdc` 保留并接受边界激励。
+只编译上面列出的文件，不可同时编译同名真实外围/IP 模块。
+空模块使用统一宽度的输入端口，宽度不匹配警告属于测试边界声明，
+不代表生产 RTL 接线。测试台没有加入 TD 工程。
 
 ## 摄像头诊断状态跨时钟
 

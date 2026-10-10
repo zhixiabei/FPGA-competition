@@ -110,6 +110,12 @@ module design_top_wrapper #(
     wire [23:0] S_ISP_target_pixels;
     wire        S_ISP_target_frame_toggle;
     wire        S_ISP_edge_mode_active;
+    wire        S_ISP_ae_stats_valid;
+    wire [31:0] S_ISP_ae_sum_y;
+    wire [15:0] S_ISP_ae_sample_count;
+    wire [15:0] S_ISP_ae_bright_count;
+    wire        S_ae_stats_valid;
+    wire [63:0] S_ae_stats_data;
 
     // Three full-resolution 3x3 stages shift the visible contour
     // by three pixels and three rows. Store compensated
@@ -272,6 +278,7 @@ module design_top_wrapper #(
     reg [1:0]   S_dbg_mc_cmd_pop_seen_sync;
     wire[3:0]   S_hdmi_debug_status;
     reg         S_cam_ae_started;
+    reg         S_cam_ae_applied;
     reg [3:0]   S_cam_status;
     wire [11:0] S_cam_diag_sync;
     wire [7:0]  S_cam_fail_sync;
@@ -556,18 +563,24 @@ module design_top_wrapper #(
     assign S_mc_dbg_cmd_pop = 1'b0;
 
     // O_ae_cfg_done also goes high after initialization, before any AE write.
-    // Require an actual busy AE transaction before reporting default AE/AG done.
+    // Require an actual completed AE write. Once applied, normal closed-loop
+    // updates do not turn the status red merely because the bus is busy.
     always @(posedge S_24m_clk or negedge S_cam_i2c_ready) begin
         if (!S_cam_i2c_ready) begin
             S_cam_ae_started <= 1'b0;
+            S_cam_ae_applied <= 1'b0;
             S_cam_status <= 4'b0000;
         end else begin
-            if (S_cam_cfg_done && !S_ae_cfg_done)
+            if (!S_cam_cfg_done || S_cam_i2c_error) begin
+                S_cam_ae_started <= 1'b0;
+                S_cam_ae_applied <= 1'b0;
+            end else if (!S_ae_cfg_done)
                 S_cam_ae_started <= 1'b1;
+            else if (S_cam_ae_started)
+                S_cam_ae_applied <= 1'b1;
             S_cam_status <= {
                 !S_cam_i2c_error,
-                (S_cam_ae_started && S_ae_cfg_done && S_cam_cfg_done &&
-                 !S_cam_i2c_error && (S_ae == 16'd1991) && (S_ag == 16'd144)),
+                (S_cam_ae_applied && S_cam_cfg_done && !S_cam_i2c_error),
                 S_cam_cfg_done,
                 S_cam_sensor_id_ok
             };
@@ -635,12 +648,25 @@ module design_top_wrapper #(
         .O_edge_mode(S_edge_mode_requested)
     );
 
-  ae_set u_ae_set (
+  ae_stats_cdc u_ae_stats_cdc (
+      .I_src_clk(S_csi_rx_clk),
+      .I_dst_clk(S_24m_clk),
+      .I_rst_n(S_rst_n),
+      .I_src_valid(S_ISP_ae_stats_valid),
+      .I_src_data({S_ISP_ae_sum_y,S_ISP_ae_sample_count,S_ISP_ae_bright_count}),
+      .O_dst_valid(S_ae_stats_valid),
+      .O_dst_data(S_ae_stats_data)
+  );
+
+  auto_exposure_control u_auto_exposure (
       .I_clk(S_24m_clk),
       .I_rst(~S_rst_n),
-      .I_btn({I_button,2'b11}), // Original extension-header gain controls.
       .I_cam_cfg_done(S_cam_cfg_done),
       .I_ae_cfg_done(S_ae_cfg_done),
+      .I_stats_valid(S_ae_stats_valid),
+      .I_sum_y(S_ae_stats_data[63:32]),
+      .I_sample_count(S_ae_stats_data[31:16]),
+      .I_bright_count(S_ae_stats_data[15:0]),
       .O_ae_req(S_ae_req),
       .O_ae(S_ae),
       .O_ag(S_ag)
@@ -819,6 +845,10 @@ isp_top #(
 .O_target_pixels       (S_ISP_target_pixels),
 .O_target_frame_toggle (S_ISP_target_frame_toggle),
 .O_edge_mode_active    (S_ISP_edge_mode_active),
+.O_ae_stats_valid      (S_ISP_ae_stats_valid),
+.O_ae_sum_y            (S_ISP_ae_sum_y),
+.O_ae_sample_count     (S_ISP_ae_sample_count),
+.O_ae_bright_count     (S_ISP_ae_bright_count),
 .I_tready        ()
   );
 
