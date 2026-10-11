@@ -1,6 +1,7 @@
 param(
     [string] $ModelSimBin = 'C:\altera\14.1\modelsim_ase\win32aloem',
-    [string] $TdSimLib = 'D:\TD\sim_release\ph1p'
+    [string] $TdSimLib = 'D:\TD\sim_release\ph1p',
+    [switch] $RawSource
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +23,14 @@ $sources = @(
     'user_source\ip_source\w128_d512_fifo\soft_fifo_al_4057d6b76aa6.v',
     'sim\tb_video_fifo_frame_integrity.sv'
 )
+if($RawSource) {
+    $sources += @(
+        'user_source\hdl_source\isp\demosaic_4x_2_0\demosaic.v',
+        'user_source\hdl_source\isp\demosaic_4x_2_0\raw_matrix_3x3_buffer.v',
+        'user_source\hdl_source\isp\demosaic_4x_2_0\bilinear_interpolation.v',
+        'user_source\hdl_source\isp\data128_96\data128_96.v'
+    )
+}
 $simulationDir = Join-Path $env:TEMP ('anlogic_video_fifo_integrity_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $simulationDir | Out-Null
 $compiledSources = @()
@@ -50,18 +59,19 @@ $primitiveSource = Join-Path $simulationDir 'ph1p_logic_dram_functional.v'
 $compiledSources += $primitiveSource
 $tclSources = ($compiledSources | ForEach-Object { '{' + $_.Replace('\', '/') + '}' }) -join ' '
 $tclDir = $simulationDir.Replace('\', '/')
+$rawParameter=[int] $RawSource.IsPresent
 $runScript = @"
 onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
 vlog -sv $tclSources
 foreach phase {0.3 4.3 9.3 14.3} {
-    vsim -t ps -gH=32 -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
+    vsim -t ps -gH=32 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
     onfinish stop
     run -all
     quit -sim
 }
-vsim -t ps -gH=720 -gDDR_PHASE=9.3 work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR {+EXPORT=$tclDir}
+vsim -t ps -gH=720 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=9.3 work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR {+EXPORT=$tclDir}
 onfinish stop
 run -all
 quit -sim
@@ -98,6 +108,10 @@ try {
         '(?m)^\s*(?:#\s*)?FIFO_FRAME_READER_PASS frames=(?<frames>\d+) pixels=(?<pixels>\d+) side_pixels=(?<side>\d+) errors=0 underflows=0 overflows=0\s*$')
     if ($writerPasses.Count -ne 5 -or $readerPasses.Count -ne 3) {
         throw "Incomplete video FIFO coverage; see $simulationDir\console.log"
+    }
+    if($RawSource -and [regex]::Matches($console,
+        '(?m)^\s*(?:#\s*)?RAW_TO_DDR_FRAME_PASS pixels=\d+\s*$').Count -ne 5) {
+        throw "Missing RAW-to-DDR coverage; see $simulationDir\console.log"
     }
     $expectedPhases = @(0.3, 4.3, 9.3, 14.3, 9.3)
     $totalWriterBytes = 0

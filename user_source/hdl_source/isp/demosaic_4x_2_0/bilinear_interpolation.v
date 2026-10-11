@@ -13,14 +13,15 @@ caused by the use of their own products.
 @Author      :   XiaoQingquan 
 @Time        :   2025/8 
 version:     :   2.0
-@Description :   ÓÉÓÚRGGBºÍGBRGµÄBayer¸ñÊ½ÖÐµÄÈýÔª²Ù×÷·ûµÄÌõ¼þÅÐ¶Ï·ÖÖ§ÊÇµßµ¹µÄ£¬
-                 µ¼ÖÂÔÚÐèÒª²åÖµµÄµØ·½Ê¹ÓÃÁËÔ­Ê¼Öµ£¬ÔÚÓÐÔ­Ê¼ÖµµÄµØ·½½øÐÐÁË´íÎóµÄ
-                 Æ½¾ù£¬ÏÖÔÚÖØÐ´ÐÞ¸ÄÁË´Ë´¦£¬ÈÃÆäÕýÈ·µÄÈ¥½øÐÐÆ½¾ù¡£
+@Description :   ç”±äºŽRGGBå’ŒGBRGçš„Bayeræ ¼å¼ä¸­çš„ä¸‰å…ƒæ“ä½œç¬¦çš„æ¡ä»¶åˆ¤æ–­åˆ†æ”¯æ˜¯é¢ å€’çš„ï¼Œ
+                 å¯¼è‡´åœ¨éœ€è¦æ’å€¼çš„åœ°æ–¹ä½¿ç”¨äº†åŽŸå§‹å€¼ï¼Œåœ¨æœ‰åŽŸå§‹å€¼çš„åœ°æ–¹è¿›è¡Œäº†é”™è¯¯çš„
+                 å¹³å‡ï¼ŒçŽ°åœ¨é‡å†™ä¿®æ”¹äº†æ­¤å¤„ï¼Œè®©å…¶æ­£ç¡®çš„åŽ»è¿›è¡Œå¹³å‡ã€‚
 *****************************************************************/
 
 
 module bilinear_interpolation #(
-    parameter BAYER_MODE = "BGGR"
+    parameter BAYER_MODE = "BGGR",
+    parameter integer EDGE_AWARE_GREEN = 1
 )(
     input             I_clk            ,
     input             I_rst_n          ,
@@ -46,7 +47,7 @@ module bilinear_interpolation #(
 );
 
 /*********************************************************
-                  function ÉùÃ÷
+                  function å£°æ˜Ž
 *********************************************************/
 // calculate the data's bit width
 function integer clog2b(
@@ -59,11 +60,29 @@ function integer clog2b(
     end    
 endfunction
 
+// At R/B sites prefer the smoother green direction. A small deadband keeps
+// noise from choosing a direction on nearly flat patches. Return two 9-bit
+// terms so the existing five-stage pipeline and /4 normalization stay intact.
+function [8:0] green_pair;
+    input [7:0] north,south,west,east;
+    input second_term;
+    reg [8:0] horizontal,vertical,dh,dv;
+    begin
+        horizontal={1'b0,west}+{1'b0,east};
+        vertical={1'b0,north}+{1'b0,south};
+        dh=west>east ? west-east : east-west;
+        dv=north>south ? north-south : south-north;
+        if(EDGE_AWARE_GREEN && dh+9'd8<dv) green_pair=horizontal;
+        else if(EDGE_AWARE_GREEN && dv+9'd8<dh) green_pair=vertical;
+        else green_pair=second_term ? horizontal : vertical;
+    end
+endfunction
+
 /*********************************************************
-                      RAW¸ñÊ½
+                      RAWæ ¼å¼
 *********************************************************/
 // bayer mode 
-////bayer¸ñÊ½
+////bayeræ ¼å¼
 localparam RGGB = "RGGB";
 localparam BGGR = "BGGR";
 localparam GBRG = "GBRG";
@@ -72,7 +91,7 @@ localparam GRBG = "GRBG";
 
 
 /*********************************************************
-                       reg ÐÅºÅÉùÃ÷
+                       reg ä¿¡å·å£°æ˜Ž
 *********************************************************/
 reg         bayer_ypos_r0,  bayer_ypos_r1;
 
@@ -112,7 +131,7 @@ reg   [4:0]   I_tlast_r ;
 reg   [4:0]   I_tuser_r ;
 reg   [4:0]   I_tvalid_r;
 /*********************************************************
-                    wire ÐÅºÅÉùÃ÷
+                    wire ä¿¡å·å£°æ˜Ž
 *********************************************************/
 
 // bayer format BGGR 
@@ -124,7 +143,7 @@ wire    [7:0]   matrix23, matrix24, matrix25, matrix26, matrix27, matrix28 ;
 wire    [127:0] rgb_data;
 wire            rgb_data_valid ;
 /*********************************************************
-                        ÐÅºÅÃèÊö
+                        ä¿¡å·æè¿°
 *********************************************************/
 assign {matrix03, matrix04, matrix05, matrix06, matrix07, matrix08} = matrix_last_line[71:24];
 assign {matrix13, matrix14, matrix15, matrix16, matrix17, matrix18} = matrix_cur_line[71:24];
@@ -133,7 +152,7 @@ assign {matrix23, matrix24, matrix25, matrix26, matrix27, matrix28} = matrix_nex
 
 
 /*********************************************************
-                        ÐÅºÅÑÓ³Ù
+                        ä¿¡å·å»¶è¿Ÿ
 *********************************************************/
 // pipleline 0
 always @(posedge I_clk or negedge I_rst_n) begin
@@ -153,7 +172,7 @@ end
 
 ////////////////////////////////////////////
 //
-//              Ë«ÏßÐÔ²åÖµËã·¨
+//              åŒçº¿æ€§æ’å€¼ç®—æ³•
 //
 ////////////////////////////////////////////
 // mipi ov5640 raw
@@ -205,24 +224,24 @@ generate if(BAYER_MODE == BGGR) begin : BAYER_MODE_BGGR
                 g0_sum_part0 <= matrix14 ;
                 g0_sum_part1 <= 'd0 ;
 
-                g1_sum_part0 <= matrix05 + matrix25 ;
-                g1_sum_part1 <= matrix14 + matrix16 ;
+                g1_sum_part0 <= green_pair(matrix05,matrix25,matrix14,matrix16,1'b0);
+                g1_sum_part1 <= green_pair(matrix05,matrix25,matrix14,matrix16,1'b1);
 
                 g2_sum_part0 <= matrix16;
                 g2_sum_part1 <= 'd0 ;
 
-                g3_sum_part0 <= matrix07 + matrix27 ; 
-                g3_sum_part1 <= matrix16 + matrix18 ;
+                g3_sum_part0 <= green_pair(matrix07,matrix27,matrix16,matrix18,1'b0);
+                g3_sum_part1 <= green_pair(matrix07,matrix27,matrix16,matrix18,1'b1);
             end
             else begin
-                g0_sum_part0 <= matrix04 + matrix24 ;
-                g0_sum_part1 <= matrix13 + matrix15 ;
+                g0_sum_part0 <= green_pair(matrix04,matrix24,matrix13,matrix15,1'b0);
+                g0_sum_part1 <= green_pair(matrix04,matrix24,matrix13,matrix15,1'b1);
 
                 g1_sum_part0 <= matrix15 ;
                 g1_sum_part1 <= 'd0 ;
 
-                g2_sum_part0 <= matrix06 + matrix26 ;
-                g2_sum_part1 <= matrix15 + matrix17 ;
+                g2_sum_part0 <= green_pair(matrix06,matrix26,matrix15,matrix17,1'b0);
+                g2_sum_part1 <= green_pair(matrix06,matrix26,matrix15,matrix17,1'b1);
 
                 g3_sum_part0 <= matrix17 ; 
                 g3_sum_part1 <= 'd0 ;
@@ -888,7 +907,7 @@ endgenerate
 
     assign rgb_data = {rgb_data3, rgb_data2, rgb_data1, rgb_data0};
 /*****************************************************************
-                          ÐÅºÅÍ¬²½                                        
+                          ä¿¡å·åŒæ­¥
 *****************************************************************/
 
     always @(posedge I_clk or negedge I_rst_n) begin

@@ -5,7 +5,8 @@
 module tb_video_fifo_frame_integrity #(
     parameter integer W=1280,H=720,
     parameter real DDR_PHASE=9.3,
-    parameter integer READY_GAPS=1
+    parameter integer READY_GAPS=1,
+    parameter integer RAW_SOURCE=0
 );
 localparam integer GROUPS=W/4,PIXELS=W*H,WORDS=PIXELS*3/16;
 reg camera_clk=0,ddr_clk=0;
@@ -13,10 +14,37 @@ always #4.830 camera_clk=~camera_clk;
 initial begin #(DDR_PHASE);forever #7.5 ddr_clk=~ddr_clk;end
 reg rst_n=0,in_user=0,in_valid=0,in_last=0,edge_mode=0;
 reg [95:0] in_data=0;
+integer frame,row,group_index,pixel_lane,clear_index;
+wire [95:0] rgb_source;
+wire rgb_user,rgb_last,rgb_valid;
+generate if(RAW_SOURCE) begin: raw_input
+    reg [39:0] raw_data;
+    reg [23:0] raw_colour;
+    integer raw_lane;
+    always @(*) begin
+        for(raw_lane=0;raw_lane<4;raw_lane=raw_lane+1) begin
+            raw_colour=in_data[95-raw_lane*24 -:24];
+            raw_data[raw_lane*10 +:10]=
+                ((row%2==0 && raw_lane%2==0)?raw_colour[7:0]:
+                 (row%2==1 && raw_lane%2==1)?raw_colour[23:16]:raw_colour[15:8])*4;
+        end
+    end
+    wire [127:0] reconstructed;
+    demosaic #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.BAYER_MODE("BGGR")) u_demosaic (
+        .I_clk(camera_clk),.I_rst_n(rst_n),.axi4s_video_tdata(raw_data),
+        .axi4s_video_tdest(10'd0),.axi4s_video_tvalid(in_valid),
+        .axi4s_video_tuser(in_user),.axi4s_video_tlast(in_last),
+        .axi4s_video_tready(),.O_tvalid(rgb_valid),.O_tuser(rgb_user),
+        .O_tlast(rgb_last),.O_tdata(reconstructed),.O_tready(1'b1));
+    data128_96 u_order(.I_tdata(reconstructed),.O_tdata(rgb_source));
+end else begin: rgb_input
+    assign rgb_source=in_data;
+    assign rgb_user=in_user;assign rgb_last=in_last;assign rgb_valid=in_valid;
+end endgenerate
 wire awb_user,awb_valid,awb_last;wire [95:0] awb_data;
 awb #(.IMG_WIDTH(W),.IMG_HEIGHT(H)) u_awb(
-.I_clk(camera_clk),.I_rst_n(rst_n),.I_tlast(in_last),.I_tuser(in_user),
-.I_tdata(in_data),.I_tvalid(in_valid),.I_tready(),.O_tlast(awb_last),
+.I_clk(camera_clk),.I_rst_n(rst_n),.I_tlast(rgb_last),.I_tuser(rgb_user),
+.I_tdata(rgb_source),.I_tvalid(rgb_valid),.I_tready(),.O_tlast(awb_last),
 .O_tuser(awb_user),.O_tdata(awb_data),.O_tvalid(awb_valid),.O_tready(1'b1));
 wire selected_user,selected_valid,selected_last,selected_mode;
 wire [95:0] selected_data;
@@ -55,6 +83,39 @@ integer export_enabled=0;
 function [23:0] source_rgb(input integer pixel_index);
     source_rgb=pixel_index;
 endfunction
+function automatic integer source_raw(input integer px,input integer py);
+    integer xx,yy;
+    reg [23:0] colour;
+    begin
+        xx=px<0?1:px>=W?W-2:px;
+        yy=py<0?1:py>=H?H-2:py;
+        colour=source_rgb(yy*W+xx);
+        source_raw=(yy%2==0 && xx%2==0)?colour[7:0]:
+                   (yy%2==1 && xx%2==1)?colour[23:16]:colour[15:8];
+    end
+endfunction
+function automatic [23:0] expected_rgb(input integer pixel_index);
+    integer px,py,c,n,s,e,w,diag,rr,gg,bb,dh,dv;
+    begin
+        if(!RAW_SOURCE) expected_rgb=source_rgb(pixel_index);
+        else begin
+            px=pixel_index%W;py=pixel_index/W;
+            c=source_raw(px,py);n=source_raw(px,py-1);s=source_raw(px,py+1);
+            e=source_raw(px+1,py);w=source_raw(px-1,py);
+            diag=(source_raw(px-1,py-1)+source_raw(px+1,py-1)+
+                  source_raw(px-1,py+1)+source_raw(px+1,py+1))/4;
+            if(px%2==py%2) begin
+                dh=e>w?e-w:w-e;dv=n>s?n-s:s-n;
+                gg=dh+8<dv?(e+w)/2:dv+8<dh?(n+s)/2:(n+s+e+w)/4;
+                rr=py%2?c:diag;bb=py%2?diag:c;
+            end else begin
+                gg=c;rr=py%2?(e+w)/2:(n+s)/2;
+                bb=py%2?(n+s)/2:(e+w)/2;
+            end
+            expected_rgb={rr[7:0],gg[7:0],bb[7:0]};
+        end
+    end
+endfunction
 function [7:0] reference_byte(input integer byte_index);
     integer px,ch;
     begin
@@ -71,8 +132,8 @@ always @(posedge camera_clk) begin
         if(awb_user) awb_pixels=0;
         if(awb_valid) begin
             for(lane=0;lane<4;lane=lane+1) begin
-                if(awb_data[95-lane*24 -:24]!==source_rgb(awb_pixels))
-                    $fatal(1,"AWB changed source coordinate RGB px=%0d got=%h expected=%h",awb_pixels,awb_data[95-lane*24 -:24],source_rgb(awb_pixels));
+                if(awb_data[95-lane*24 -:24]!==expected_rgb(awb_pixels))
+                    $fatal(1,"AWB changed source coordinate RGB px=%0d got=%h expected=%h",awb_pixels,awb_data[95-lane*24 -:24],expected_rgb(awb_pixels));
                 awb_pixels=awb_pixels+1;
             end
         end
@@ -89,8 +150,8 @@ always @(posedge camera_clk) begin
                 pixel_value=selected_data[95-lane*24 -:24];
                 if(^pixel_value===1'bx) $fatal(1,"Unknown vendor-RAM pixel");
                 if(capture_frame==0) begin
-                    if(selected_mode || pixel_value!==source_rgb(capture_pixels))
-                        $fatal(1,"RGB ring/selector moved source coordinate %0d got=%h expected=%h",capture_pixels,pixel_value,source_rgb(capture_pixels));
+                    if(selected_mode || pixel_value!==expected_rgb(capture_pixels))
+                        $fatal(1,"RGB ring/selector moved source coordinate %0d got=%h expected=%h",capture_pixels,pixel_value,expected_rgb(capture_pixels));
                     colour_pixels=colour_pixels+1;
                 end else begin
                     if(!selected_mode || (pixel_value!==24'h000000 && pixel_value!==24'hffffff))
@@ -137,7 +198,6 @@ always @(posedge ddr_clk) begin
         committed_words=committed_words+1;
     end
 end
-integer frame,row,group_index,pixel_lane,clear_index;
 reg [95:0] next_group;
 task automatic send_frame(input integer mode_value);
     begin
@@ -189,6 +249,7 @@ initial begin
     send_frame(0);send_frame(1);
     if(frames_passed!=2) $fatal(1,"Missing complete frame coverage");
     $display("FIFO_FRAME_INTEGRITY_PASS H=%0d phase=%0.3f frames=%0d bytes=%0d",H,DDR_PHASE,frames_passed,byte_checks);
+    if(RAW_SOURCE) $display("RAW_TO_DDR_FRAME_PASS pixels=%0d",PIXELS*frames_passed);
     $finish;
 end
 initial begin #150000000;$fatal(1,"Pixel-chain integrity test timeout");end

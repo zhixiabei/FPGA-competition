@@ -6,6 +6,21 @@
 
 本说明依据当前的 [TD 工程文件](td_project/anlogic_edge_osd.al)、[系统顶层](user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 2026-10-11 RAW 窗口修复
+
+`demosaic/raw_matrix_3x3_buffer.v`（实际目录 `isp/demosaic_4x_2_0/`）
+已改为四个循环 ERAM 行缓存、完整三行中心窗口及保持 Bayer 相位的镜像补边。
+窗口读出将带空拍的 RAW 输入整理为每行连续四像素/拍，保留全部 1280×720 坐标。
+最后一行在垂直消隐中读出；输入帧间必须允许两行及后续 ISP 排空。
+`data_complete_delay` 仅保留接口兼容，不再参与旧的首行周期测量。
+`mipi_to_raw_converter.v`、`zhenghe.v`、`line_buffer_demosaic.v` 和两份旧行缓存 IP
+虽然仍登记，但已不在当前 demosaic 实例层次内；不要据登记表推断仍使用旧窗口。
+
+`bilinear_interpolation.v` 当前 BGGR 分支以 `EDGE_AWARE_GREEN=1` 启用方向性绿色
+插值，差值死区 8；红蓝和五拍输出延迟不变。其它 Bayer 分支保持历史插值实现，
+未在本轮作为生产配置验证。生产修改仍在原文件路径，无需添加新综合文件。
+AE/AWB、红色检测、Scharr 及 HDMI 路径未改；完整验证与限制见 README 最新章节。
+
 ## 当前光照适应通路（2026-10-10）
 
 曝光由 **AWB 前的亮度统计 → 请求/确认 CDC → AE 控制器 → 原 SC520CS I²C 表**

@@ -1,5 +1,75 @@
 # 无板仿真：先验证边缘检测模块
 
+## 2026-10-11 RAW 重建与完整像素通路
+
+```powershell
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_demosaic_quality.ps1'
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_demosaic_quality.ps1' -Width 64 -Height 49
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_demosaic_quality.ps1' -Width 1280 -Height 720
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_demosaic_quality.ps1' -CsiSource -Width 1280 -Height 720
+& 'D:/vivado_work/anlogic_edge_osd/sim/run_video_fifo_frame_integrity.ps1' -RawSource
+& 'D:/vivado_work/anlogic_edge_osd/verification/run_image_quality_build.ps1'
+```
+
+仿真项使用 ModelSim 和未修改的 TD RAM 功能模型，所有产物写入打印出的 TEMP。
+最后一项冻结完整源码及工程配置到 TEMP，运行主工程综合、布局布线，不生成 bit，
+并检查最终建立/保持余量非负。GUI 工程和原下载设置不变。
+
+`tb_demosaic_quality.sv` 从实际 RAW40 端口驱动生产 demosaic，
+使用独立图像域公式检查 RGB、首尾像素、行末和帧首，覆盖恒定彩色、亮度渐变、
+细线、随机图、横/纵灰度台阶、连续输入、不同空拍、提前/保持的 SOF 和带旧 RAM
+内容的复位。64×48 七帧 21,504 像素、64×49 七帧 21,952 像素均零错误。
+完整 1280×720 七帧 **6,451,200 像素**，像素/标志错误均为 0，厂商 RAM
+仿真无错误或警告；日志为 TEMP 的
+`anlogic_demosaic_quality_08a71ee4dbf04b0bbe3d7c15282e56cc/console.log`。
+灰度台阶的绿色累计绝对误差：64×48 双线性参考 5,376，新方向选择 0；
+完整 720p 的对应累计误差分别为 96,000 和 0，检查 921,600 个 R/B 位置。
+这是合成无噪声台阶的验证，不是实拍画质评分或所有图像的普遍提升比例。
+
+`-CsiSource` 将输入边界前移到两 lane 的 16 位 HS 数字字节流，实例化生产
+`csi_unpacket_2lane`、`raw10_unpacket_2lane` 和 `uial2axis`，再连接新版 demosaic。
+以 RAW10 每四像素五字节的格式生成行载荷，逐像素检查全部十位（低两位也变化），
+随后用原独立图像域公式核对 RGB/帧行标志。输入是完整连续 RAW10 长包，帧间和
+行间有消隐；复位测试发生在消隐中，不声称覆盖半包复位或任意有效信号停顿。
+短包/长包 ECC 和行 CRC 用占位字节，当前生产解析器没有校验它们；该测试
+不验证 ECC/CRC、丢包恢复、虚拟通道、多数据类型、传感器噪声或 MIPI 电气。
+64×48 七帧 RAW/RGB 各 21,504 像素、64×49 各 21,952 像素均通过。
+后者日志为 TEMP 的 `anlogic_demosaic_quality_527ca2257206454f8ea094b9fe8715db/`。
+完整 1280×720 七帧 RAW/RGB 各 **6,451,200 像素**，像素和标志错误均为 0；
+最终入口还检查七帧和两端精确像素总数，不能仅凭一行 PASS 通过。
+日志为 TEMP 的 `anlogic_demosaic_quality_d245081fcef443fa86f86ccd82203d28/`。
+
+此前对旧窗口的四帧检查记录为 TEMP 的
+`anlogic_demosaic_quality_118d9240d3c64ea299fe49a02f0b4111/console.log`：
+12,288 个像素中 7,180 个与中心坐标参考不符，4 个帧首标志错误。
+该负例仅把旧 RAM 未连接的写端口在仿真中接地，未强制像素/控制内部状态；
+不接地的全零模型结果未作为硬件缺陷证据。
+最终测试入口可用 `-DemosaicSourceRoot` 指向独立旧源码目录，并以
+`-LegacyRamTies -AllowErrors` 运行前三种图案的旧版负例。
+最终入口的三图案负例也已重跑：9,216 个像素中 4,108 个错误、3 个帧首错误，
+日志为 TEMP 的 `anlogic_demosaic_quality_d7a3fe43f38545a8a5c450bd04000ce2/`。
+
+FIFO 入口默认仍保留 RGB 回归；`-RawSource` 在其前端连接真实 demosaic 和
+data128_96，Bayer 像素来自已编码坐标的 RGB，重建后另用独立公式逐像素核对。
+后续 AWB、彩色/Scharr、打包、实际输入 FIFO/DDR 写请求和实际输出 FIFO/解包
+不使用 stub。四种 DDR 相位及完整 720p 彩色/边缘测试均通过：
+
+```text
+FIFO_FRAME_INTEGRITY_PASS H=720 phase=9.300 frames=2 bytes=5529600
+RAW_TO_DDR_FRAME_PASS pixels=1843200
+VIDEO_FIFO_REGRESSION_PASS writer_bytes=6512640 reader_pixels=3686400
+```
+
+读回含独立双槽压力场景，每项像素错误、空读、满写均为 0。
+最新版 `-RawSource` 入口已复验，五个写入场景均输出 `RAW_TO_DDR_FRAME_PASS`，
+完整 720p 彩色/边缘两帧和三个读出场景全部通过。
+日志为 TEMP 的 `anlogic_video_fifo_integrity_be32d80269124d00b7e5b3554dc6cf54/`。
+不模拟真实 MIPI 电气/CSI 包、传感器噪声/镜头、DDR 控制器或 HDMI PHY。
+现有 `run_isp_lighting_integration.ps1` 仍只验证 RGB 边界之后，不把它冒称为 RAW 回归。
+该入口本轮重跑通过三帧：691,200 组 AWB/Scharr 数据、518,400 个打包字、
+8,294,400 字节及三组 AE/目标结果；日志为 TEMP 的
+`anlogic_isp_lighting_c2caed08bc15496c92a8953d38b2c501/`。
+
 ## 2026-10-10 真实视频 FIFO 与右侧接缝回归
 
 ```powershell
