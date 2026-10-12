@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceRoot = Join-Path $projectRoot 'user_source\hdl_source'
-$sources = @('isp\isp_top.v','awb.v','isp\ae_frame_stats_96.v',
+$sources = @('isp\isp_top.v','isp\lsc_raw10_4x.v','awb.v','isp\ae_frame_stats_96.v',
     'isp\rgb_edge_switch_96.v','isp\scharr_edge_detect_96.v',
     'isp\red_target_detect_96.v','isp\data96_128\data96_128.v',
     'isp\data128_96\data128_96.v')

@@ -1,5 +1,19 @@
 # 安路 PH1P35 边缘检测 + OSD 合并工程
 
+## 2026-10-11 低资源横向 LSC
+
+针对实拍的中央偏青、两侧偏粉，在 RAW10 去马赛克前加入可关闭的横向色彩阴影补偿。
+默认只将两侧绿色最多提高 18.75%，向中央按距离平方平滑回到原值，AWB 随后调整整体颜色。
+系数是拍屏现象下的保守试调值，不是平场标定结果；实物效果待用户下载后继续拍屏比较。
+调整方法、局限和完整验证范围见 **[LSC_TUNING.md](LSC_TUNING.md)**。
+
+整机 Routed：Slice **11,316/21,216（53.34%）**，比上版增加 **158 个**；
+ERAM **49/108（+1）**，DSP **11/40（+2）**。建立 **+0.269 ns**、保持 **+0.020 ns**，
+现有约束下通过。新增 ROM 只存系数，不增加行/帧缓存；RAW10 数据和标志同步经过三拍，
+原 AWB 的 54 拍保护延迟保留。CSI→LSC→RGB、真实 FIFO/DDR 读写和原 ISP 回归均通过。
+没有生成或下载 bit；两份 `.al` 已加入新模块，TD 需重新打开工程加载。
+后文“不含镜头阴影补偿”的描述属于新增 LSC 之前的历史记录。
+
 ## 2026-10-11 RAW 重建画质修复
 
 本轮修改生产通路中的 `raw_matrix_3x3_buffer.v` 和 `bilinear_interpolation.v`：
@@ -222,7 +236,7 @@ TD 当前工程中：`awb.v`、`ae_stats_cdc.v`、`auto_exposure_control.v`、
 目标框及复位，DE、RGB、HS、VS 和读使能逐拍一致。
 最终 Logo 的地址寄存写法另通过全部 32,768 个地址和 4,096 次随机
 跳转的逐拍对照；两份实现的像素表相同。目标框与 DDR 帧对齐集成测试
-也通过了 30 次读写/显示及 14 项摄像头诊断检查。入口和覆盖范围见
+也通过了 30 次读写/显示及 14 项摄像头诊断检查。历史等价对比入口已移除；当前集成测试的入口和覆盖范围见
 [sim/README.md](sim/README.md)。
 
 最终整机门级网表中 Logo 的 10 个 ERAM 初始化已逐地址解码核对，
@@ -389,9 +403,9 @@ ERAM 52/108（48.15%）、DSP 9/40（22.50%）。
 覆盖黑白画面保留目标框、原 Logo/文字优先级和十进制坐标。
 帧对应测试通过 30 次读写与显示，覆盖多槽回绕、无目标清框、截断帧、
 异步时钟和边缘位置补偿；该测试使用受控 ISP 结果，不替代真实 MIPI/DDR 数据验证。
-历史仿真源文件见 `sim/tb_color_edge_detect_96.sv`、`sim/tb_red_target_detect_96.sv`、
+仍用于当前功能的仿真源文件见 `sim/tb_red_target_detect_96.sv`、
 `sim/tb_target_frame_alignment.sv`、`sim/tb_color_target_mixer.sv`。
-旧 `tb_color_edge_detect_96.sv` 依赖旧版选择器，不能直接与当前 Scharr 选择器混用。
+旧彩色边缘对照测试已移除；当前 Scharr 测试入口为 `sim/run_video_mode.cmd`。
 检查日志、脚本和中间产物放在系统 TEMP，不参加上板综合。
 最终布局布线时序和摄像头实物效果仍需生成新版 bit 后验证。
 
@@ -443,15 +457,18 @@ TD 用于编译工程；视频显示在 HDMI 接收设备上。用户已确认�
 | [user_source/ip_source/](user_source/ip_source/) | PLL、FIFO、RAM、除法器的 IP 配置与生成源码 |
 | [user_source/constraints_source/](user_source/constraints_source/) | 板卡引脚等约束；当前使用 pin.adc |
 | [sim/](sim/) | 仿真测试台和启动脚本；运行方法见 [仿真说明](sim/README.md) |
-| [verification/](verification/) | TD 检查脚本和历史验证记录；生成日志及报告留在本地 |
+| [verification/](verification/) | 当前 TD 构建、工程检查和 LSC ROM 验证脚本 |
 | [.gitignore](.gitignore) | 上传时过滤运行缓存和输出文件 |
 | [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) | 首次上传、后续更新、导出干净 ZIP 的操作步骤 |
 
 源码里保留了同名模块的其他版本。以 `.al` 的文件路径和 TD 展开的模块层次为准；不要把整个 hdl_source 目录重复添加到工程。具体容易混淆的路径见 [代码导航](CODE_MAP.md)。
 
-## Vivado 图形界面仿真入口
+## 当前仿真入口
 
-在 Vivado 中打开 [sim/vivado/edge_gui.xpr](sim/vivado/edge_gui.xpr)，点击 **Run Simulation → Run Behavioral Simulation**，可运行保留的官方灰度边缘对照测试并查看预设波形。该旧 GUI 工程不验证当前 Scharr 版本；新版本入口为 `sim/run_video_mode.cmd`。操作步骤和图片结果位置见 [GUI 仿真说明](sim/VIVADO_GUI.md)。
+双击 `sim/run_video_mode.cmd`，使用 XSim 验证按键、当前 Scharr 算法和帧边界切换。
+LSC、RAW 重建、AE/AWB、红色检测及 FIFO/DDR 像素链路通过 `sim` 中对应的 PowerShell 入口验证。
+具体命令、成功标志和覆盖范围见 [仿真说明](sim/README.md)。
+旧灰度边缘 GUI 示例和历史版本等价对比入口已移除。
 
 ## TD 打开入口
 
@@ -485,31 +502,13 @@ TD 用于编译工程；视频显示在 HDMI 接收设备上。用户已确认�
 特别是 data_96bit_to_128bit 模块已经由 isp/data96_128/data96_128.v 提供，不能再添加根目录的同名模块文件。
 有效引脚约束为 user_source/constraints_source/pin.adc；有效顶层时序约束为 td_project/anlogic_edge_osd.sdc。
 
-## 验证记录
+## 当前验证工具
 
-verification/source_check.txt：文件引用、合并文件一致性和重复模块检查。
-verification/check_td.tcl：使用实际 .al 工程做 TD 源码解析和层次展开。
-verification/synth_td.tcl：TD 综合资源检查脚本。
-verification/synthesis_console.log：本次综合完整输出，以末尾 PASS/FAIL 标志及资源报告为准。
+- `verification/check_video_mode.tcl`：检查主工程的源码层次、引脚和顶层时序约束；设置 `VIDEO_MODE_CAPTURE=1` 可检查彩色入口。
+- `verification/run_image_quality_build.ps1`：在 TEMP 快照中完成当前主工程的综合和布局布线；`-SkipRoute` 只做综合，不生成 bit。
+- `verification/build_sc520_edge.tcl`、`build_sc520_capture.tcl`：分别构建两个 TD 工程，包含布局布线和 bit 生成；共用 `build_sc520_common.tcl`。
+- `verification/check_lsc_rom.ps1`：核对综合后 LSC ROM 的实际初始化数据。
+- `verification/fix_lsc_in_td.tcl`：当前 TD 窗口缺失 LSC 源文件时，重载工程并启动综合。
 
-最初合并阶段保留了原例程的算法和时序行为；当前试验版已替换边缘模块，验证范围见本文开头，实物效果仍需新版 bit 上板确认。
-原例程中的未连接输入、位宽等告警需要结合后续仿真和上板调试审查。
-OSD 中的运行计数按显示帧递增，不是秒计时。
-## 初次 TD 命令行综合记录（2026-09-23，旧 SC500CS 版本）
-
-- 工程打开、源码分析和层次展开：通过。
-- RTL 优化、门级综合、物理实例合法化：完成，synthesis_console.log 末尾为 MERGED_PROJECT_SYNTHESIS_PASS。
-- 综合阶段资源：Slice 13510/21216（63.68%），ERAM 40/108（37.04%），DSP 9/40（22.50%），寄存器 13768/42432（32.45%）。均未超出报告容量；最终用量以布局布线为准。
-- 综合时序估计：Setup WNS = -1.477 ns，Hold WNS = 0.114 ns，STA coverage = 95.32%。综合完成不等于时序通过。请继续布局布线，检查最终时序以及未约束路径。
-- 原 PLL 配置保持不变。综合报告显示 HDMI 像素时钟约 75.002 MHz；不是重新生成的标准 74.25 MHz 配置。
-- 此处记录的是初次命令行综合检查，当时未执行布局布线、下载文件生成、功能仿真或实物验证；后续独立边缘模块仿真见下一节。
-- 完整资源报告：verification/merged_gate.area；综合时序报告：verification/merged_gate.timing。
-
-本次检查还报告了原边缘模块 RAM_STYLE 设置未按预期采用、部分原例程信号未连接和位宽等告警。保留日志供后续审查，未为消除告警改写原算法。
-## 新增：边缘模块无板仿真（2026-09-23）
-
-已添加 sim 文件夹，不影响 TD 综合工程和算法源码。
-双击 sim/run_xsim.cmd 可运行 320×180 测试；双击 sim/run_720p.cmd 可运行 1280×720 测试。
-两种尺寸都已在本机 XSim 2021.1 通过，每种 5 帧逐像素比较。
-双击 sim/open_wave.cmd 查看小尺寸波形；在 sim/out 或 sim/out_720p 打开 BMP 查看图像。
-使用说明见 sim/README.md，验证范围见 sim/validation.txt。仅验证独立边缘模块，整机功能尚未验证。
+当前功能测试入口和覆盖范围见 [sim/README.md](sim/README.md)，LSC 调参和资源结果见 [LSC_TUNING.md](LSC_TUNING.md)。
+旧合并检查、旧算法测试及历史版本等价对比入口已移除；当前运行的综合结果和下载文件仍保留在 TD 工程输出目录。

@@ -1,5 +1,14 @@
 module isp_top #(
-    parameter integer ENABLE_EDGE = 1 // Reset default, not a generate-time bypass.
+    parameter integer ENABLE_EDGE = 1, // Reset default, not a generate-time bypass.
+    // Manual starting profile from the observed side-magenta cast, not a
+    // calibrated lens table. Q8 deltas: 48 means +18.75% at either edge.
+    // Set LSC_ENABLE=0 for a timing-preserving comparison; keep Gr/Gb equal
+    // unless a measured Bayer flat field establishes a difference.
+    parameter integer LSC_ENABLE = 1,
+    parameter integer LSC_EDGE_R_Q8 = 0,
+    parameter integer LSC_EDGE_GR_Q8 = 48,
+    parameter integer LSC_EDGE_GB_Q8 = 48,
+    parameter integer LSC_EDGE_B_Q8 = 0
 ) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
@@ -85,6 +94,19 @@ wire         m_aixs_tvalid;  //synthesis keep
   //assign O_tvalid = m_aixs_tvalid   ;
  
  
+wire [39:0] lsc_data;
+wire lsc_valid, lsc_user, lsc_last, lsc_ready;
+lsc_raw10_4x #(
+    .IMG_WIDTH(1280), .BAYER_MODE("BGGR"), .ENABLE(LSC_ENABLE),
+    .EDGE_R_Q8(LSC_EDGE_R_Q8), .EDGE_GR_Q8(LSC_EDGE_GR_Q8),
+    .EDGE_GB_Q8(LSC_EDGE_GB_Q8), .EDGE_B_Q8(LSC_EDGE_B_Q8)
+) u_lsc (
+    .I_clk(axi4s_video_aclk), .I_rst_n(I_rst_n),
+    .I_tdata(I_tdata), .I_tvalid(I_tvalid), .I_tuser(I_tuser), .I_tlast(I_tlast),
+    .I_tready(I_tready), .O_tdata(lsc_data), .O_tvalid(lsc_valid),
+    .O_tuser(lsc_user), .O_tlast(lsc_last), .O_tready(lsc_ready)
+);
+
 demosaic #(
     .IMG_HEIGHT          (720),  // 图像高度
     .IMG_WIDTH           (1280), // 图像宽度
@@ -95,12 +117,12 @@ u_demosaic
 (
     .I_clk   			(axi4s_video_aclk)	,   // 时钟信号
     .I_rst_n 			(I_rst_n)	,   // 复位信号，低有效
-    .axi4s_video_tdata 	(I_tdata)	,  // AXI4-Stream视频数据
+    .axi4s_video_tdata 	(lsc_data)	,  // Corrected RAW10, before truncation/demosaic.
     .axi4s_video_tdest 	(I_tdest)	,
-    .axi4s_video_tlast 	(I_tlast)	,  // 行结束信号
-    .axi4s_video_tvalid	(I_tvalid)	,  // 数据有效信号
-    .axi4s_video_tuser 	(I_tuser)	,  // 帧开始信号
-    .axi4s_video_tready	(I_tready)	,  // 从模块准备好接受数据
+    .axi4s_video_tlast 	(lsc_last)	,  // 行结束信号
+    .axi4s_video_tvalid	(lsc_valid)	,  // 数据有效信号
+    .axi4s_video_tuser 	(lsc_user)	,  // 帧开始信号
+    .axi4s_video_tready	(lsc_ready)	,  // 从模块准备好接受数据
     .O_tlast  			(m_aixs_tlast)	,  // 输出行结束信号
     .O_tuser  			(m_aixs_tuser)	,  // 输出帧开始信号
     .O_tdata  			(m_aixs_tdata)	,  // 输出数据

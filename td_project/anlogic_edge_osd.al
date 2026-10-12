@@ -348,6 +348,14 @@
                     <Attr Name="CompileOrder" Val="62"/>
                 </FileInfo>
             </File>
+            <File Path="../user_source/hdl_source/isp/lsc_raw10_4x.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="64"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/isp/ae_frame_stats_96.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

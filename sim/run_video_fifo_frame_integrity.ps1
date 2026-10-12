@@ -1,7 +1,8 @@
 param(
     [string] $ModelSimBin = 'C:\altera\14.1\modelsim_ase\win32aloem',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p',
-    [switch] $RawSource
+    [switch] $RawSource,
+    [switch] $Lsc
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +32,8 @@ if($RawSource) {
         'user_source\hdl_source\isp\data128_96\data128_96.v'
     )
 }
+if($Lsc -and -not $RawSource) { throw 'LSC requires -RawSource' }
+$sources += 'user_source\hdl_source\isp\lsc_raw10_4x.v'
 $simulationDir = Join-Path $env:TEMP ('anlogic_video_fifo_integrity_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $simulationDir | Out-Null
 $compiledSources = @()
@@ -60,18 +63,19 @@ $compiledSources += $primitiveSource
 $tclSources = ($compiledSources | ForEach-Object { '{' + $_.Replace('\', '/') + '}' }) -join ' '
 $tclDir = $simulationDir.Replace('\', '/')
 $rawParameter=[int] $RawSource.IsPresent
+$lscParameter=[int] $Lsc.IsPresent
 $runScript = @"
 onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
 vlog -sv $tclSources
 foreach phase {0.3 4.3 9.3 14.3} {
-    vsim -t ps -gH=32 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
+    vsim -t ps -gH=32 -gRAW_SOURCE=$rawParameter -gLSC_STAGE=$lscParameter -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
     onfinish stop
     run -all
     quit -sim
 }
-vsim -t ps -gH=720 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=9.3 work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR {+EXPORT=$tclDir}
+vsim -t ps -gH=720 -gRAW_SOURCE=$rawParameter -gLSC_STAGE=$lscParameter -gDDR_PHASE=9.3 work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR {+EXPORT=$tclDir}
 onfinish stop
 run -all
 quit -sim
@@ -112,6 +116,10 @@ try {
     if($RawSource -and [regex]::Matches($console,
         '(?m)^\s*(?:#\s*)?RAW_TO_DDR_FRAME_PASS pixels=\d+\s*$').Count -ne 5) {
         throw "Missing RAW-to-DDR coverage; see $simulationDir\console.log"
+    }
+    if($Lsc -and [regex]::Matches($console,
+        '(?m)^\s*(?:#\s*)?LSC_TO_DDR_FRAME_PASS pixels=\d+\s*$').Count -ne 5) {
+        throw "Missing LSC-to-DDR coverage; see $simulationDir\console.log"
     }
     $expectedPhases = @(0.3, 4.3, 9.3, 14.3, 9.3)
     $totalWriterBytes = 0

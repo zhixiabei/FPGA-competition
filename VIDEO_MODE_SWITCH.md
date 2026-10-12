@@ -13,33 +13,28 @@
 
 `td_project/anlogic_sc520_capture.al` 也支持同样的操作，两个工程现在均上电默认彩色，并保留原来的 Logo、文字和计数叠加。切换不需要重新配置摄像头或复位 DDR。
 
-## Read Design 报错的处理
+## 工程检查
 
-本节记录 2026-10-02 旧灰度边缘版本的工程文件修复。下面的旧综合记录不代表当前 Scharr 版本已经完成综合或时序签核；当前版本需从保存的 TD 工程重新构建。两份当前工程已登记 Scharr，本次未运行本节的旧修复脚本。
-
-2026-10-02 21:58 和 22:14 的 GUI 运行均因缺失 `video_mode_control.v`、`rgb_edge_switch_96.v` 的文件注册而报黑盒错误。22:14 的实际 `.prj` 仍使用旧列表。另有 `edge_detect_96.v` 的过时 `AutoExcluded` 标记，因此只添加两个新文件仍不足以恢复完整编译。此前独立脚本综合通过，不能证明已打开的 GUI 工程也已更新。
-
-### 一行修复命令
-
-关闭失败弹框，选 TD 下方的 **Tcl Console**，粘贴并回车：
+当前工程应包含 `video_mode_control.v`、`rgb_edge_switch_96.v`、
+`scharr_edge_detect_96.v` 和 `lsc_raw10_4x.v`。若 TD 报未知模块，
+先检查当前窗口的源文件列表；磁盘上的 `.al` 更新不会自动刷新已打开的工程。
+LSC 源文件缺失时可在 TD 的 Tcl Console 执行：
 
 ```tcl
-source D:/vivado_work/anlogic_edge_osd/verification/fix_video_mode_in_td.tcl
+source D:/vivado_work/anlogic_edge_osd/verification/fix_lsc_in_td.tcl
 ```
 
-脚本会先关闭当前主工程，让旧状态的保存发生在修复之前；然后备份工程配置，补齐两个源文件注册，清除边缘模块的排除标记，启用默认综合脚本；最后重新打开修复后的工程并自动启动 `syn_1`。不需要再手动添加文件或反复关闭重开。执行前应保存自行编辑但尚未保存的 HDL 文件，并确认没有正在运行的综合/布局布线任务。
+脚本会关闭工程、补齐 LSC 登记、重新打开并启动综合。最终结果看 `syn_1`，
+启动成功不代表综合通过。
 
-`VIDEO_MODE_GUI_SYNTHESIS_STARTED` 只表示任务已启动，最终结果看 `syn_1` 的 Optimize Gate 完成状态。真实运行目录是 `td_project/anlogic_edge_osd_Runs/syn_1/`，检查其中的 `run.log`、`.opt_gate.end.f` 和新生成的门级报告，不能仅凭任务启动器返回 success 判断通过。
-
-已通过该修复脚本启动真实 `syn_1`：2026-10-02 22:34:08 开始，22:38:37 完成 Optimize Gate；三个综合阶段的完成标志、新门级数据库和实际日志均已核对。成功日志另存于 `verification/video_mode_gui_syn1_pass.log`。这不代表另一个已经打开的 TD 窗口自动更新了内存状态，该窗口仍需执行上面的命令。
-
-独立综合检查命令（在项目根目录的 PowerShell 执行，Tcl 脚本路径使用 `/`）：
+独立综合检查在项目根目录的 PowerShell 执行：
 
 ```powershell
-& 'D:/TD/bin/td_commands_prompt.exe' 'verification/synth_video_mode.tcl'
+& './verification/run_image_quality_build.ps1' -SkipRoute
 ```
 
-该独立脚本读取主工程，运行 Read Design、RTL 优化和门级优化。成功标志为 `VIDEO_MODE_SYNTHESIS_PASS`；报告为 `verification/video_mode_rtl.area`、`verification/video_mode_gate.area` 和 `verification/video_mode_gate.timing`。它不更新已打开的 TD 窗口状态，不能代替上面的一行修复命令，也不运行布局布线或生成 bit。
+该入口使用当前工程的独立快照，成功标志为 `IMAGE_QUALITY_SYNTHESIS_PASS`。
+日志和资源报告写入打印出的 TEMP 目录；此命令不生成 bit，也不更新当前 TD 窗口。
 
 ## 按键名称与实际引脚
 
@@ -91,9 +86,7 @@ RGB/边缘切换、提前帧首、连续帧、空拍、复位与 11 拍对齐。
 
 按键测试将消抖参数缩短为 8 个时钟周期以加速仿真；实际顶层使用 1,000,000 个 50 MHz 周期，即 20 ms。2026-10-02 的历史检查覆盖当时两个真实 TD 工程的源码展开、引脚约束合法性检查和顶层 SDC 读取。
 
-2026-10-02 历史记录：旧灰度 Sobel 与一拍选择器在 64×24 和 1280×720 下各测试两种默认模式、每种 7 帧，通过实际 `data_96bit_to_128bit` 核对像素字节序。旧成功标志为 `RGB_EDGE_SWITCH_TEST_PASS`；`tb_rgb_edge_switch.sv` 保留为历史参考，当前入口不再执行它。
 
-2026-10-02 历史综合记录：使用 TD 6.2.168116 对旧版本主工程跑完 Read Design、RTL 优化及门级优化，日志为 `verification/video_mode_synthesis.log`，记录与源码 SHA-256 见 `verification/video_mode_check.txt`。这些报告针对旧算法，不能证明当前新算法通过。
 
 当前入口覆盖按键、Scharr 边缘和选择模块，不覆盖打包模块、真实摄像头、完整 ISP、DDR/HDMI 联合仿真或板上画面。原打包模块不支持任意位置的空拍，当前入口的算法空拍测试不能用于改变打包接口的既有协议。综合通过也不等于布局布线后的时序通过。
 

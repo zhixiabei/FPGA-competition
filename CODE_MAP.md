@@ -8,6 +8,11 @@
 
 ## 2026-10-11 RAW 窗口修复
 
+**后续更新：** `isp/lsc_raw10_4x.v` 已由 `isp/isp_top.v` 接入 RAW10 与 demosaic 之间。
+默认横向、左右对称、绿色边缘 +18.75%，R/B 原值；参数集中在 `isp_top.v` 开头。
+半幅同步 ROM、两个绿色乘法器、三拍同步像素/标志，原 AWB 延迟不变。
+详细设计、试调和最新占用见 [LSC_TUNING.md](LSC_TUNING.md)。下段是 LSC 前的窗口修复记录。
+
 `demosaic/raw_matrix_3x3_buffer.v`（实际目录 `isp/demosaic_4x_2_0/`）
 已改为四个循环 ERAM 行缓存、完整三行中心窗口及保持 Bayer 相位的镜像补边。
 窗口读出将带空拍的 RAW 输入整理为每行连续四像素/拍，保留全部 1280×720 坐标。
@@ -244,15 +249,14 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 
 ## 7. 无板子时，第一次学习这样做
 
-以下步骤用于学习保留的官方灰度 Sobel 对照，阈值 80 是旧算法配置。当前 Scharr
-使用单阈值 20，入口为 `run_video_mode.cmd`，测试台为 `tb_scharr_edge_detect_96.sv`。
+当前 Scharr 使用单阈值 20，入口为 `run_video_mode.cmd`。
 
-1. 打开 [tb_edge_detect.sv](sim/tb_edge_detect.sv)，找到 `THRESHOLD = 80`，观察它如何传给 DUT；再打开 [edge_detect_96.v](user_source/hdl_source/isp/edge_detect_96.v)，找到 `mag0 >= EDGE_TH`。
-2. 按 [仿真说明](sim/README.md) 运行 run_xsim.cmd，确认输出 PASS；查看本地生成的输入图片与边缘图片。
-3. 可以把旧测试台 THRESHOLD 改为 160 后重新仿真。对于同一输入，更高阈值通常会留下更少边缘；测试台会按自己的参考计算检查输出。当前 TD 系统使用已缩放的彩色梯度，应单独标定阈值，不要直接照搬旧灰度数值。
-4. 理解边缘模块后，再研究 mixer 的 Logo/文字坐标。现有测试台没有验证 OSD，修改它需要补 OSD 仿真或上板观察。
+1. 打开 [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv)，阅读 `TH=20`、独立图像参考和逐像素检查。
+2. 按 [仿真说明](sim/README.md) 运行 `sim/run_video_mode.cmd`，确认按键和 Scharr 两项测试均输出 PASS。
+3. 再查看 [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) 的高斯、梯度和非极大值抑制。修改阈值时分别检查测试台参数与 `isp_top.v` 的实例参数。
+4. 查看 `tb_target_frame_alignment.sv` 和 `tb_color_target_mixer.sv`，理解目标框、帧对应和 OSD；LSC 与完整像素通路的测试入口也列在仿真说明中。
 
-独立灰度边缘模块历史仿真见 [validation.txt](sim/validation.txt)；2026-10-02 已适配 SC520CS，并增加彩色工程，详情见 [SC520CS_TEST.md](SC520CS_TEST.md)。用户已确认基础版本有板上画面；当前替换算法的版本仍需重新生成 bit 后验证。
+旧算法对照测试及其 GUI 示例已移除。当前仿真范围和实物验证方法分别见 [sim/README.md](sim/README.md) 和 [SC520CS_TEST.md](SC520CS_TEST.md)。
 
 ## 8. TD 显式登记的文件索引
 

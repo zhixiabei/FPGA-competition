@@ -1,4 +1,60 @@
-# 无板仿真：先验证边缘检测模块
+# 当前功能仿真
+
+## 2026-10-11 LSC 回归
+
+低资源横向 LSC 已接到 RAW10 与 demosaic 之间。以下测试使用当前生产源码，
+均只把产物写入打印出的 TEMP 目录，不加入 TD 工程，不生成或下载 bit。
+
+```powershell
+& './sim/run_lsc_raw10.ps1'
+& './sim/run_demosaic_quality.ps1' -Lsc
+& './sim/run_demosaic_quality.ps1' -CsiSource -Lsc -Width 1280 -Height 720
+& './sim/run_video_fifo_frame_integrity.ps1' -RawSource -Lsc
+& './sim/run_isp_lighting_integration.ps1'
+```
+
+独立 LSC 回归用图像坐标和浮点曲线作参考，不复用 DUT ROM、坐标计数或绿色交换路径。
+64×17 下测试四种 Bayer，各通道独立强度和黑电平，生产默认、最大/零增益、关闭，
+覆盖 0..1023、饱和、空拍、早到/保持 SOF、无消隐相邻帧、截断与流水中复位。
+4×5 和 12×7 检查最小宽度和奇数组宽；1280×720 检查默认配置的完整帧。
+`O_tready` 改变只核对 ready 接线；LSC 与生产摄像头链一样不可反压。
+
+实际结果：
+
+```text
+LSC_RAW10_PASS width=64 height=17 pixels=7616
+LSC_RAW10_PASS width=4 height=5 pixels=140
+LSC_RAW10_PASS width=12 height=7 pixels=588
+LSC_RAW10_PASS width=1280 height=720 pixels=6451200
+CSI_FRONTEND_QUALITY_PASS frames=7 raw_pixels=6451200 rgb_pixels=6451200
+DEMOSAIC_QUALITY_RESULT bayer=BGGR size=1280x720 frames=7 pixels=6451200 errors=0 markers=0
+LSC_DEMOSAIC_PASS frames=7 pixels=6451200
+VIDEO_FIFO_REGRESSION_PASS writer_bytes=6512640 reader_pixels=3686400
+ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=691200 edge_groups=691200 packed_words=518400 bytes=8294400 ae=3 targets=3 edge_white=556
+```
+
+LSC→demosaic 参考先在图像域对每个 RAW 像素进行增益、四舍五入、饱和和高八位截取，
+再独立计算 Bayer 插值及边界；CSI 模式保留 RAW10 两个低位，保证先校正再截位。
+直接输入小尺寸额外覆盖早到保持 SOF、连续有效、valid 空拍和复位恢复。
+启用 LSC 时不沿用“原始灰阶台阶无方向插值误差”断言，因为灰阶图已被有意改变；
+全部输出仍与补偿后的独立 RGB 参考逐像素比较。
+
+真实 FIFO 回归检查四种 DDR 相位及完整 720p 彩色/边缘帧，并逐字节核对 DDR 写入，
+输出检查共 3,686,400 像素且无溢出/欠读；原厂 FIFO 模型的接口宽度告警保留。
+该测试中的 AWB 两帧分别复位，像素检查处于单位增益，不替代 AWB 收敛测试。
+原 ISP 集成测试从去马赛克后的 RGB 边界注入图像，新增 LSC 已编译，但该项本身
+不验证 RAW LSC；RAW LSC 算术和到 DDR 的检查由前面两项完成。
+
+本轮 TEMP 日志目录：
+
+- `anlogic_lsc_raw10_68f229ceaac540019afd3571205625b2`
+- `anlogic_demosaic_quality_5f6eaecfdf914b6b8bf1227ccb811890`（直接输入）
+- `anlogic_demosaic_quality_592d1c3d14b14e4aa9d772bd06fec255`（CSI、720p）
+- `anlogic_video_fifo_integrity_12adb7ea0c194d57918f2b09961c6f01`
+- `anlogic_isp_lighting_9e89cc12318941fd9fdf7d5b987c7e89`
+
+整机 TD 路由和 ROM 初值核验见 [LSC 调整说明](../LSC_TUNING.md)。这些是逻辑验证，
+没有模拟实物镜头色差、MIPI 电气、真实 DDR 芯片、显示器或拍屏颜色。
 
 ## 2026-10-11 RAW 重建与完整像素通路
 
@@ -234,37 +290,6 @@ ModelSim 覆盖参数应写为 `-g/tb_scharr_edge_detect_96/GAUSSIAN_ENABLE=0`�
 生产工程不定义该宏，行窗口和彩色延迟直接使用安路 ERAM。
 资源与最终时序结论见工程 README。
 
-## OSD 资源优化的输出等价验证
-
-`tb_hdmi_mixer_equivalence.sv` 同时运行旧版和候选版 mixer，
-逐拍比较读使能、DE、HS、VS 和 RGB，包括消隐及复位。
-覆盖六种配置、四个完整 1280×720 帧、16 种诊断状态、
-256 个错误码、帧计数多种数字与回卷、12 组目标坐标场景。
-字库另核对全部 4096 个字符/行组合，Logo 核对全部 32768 个地址。
-测试台不参与 TD 综合。
-
-参考必须是优化前独立保存的 `hdmi_mixer.v`、`anlogic_logo_rom.v`
-和 `osd_char_lib.v`，不能把候选自己作为参考。运行入口：
-
-```powershell
-& 'D:/vivado_work/anlogic_edge_osd/sim/run_hdmi_mixer_equivalence.ps1' `
-  -BaselineDir 'C:/Users/1/AppData/Local/Temp/anlogic_mixer_baseline_20261010_144803'
-```
-
-入口把参考和候选冻结到独立 TEMP 目录，只在参考副本中改模块名字。
-成功标志为 `HDMI_MIXER_EQUIVALENCE_PASS`。
-OSD 优化时通过 5,493,339 个有效输入像素、1,042,020 个消隐检查周期；
-复位中按原行为取消两拍未输出像素。
-已通过全套测试的 mixer 与最终生产 mixer 文件完全相同。
-最终 Logo 只把第一拍从保存索引改为保存地址以适配 TD 的 ERAM 推断；
-它与全套测试版本另经全部 32768 地址、4096 次随机跳转和裁剪范围外地址
-逐拍对照，共 36,868 拍通过。两版本像素表相同。
-最终整机网表的 10 个 Logo ERAM 初始化另经逐地址解码核对，
-全部索引和调色板数据与最终 RTL 相同，重建 32768 个像素与原版一致。
-OSD 优化版本的整机布局布线在现有约束下通过，建立/保持余量为 +0.564/+0.020 ns；
-这是增加本轮光照自适应之前的报告，不能当作当前 AE/AWB 版本的最终结果。
-资源、约束审计范围及 TEMP 报告位置见工程 README，实物显示仍需上板验证。
-
 ## 目标框与 DDR 帧对齐
 
 `tb_target_frame_alignment.sv` 运行真实系统顶层、`video_in`、`video_out` 和 `hdmi_mixer`，根据实际 DDR 写/读基址建立独立参考，检查四槽轮换、完整/无目标/截断帧、邮箱 ACK、复位、边缘模式坐标补偿及 mixer 的帧首锁存。14 项检查核对摄像头 4 位状态和 8 位错误码经诊断 CDC 后到达实际 mixer 输入；另 19 项检查运行真实顶层状态逻辑，验证初始化 done 不冒充首次 AE 应用、实际 busy→done 置位、后续曝光/增益变化与写 busy 保持已应用状态、持续 I²C 错误/配置失效清除状态及复位恢复。测试台以 `force` 提供 ISP 结果、摄像头配置握手、诊断值、图像标志和异步时钟，因此不覆盖摄像头 I2C/AE/ISP 算法内部、真实 DDR 传输或完整 720p 像素扫描。
@@ -321,83 +346,3 @@ Pop-Location
 ```
 
 成功标志为 `PASS tb_camera_diag_cdc`。测试台不加入 TD 工程。
-
-旧 `tb_color_edge_detect_96.sv` 保留为历史参考，需匹配旧彩色边缘选择器，
-不能直接与当前 Scharr 选择器混用；当前运行入口不编译该测试台。
-
-以下章节是原官方灰度边缘模块的历史对照测试，不用于验证当前 Scharr 算法。
-
-TD 中的 Read Design / Optimize / Generate Bitstream 是实现流程。功能仿真需要测试台（testbench）提供时钟、复位和输入像素，再由仿真器执行 RTL。
-
-以下旧测试入口直接使用合并工程原有的 `user_source/hdl_source/isp/edge_detect_96.v`，没有把测试台加入 TD 的综合源文件列表。
-
-## 推荐：直接在 Vivado 界面操作
-
-用 Vivado **Open Project** 打开 [vivado/edge_gui.xpr](vivado/edge_gui.xpr)，点击 **Run Simulation → Run Behavioral Simulation**。工程已配置测试台、运行到结束和默认波形，不需要手工运行脚本。
-
-详细的点击步骤、波形说明和结果图片位置见 **[Vivado 图形界面仿真](VIVADO_GUI.md)**。下面保留脚本方式，作为备选；两种方式引用同一份边缘源码和测试台。
-
-## 脚本运行（备选）
-
-1. 在资源管理器打开本目录，双击 `run_xsim.cmd`。
-2. 程序依次编译、展开、运行；结束应显示 `PASS` 和 `ALL_TESTS_PASS`（后者在仿真日志中）。
-3. 打开 `out/input.bmp` 查看输入图片，打开 `out/edge_output.bmp` 查看原 RTL 算出的边缘。
-4. `out/edge_expected.bmp` 是独立的整帧参考算法结果；测试台已经逐像素比对，不需要靠肉眼判断。
-5. 双击 `open_wave.cmd`，启动 Vivado 波形查看窗口并读取已保存的 `out/edge.wdb`。这里只使用 XSim / 波形查看功能，不是建立 Xilinx 板卡工程。
-
-脚本默认使用本机已确认的 `D:\XILINX\Vivado\2021.1\bin`。换电脑后可修改两个启动脚本的 `SIM_BIN`，或设置环境变量 `VIVADO_SIM_BIN`。
-
-小尺寸为 320×180，便于快速学习。双击 `run_720p.cmd` 则以 1280×720 参数运行同一套测试，结果单独保存在 `out_720p` 中。`open_wave.cmd` 默认查看小尺寸结果。
-
-## 波形怎么看
-
-| 信号 | 含义与检查方法 |
-|---|---|
-| clk | 本测试时钟周期 16 ns；这是行为仿真激励，不是时序收敛验证 |
-| rst_n | 初始为 0，复位结束后为 1；第五帧前再复位一次 |
-| in_valid | 为 1 时输入四个 RGB888 像素 |
-| in_user | 一帧第一个有效像素组，与 in_valid 同时为 1 |
-| in_last | 每行最后一个有效像素组；小尺寸每行 80 组，720p 每行 320 组 |
-| in_data | 96 位；从高位到低位依次放四个 24 位 RGB 像素 |
-| out_valid / out_user / out_last | 对应输入控制信号经过模块输出寄存器 |
-| out_data | 原边缘 RTL 输出；每个像素只能是 000000 或 FFFFFF |
-| frame_id | 0 到 4，标记正在运行哪一帧测试 |
-| dut/x_grp、dut/y_pos | 边缘模块内部的像素组与行计数 |
-
-使用 Wave 窗口的放大按钮，先看复位释放后几微秒；再查看行结束、帧切换附近。数据通常在时钟上升沿后更新，测试台在下降沿驱动输入，避开采样竞争。
-
-## 检查了什么
-
-- 第 0 帧：灰色背景、白色矩形和彩色矩形，导出 BMP。
-- 第 1 帧：全白，输出应全黑，用于检查上一帧行缓存残留。
-- 第 2 帧：全黑，输出应全黑。
-- 第 3 帧：固定种子的随机彩色像素，插入 valid 空拍，检查算法在输入间歇时的状态。
-- 第 4 帧：复位后输入条纹图，检查输出复位及行缓存重新填充。
-- 每帧检查像素值、像素总数、帧首与行尾、输出寄存延迟；遇到 X/Z 或不一致立即失败。
-
-参考模型按本 RTL 的行为计算：先用位移灰度化，再把相邻两像素平均，使用 3×3 Sobel 的 |Gx|+|Gy|，以 80 为阈值，最后复制每个结果到两个输出像素。首两行、每行前四像素置黑，窗口按当前输入位置结束。不能直接拿默认 OpenCV Sobel 输出当作逐像素真值。
-
-## 验证边界
-
-这次只验证独立的边缘检测模块，ready 固定为 1，帧首与第一个有效像素组对齐。未验证完整 ISP、AWB 到边缘模块的帧首时序、96/128 打包、OSD、DDR、MIPI 和 HDMI，也未验证随机反压。
-
-特别注意：本测试给边缘模块插入 valid 空拍，不代表后面的原 96/128 打包模块也支持任意空拍。后者需要另外的接口测试。
-
-后续建议顺序：边缘模块 → OSD 图像叠加 → 像素打包/拆包 → ISP 接口 → 帧缓存模型。整机仿真还需厂商 IP 仿真模型及摄像头/存储器激励。
-
-## ModelSim / Questa 备选
-
-如果已有 ModelSim / Questa，可在其 Transcript 输入：
-
-```tcl
-cd D:/vivado_work/anlogic_edge_osd/sim
-do run_modelsim.do
-```
-
-结果在 `out_modelsim`。本模块不依赖安路原语，因此不需要先编译安路器件库；整机/IP 仿真不适用这一结论。本机实际验证使用 XSim，ModelSim 脚本仅提供备选，尚未运行验证。
-
-## 出错时
-
-查看对应输出目录里的 `compile_console.log`、`elaborate_console.log`、`simulate_console.log`，先处理第一条 ERROR/Fatal。`result.txt` 必须是 PASS 才算通过，生成波形或图片本身不代表通过。
-
-不要把 `tb_edge_detect.sv` 加入 TD 的综合源文件。它有延时、文件读写和仿真结束语句，只供仿真器运行。

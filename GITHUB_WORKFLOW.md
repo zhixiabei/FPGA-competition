@@ -63,7 +63,7 @@ ZIP 位于 exports/anlogic_edge_osd-source.zip，仅包含最后一次提交的�
 ## 查看某个文件为什么没被提交
 
 ```powershell
-git check-ignore -v -- sim/out/edge.wdb
+git check-ignore -v -- td_project/anlogic_edge_osd_Runs/syn_1/run.log
 git status --short
 ```
 

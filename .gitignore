@@ -17,7 +17,7 @@ xsim.dir/
 *.vcd
 *.fst
 
-# TD-generated verification reports/databases. Keep scripts and source_check.txt.
+# TD-generated verification reports/databases. Keep validation scripts.
 /verification/*.db
 /verification/*.area
 /verification/*.timing
@@ -33,13 +33,3 @@ xsim.dir/
 # Do not ignore *.bin, *.dat, *.mif, *.mem, *.hex, *.txt, *.xml, *.ipc,
 # *.v, *.sv, *.vh, *.vhd, *.tcl, *.adc, *.sdc, or *.al globally.
 # These can be source data, IP configuration, or project dependencies.
-
-# Vivado GUI simulation: keep .xpr and .wcfg; exclude regenerated output.
-/sim/vivado/*.cache/
-/sim/vivado/*.hw/
-/sim/vivado/*.ip_user_files/
-/sim/vivado/*.gen/
-/sim/vivado/*.runs/
-/sim/vivado/*.sim/
-/sim/vivado/*.xpr.lock
-/sim/vivado/*.str
