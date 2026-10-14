@@ -33,7 +33,7 @@ generate if(RAW_SOURCE) begin: raw_input
     wire [127:0] reconstructed;
     wire [39:0] corrected_data;
     wire corrected_valid,corrected_user,corrected_last;
-    lsc_raw10_4x #(.IMG_WIDTH(W),.ENABLE(LSC_STAGE)) u_lsc (
+    lsc_raw10_4x #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.ENABLE(LSC_STAGE)) u_lsc (
         .I_clk(camera_clk),.I_rst_n(rst_n),.I_tdata(raw_data),
         .I_tvalid(in_valid),.I_tuser(in_user),.I_tlast(in_last),.I_tready(),
         .O_tdata(corrected_data),.O_tvalid(corrected_valid),
@@ -103,6 +103,8 @@ function automatic integer source_raw(input integer px,input integer py);
         if(LSC_STAGE && xx%2!=yy%2) begin
             n=W/4-1;position=2*(xx/4)-n;
             delta=(48*position*position+n*n/2)/(n*n);
+            n=H-1;position=2*yy-n;
+            delta=delta+(48*position*position+n*n/2)/(n*n);
             value=4*source_raw;
             value=value+(value*delta+128)/256;
             source_raw=value>1023?255:value/4;

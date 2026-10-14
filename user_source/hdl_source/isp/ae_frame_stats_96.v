@@ -1,6 +1,6 @@
 // Frame-complete, sparse pre-white-balance metering for four RGB pixels/clock.
 // sum_y includes NON-HIGHLIGHT samples only; sample_count includes all samples.
-// bright_count records Y >= BRIGHT_Y, so sample_count-bright_count is the
+// bright_count records white highlights, so sample_count-bright_count is the
 // denominator for background metering. Lamps/screens may clip without forcing
 // nearby non-emissive objects to be underexposed.
 // This is a statistics tap: it does not stall or modify the video stream.
@@ -9,7 +9,13 @@ module ae_frame_stats_96 #(
     parameter integer IMG_HEIGHT = 720,
     parameter integer SAMPLE_GROUP_LOG2 = 3,
     parameter integer SAMPLE_ROW_LOG2 = 2,
-    parameter integer BRIGHT_Y = 232
+    parameter integer BRIGHT_Y = 232,
+    // Post-LSC metering can use channel thresholds derived at elaboration
+    // from the minimum grid gains. Keep the original policy when disabled.
+    parameter integer BRIGHT_RGB_ENABLE = 0,
+    parameter integer BRIGHT_R = 232,
+    parameter integer BRIGHT_G = 232,
+    parameter integer BRIGHT_B = 232
 ) (
     input wire I_clk,
     input wire I_rst_n,
@@ -83,7 +89,9 @@ module ae_frame_stats_96 #(
     wire [7:0] pixel_y = rgb_sum[9:2];
     // A saturated single colour (e.g. 255,0,0) is not a white-light highlight.
     // A single channel reaching 255 is not sufficient to exclude this sample.
-    wire pixel_bright = pixel_y >= BRIGHT_Y;
+    wire pixel_bright = (pixel_y >= BRIGHT_Y) ||
+        (BRIGHT_RGB_ENABLE != 0 && I_tdata[95:88] >= BRIGHT_R &&
+         I_tdata[87:80] >= BRIGHT_G && I_tdata[79:72] >= BRIGHT_B);
     wire [SUM_BITS-1:0] sum_next =
         (first_beat ? {SUM_BITS{1'b0}} : sum_y) +
         ((sample_beat && !pixel_bright) ? pixel_y : 8'd0);

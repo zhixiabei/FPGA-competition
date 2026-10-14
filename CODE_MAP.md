@@ -6,11 +6,28 @@
 
 本说明依据当前的 [TD 工程文件](td_project/anlogic_edge_osd.al)、[系统顶层](user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 2026-10-14 HDMI 九区通道读数（默认关闭）
+
+`design_top_wrapper.v` 默认 `SHOW_RAW_STATS=0`，九区数字表及其 E/G/AE 表头不显示，
+对应统计器、诊断邮箱和数字表不实例化。已有白场数据及 LSC 系数保留，
+AE 测光、曝光控制和 AWB 继续正常工作。
+
+诊断时设 `SHOW_RAW_STATS=1` 并重新编译下载，在 LSC 前旁路采样：`isp/raw_region_stats.v` → 45 位
+`ae_stats_cdc` 邮箱 → `hdmi_mixer.v` 中的 `raw_stats_osd.v` → 原字符库。
+九个 32×32 区域分别统计 R/Gr/Gb/B，按完整帧提交，每 16 个 HDMI 帧整体刷新。
+同一表首行通过 28 位邮箱显示曝光/增益写完成值 E/G 和完整 AE 测光状态 AL/AW/AS，
+不是传感器回读；数字转换复用 RAW 表的串行单元。
+此支路不增加像素主通路延迟。
+编号和实物取数步骤见 [RAW_STATS_GUIDE.md](RAW_STATS_GUIDE.md)。
+
 ## 2026-10-11 RAW 窗口修复
 
 **后续更新：** `isp/lsc_raw10_4x.v` 已由 `isp/isp_top.v` 接入 RAW10 与 demosaic 之间。
-默认横向、左右对称、绿色边缘 +18.75%，R/B 原值；参数集中在 `isp_top.v` 开头。
-半幅同步 ROM、两个绿色乘法器、三拍同步像素/标志，原 AWB 延迟不变。
+2026-10-14 修正版用两张九区白场读数计算 Gr/Gb/B 中性增益，R 保持原值。
+九点二维插值覆盖中心及中间区域，替换了被上板反馈否定的边缘平方拟合。
+参数集中在 `isp_top.v` 开头，读数与系数见 `LSC_TUNING.md`。
+720×80 位压缩行系数 ROM（四 ERAM）、倒数域纵向插值及横向曲率修正、四个像素乘法器，
+三拍同步像素/标志，原 AWB 延迟不变。
 详细设计、试调和最新占用见 [LSC_TUNING.md](LSC_TUNING.md)。下段是 LSC 前的窗口修复记录。
 
 `demosaic/raw_matrix_3x3_buffer.v`（实际目录 `isp/demosaic_4x_2_0/`）
@@ -40,9 +57,13 @@ AE/AWB、红色检测、Scharr 及 HDMI 路径未改；完整验证与限制见 
 | [awb.v](user_source/hdl_source/awb.v) | 近中性色采样、共享顺序除法、增益按帧提交和平滑；四像素输出保持 54 拍 | `sample_neutral_d1`、`stats_ready`、`div_state`、`pixel_gain_r`、`u_video_start_guard` |
 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 以通道比例和红色色相范围识别暗红，排除低饱和粉色；原多数滤波和框统计保留 | `gen_red`、`twice_red`、`hue_green_limit`、`votes` |
 
-AE 默认写入曝光 1000、增益 16，控制范围分别为 4..1991、16..144。
-`sum_y` 只累计 `Y<232` 的亮度；总采样数减去高光数即非高光数，
-以非高光均值 96..128 为目标。非高光至少占 25% 才能偏暗增亮，
+AE 默认写入曝光 1000、增益 16，生产控制范围分别为 4..1991、16..176。
+实物 E1991/G144/AL 后，顶层开放原表已有的 G176（32 倍模拟增益）档位；
+依据配套 SC520CS-03 数据手册 V1.6 第 20 页表 2-4，通用控制器默认上限仍为 144。
+`sum_y` 只累计非高光亮度；高光判定为 `Y>=232`，或生产 LSC 开启时同时满足
+R≥232、G≥141、B≥223。G/B 门限由九点网格最小增益在编译期计算。
+总采样数减去高光数即非高光数，生产目标为 112..144（模块通用默认 96..128）。
+非高光至少占 25% 才能偏暗增亮，
 低于 12.5% 时减亮；达到 12.5% 但未到 25% 且偏暗时保持。
 不再因少量亮屏/灯泡直接压暗整帧。
 帧统计/CDC 不插入视频等待。原 `ae_set.v` 的手动控制已不再实例化，
@@ -154,9 +175,10 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 |---|---|---|---|
 | 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 单阈值 20；原始 Scharr 幅值门槛为 320 |
 | 改红色判定 | [isp_top.v](user_source/hdl_source/isp/isp_top.v)、[red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | u_red_target_detect_96、gen_red | RED_MIN=24、RED_DELTA=6、MIN_PIXELS=128，另有通道比例及红色色相 ±20° 条件 |
-| 改自动曝光目标/范围 | [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | TARGET_LOW/HIGH、EXPOSURE_*、GAIN_*、SETTLE_FRAMES | 非高光均亮 96..128；曝光 4..1991、增益 16..144；写完等待 3 个完整帧 |
+| 改自动曝光目标/范围 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | u_auto_exposure、TARGET_LOW/HIGH、EXPOSURE_*、GAIN_*、SETTLE_FRAMES | 生产非高光均亮 112..144、增益 16..176（顶层覆盖；模块默认目标 96..128、增益 16..144）；曝光 4..1991；写完等待 3 个完整帧 |
 | 改白平衡 | [awb.v](user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
 | 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 0=彩色；如设为 1 则上电边缘；二者均可按 K1 切换 |
+| 开关九区通道测试表 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | SHOW_RAW_STATS | 默认 0；诊断时设 1 并重新编译下载；关闭不影响 AE/AWB 或已有 LSC 校准 |
 | 改边缘算法 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | gaussian、scharr、nms | 修改流水级数须同步切换延迟；修改窗口须同步顶层框补偿 |
 | 改仿真阈值 | [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv) | TH、reference | 默认 20，不自动读取 isp_top；修改后需重新标定场景断言 |
 | 改无板测试尺寸 | [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv)、[run_video_mode.cmd](sim/run_video_mode.cmd) | WIDTH、HEIGHT、SIZE_PARAMS | 默认 64×48；`--no-pause 720` 设为 1280×720、FAST=1 |

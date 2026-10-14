@@ -1,14 +1,13 @@
 module isp_top #(
     parameter integer ENABLE_EDGE = 1, // Reset default, not a generate-time bypass.
-    // Manual starting profile from the observed side-magenta cast, not a
-    // calibrated lens table. Q8 deltas: 48 means +18.75% at either edge.
-    // Set LSC_ENABLE=0 for a timing-preserving comparison; keep Gr/Gb equal
-    // unless a measured Bayer flat field establishes a difference.
+    // Neutral white-field gains = mean(R/channel) * 256, two photographs.
+    // Nodes 1..9 are row-major, including the centre; see LSC_TUNING.md.
+    // Reciprocal-aware interpolation avoids green bulges between the nodes.
     parameter integer LSC_ENABLE = 1,
-    parameter integer LSC_EDGE_R_Q8 = 0,
-    parameter integer LSC_EDGE_GR_Q8 = 48,
-    parameter integer LSC_EDGE_GB_Q8 = 48,
-    parameter integer LSC_EDGE_B_Q8 = 0
+    parameter integer LSC_MESH_CURVE_ENABLE = 1,
+    parameter [71:0] LSC_MESH_GR_Q8 = {8'd240,8'd187,8'd226,8'd239,8'd156,8'd225,8'd234,8'd177,8'd217},
+    parameter [71:0] LSC_MESH_GB_Q8 = {8'd224,8'd190,8'd219,8'd217,8'd156,8'd213,8'd221,8'd183,8'd213},
+    parameter [80:0] LSC_MESH_B_Q8 = {9'd294,9'd258,9'd278,9'd291,9'd247,9'd282,9'd296,9'd269,9'd284}
 ) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
@@ -97,9 +96,10 @@ wire         m_aixs_tvalid;  //synthesis keep
 wire [39:0] lsc_data;
 wire lsc_valid, lsc_user, lsc_last, lsc_ready;
 lsc_raw10_4x #(
-    .IMG_WIDTH(1280), .BAYER_MODE("BGGR"), .ENABLE(LSC_ENABLE),
-    .EDGE_R_Q8(LSC_EDGE_R_Q8), .EDGE_GR_Q8(LSC_EDGE_GR_Q8),
-    .EDGE_GB_Q8(LSC_EDGE_GB_Q8), .EDGE_B_Q8(LSC_EDGE_B_Q8)
+    .IMG_WIDTH(1280), .IMG_HEIGHT(720), .BAYER_MODE("BGGR"), .ENABLE(LSC_ENABLE),
+    .MESH_ENABLE(1), .MESH_CURVE_ENABLE(LSC_MESH_CURVE_ENABLE),
+    .MESH_GR_Q8(LSC_MESH_GR_Q8),
+    .MESH_GB_Q8(LSC_MESH_GB_Q8), .MESH_B_Q8(LSC_MESH_B_Q8)
 ) u_lsc (
     .I_clk(axi4s_video_aclk), .I_rst_n(I_rst_n),
     .I_tdata(I_tdata), .I_tvalid(I_tvalid), .I_tuser(I_tuser), .I_tlast(I_tlast),
@@ -136,9 +136,39 @@ data128_96 u_data128_96 (
 );
 
 // Meter the unbalanced RGB stream. AWB must not alter exposure feedback.
+// LSC may attenuate clipped white light below the original Y threshold.
+// Derive conservative white RGB thresholds from the minimum grid gains.
+// These loops and multiplications evaluate only at elaboration, not per pixel.
+function integer min_green_gain;
+    input [71:0] mesh;
+    integer node;
+    begin
+        min_green_gain=255;
+        for(node=0;node<9;node=node+1)
+            if(mesh[node*8 +: 8]<min_green_gain)
+                min_green_gain=mesh[node*8 +: 8];
+    end
+endfunction
+function integer min_blue_gain;
+    input [80:0] mesh;
+    integer node;
+    begin
+        min_blue_gain=511;
+        for(node=0;node<9;node=node+1)
+            if(mesh[node*9 +: 9]<min_blue_gain)
+                min_blue_gain=mesh[node*9 +: 9];
+    end
+endfunction
+localparam integer AE_GR_MIN=min_green_gain(LSC_MESH_GR_Q8);
+localparam integer AE_GB_MIN=min_green_gain(LSC_MESH_GB_Q8);
+localparam integer AE_G_MIN=AE_GR_MIN<AE_GB_MIN ? AE_GR_MIN : AE_GB_MIN;
+localparam integer AE_G_WHITE=(232*AE_G_MIN)/256;
+localparam integer AE_B_WHITE=(232*min_blue_gain(LSC_MESH_B_Q8))/256;
 ae_frame_stats_96 #(
     .IMG_WIDTH(1280),
-    .IMG_HEIGHT(720)
+    .IMG_HEIGHT(720),
+    .BRIGHT_RGB_ENABLE(LSC_ENABLE), .BRIGHT_R(232),
+    .BRIGHT_G(AE_G_WHITE), .BRIGHT_B(AE_B_WHITE>255 ? 255 : AE_B_WHITE)
 ) u_ae_frame_stats (
     .I_clk(axi4s_video_aclk),
     .I_rst_n(I_rst_n),

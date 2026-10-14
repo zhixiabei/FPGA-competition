@@ -1,8 +1,137 @@
 # 当前功能仿真
 
-## 2026-10-11 LSC 回归
+## 2026-10-14 G176 生产增益上限验证（当前）
 
-低资源横向 LSC 已接到 RAW10 与 demosaic 之间。以下测试使用当前生产源码，
+实拍 E1991/G144/AL 后，生产顶层 GAIN_MAX 覆盖为 176，使用手册已确认的
+32 倍模拟档位。`run_auto_exposure.ps1 -ProductionLightingOnly` 从顶层读取
+TARGET_LOW/HIGH、GAIN_MAX，避免测试仍按旧上限展开。
+现有闭环新增极暗场景，核对实际寄存器组达到 E1991/G176，随后二十帧无重复写入，
+转亮后降回 G16；混合高光、边界、纯色保护、停止及复位场景也通过：
+
+```text
+AE_LOW_LIGHT_LIMIT_PASS E=1991 G=176 analog=1f digital=00 fine=80 mean=49 stable_frames=20
+AE_LIGHTING_LOOP_PASS frames=1685 requests=161 commits=161 stable_checks=5152 convergences=6 mixed=10 boundaries=4 color_fields=4 target=112..144 post_lsc=1 gain_max=176
+```
+
+日志：`%TEMP%/anlogic_auto_exposure_744373380b0147079bd5d4b49226adc6/`。
+`tb_sc520_config.sv` 的真实控制器/SCL/SDA 模型增加 G144→G176 更新，核对
+0x3e00/01/02=00/7c/70、0x3e09/06/07=1f/00/80 及 group hold/release；
+原初始化、失败重试与复位场景仍通过，输出 `SC520_CONFIG_TEST_PASS`。
+日志：`%TEMP%/anlogic_gain176_i2c_b0c2eeb40c8e43c585f37f55cb9cfc8e/`。
+这些测试不验证实物寄存器回读、传感器噪声或感光响应。
+
+调整 G176 时的整机综合 Slice 估算 11,980/21,216，DSP 13、ERAM 53 不变；
+未重新布局布线。构建 `anlogic_image_quality_35face4cfb9e442cae6e1206add176cf`。
+本轮只运行受增益参数影响的生产闭环、传感器总线仿真及综合；下方其它结果保留原验证版本。
+
+## 2026-10-14 LSC 后测光与曝光读数（G144 版本）
+
+`run_lsc_white_field.ps1` 保留六帧实测表构造的白场颜色验证，并新增整幅饱和 RAW
+和中央 60% 饱和白灯／RAW40 暗背景。真实 LSC→去马赛克→RGB 同时连接旧、新测光判定：
+
+```text
+LSC_WHITE_FIELD_PASS frames=6 pixels=5529600 max_roi_spread=2.041% final_awb_q8=260/258
+LSC_METER_REPRO frame=7 samples=7200 legacy_bright=2182 legacy_background_mean=221 corrected_bright=7200 corrected_background_mean=0
+LSC_METER_REPRO frame=8 samples=7200 legacy_bright=240 legacy_background_mean=133 corrected_bright=4147 corrected_background_mean=21
+LSC_METER_REPRO_PASS frames=8
+```
+
+灯边缘经去马赛克形成过渡像素，断言允许采样边界带，但要求旧背景位于生产保持区间
+112..144、新背景低于 48，直接验证增亮决策差异。日志为
+`%TEMP%/anlogic_lsc_white_918a24cdf57f42199688aa64c315b1a5/`。
+
+`run_auto_exposure.ps1` 全回归通过；生产配置增加 `POST_LSC_RGB=1`，以中心
+绿色/蓝色衰减模型连接真实统计、CDC、AE 和曝光/增益寄存器表。
+覆盖混合灯光、暗场升增益、稳定边界、纯色保护和停止/复位；它不模拟传感器感光响应。
+
+`run_raw_stats.ps1` 全回归通过八项分区测试。HDMI 新增真实 28 位异步邮箱，检查
+E1991/G144、帧中参数变化成对延至下帧、帧序号 255→0、同序号参数更新不恢复
+已过期测光、AS→AL、E0004/G016 和复位 AW/数字空白。
+最终 RAM 读口版本可用 `./sim/run_raw_stats.ps1 -HdmiOnly` 单独复验，已通过
+`RAW_STATS_HDMI_PASS pixels=6451353 glyph_pixels=227644`。
+完整分区回归目录为 `anlogic_raw_stats_aeb93d38d9d34b78ac8538fa1f88f987`，
+最终 HDMI 目录为 `anlogic_raw_stats_f61963034b90415280e82fd354f7474b`，均在 TEMP。
+
+本轮整机只做综合资源确认，未重新布局布线；旧 Routed 时序不属于本次验证。
+
+## 2026-10-14 九点 LSC 区间颜色修正（当前）
+
+九点实测系数不变，纵向采用倒数域插值，横向降低中间区域增益以减轻青色块。
+`run_lsc_raw10.ps1` 覆盖完整 720p 九点网格、四种 Bayer、黑电平及曲率关闭对照，
+每种网格配置核对 7,374,080 个像素；参考直接计算曲线，不读取 DUT ROM 或累加器。
+
+`run_lsc_white_field.ps1` 用两张白场实测表构造 RAW 输入，连接真实 LSC、去马赛克、
+RGB 重排和生产 AWB，验证 6 个完整 720p 帧、5,529,600 像素。
+检查窗扩为 5×5，包含九点之间的区域，RGB 最大相对差 2.062%，
+最后中心为 105.00/104.38/104.01，AWB Q8 为 257/255。
+日志 `anlogic_lsc_white_a49cce0de4ed4aca887f836717fc07fb`。未测量位置采用 RAW 线性插值，
+这是假设场景的集成测试，不代表实物中间区域已经准确标定。该仿真在形状查表改为
+等价门限逻辑之前运行；最终门限实现由 RAW 全像素回归另行核验。
+同一模型的绿色正向过补偿峰值由 6.381% 降至 2.600%，均方根误差由 2.404% 降至 0.702%。
+峰值不是最大绝对色差；九点测量回代的最大相对误差仍为 1.892%。
+
+相同颜色仿真还保留了饱和白光测光回归：
+
+```text
+LSC_WHITE_FIELD_PASS frames=6 pixels=5529600 max_roi_spread=2.062% final_awb_q8=257/255
+LSC_METER_REPRO frame=7 samples=7200 legacy_bright=1874 legacy_background_mean=220 corrected_bright=7200 corrected_background_mean=0
+LSC_METER_REPRO frame=8 samples=7200 legacy_bright=82 legacy_background_mean=134 corrected_bright=4147 corrected_background_mean=21
+LSC_METER_REPRO_PASS frames=8
+```
+
+`verification/check_lsc_calibration.py` 从 CSV 重算九点中性系数并核对生产参数；
+`verification/check_lsc_rom.ps1` 当前分支解码四 ERAM 的 720×80 位行表及地址，
+支持综合工具使用的增益低位别名，并逐位对照独立生成的系数。
+本轮调整颜色插值，并将 SHOW_RAW_STATS 默认设为 0，去掉硬件中的分区统计及数字表；
+已有标定数据和仿真仍保留。没有改 AE/AWB 策略，没有生成或下载 bit。
+
+最终算术回归六种几何全部通过：`anlogic_lsc_raw10_999668d3ccee4162bf3b45eb3eee14c2`。
+最终主工程构建：`anlogic_image_quality_6056665932154099bd3c345c78137013`，ROM 审计通过；
+布局布线后 Slice 11,709、ERAM 52、DSP 13，现有约束下建立 +0.548 ns、保持 +0.020 ns。
+全部 user_source 文件与构建快照 SHA256 一致。报告边界及剩余约束告警见 LSC_TUNING.md。
+
+## 2026-10-14 实测 LSC 系数与增益限幅（历史平方模型）
+
+`run_lsc_raw10.ps1` 已增加独立图像坐标参考下的实测配置 Gr=(135,51,122)、
+Gb=(106,59,103)、B=(45,21,43)，以及四通道不同上限、零上限、黑电平和饱和组合。
+6 组几何尺寸均通过，完整 1280×720 逐像素比较 7,374,080 个输出像素。
+日志：`%TEMP%/anlogic_lsc_raw10_e0f01fed3e7d46679b72e4926f81a28e/`。
+这验证算术和接口，不声称已确认实物画面改善。旧 CSI/FIFO 回归使用通用模块的
+48/48 历史默认值，没有把它们当作本次新系数的完整集成验证。
+
+完整主工程另通过 TD 综合和布局布线：Slice 12,359、ERAM 51、DSP 13，
+最差建立 +0.791 ns、保持 +0.020 ns；211 份生产源码及 SDC 与构建快照一致。
+`verification/check_lsc_rom.ps1` 已核对实际 40 位 ERAM 的横向 160／纵向 360 项
+独立通道系数和全部镜像地址，输出 `LSC_NETLIST_ROM_PASS`。
+构建目录：`%TEMP%/anlogic_image_quality_5f5456f49a9e4cf0a5e57114a7e6a2e0/`。
+
+## 2026-10-14 HDMI 分区读数回归
+
+```powershell
+& './sim/run_raw_stats.ps1'
+```
+
+64×48（8×8 采样窗）、1280×720（32×32 采样窗）各验证四种 Bayer 排列。
+独立逐像素遍历采样窗并计算参考均值，覆盖非恒定坐标图案、全零、全饱和、
+四舍五入、valid 空拍、提前/保持 SOF、缺少 SOF、截断帧、错误 EOL 和复位恢复。
+共 8 项 `RAW_REGION_STATS_PASS`，每项 228 个通道均值、5 次完整帧提交。
+
+`tb_raw_stats_hdmi.sv` 使用真实 RAW 统计器、异步握手邮箱、HDMI mixer、数字表和
+字符库，仅将无关的 Logo ROM 替换为透明图。异步时钟为摄像头约 103.52 MHz、
+HDMI 约 75 MHz，RAW 输入不插入行消隐，验证最紧的实际分区包间隔。
+检查 7 个 720p 显示帧及刷新/过期用的帧首脉冲，共 6,451,353 个输出像素，
+包括十进制字形、表格边界、饱和变色、WAIT/LIVE/STALE、同时采集新帧时保持旧表、
+截断帧不提交和复位；同步信号、读使能及表格外原画面均核对。
+结果 `RAW_STATS_HDMI_PASS pixels=6451353 glyph_pixels=217344`。
+
+日志目录：`%TEMP%/anlogic_raw_stats_723252cc20454cb4ba7f04b07be90628/`。
+其中 `raw_stats_hdmi.ppm` 是合成数字的预览，不是实物画面或校准数据。
+以上记录对应新增分区统计时的版本；后续实测系数与限幅验证见本文开头。
+
+## 2026-10-14 二维 LSC 回归
+
+低资源 LSC 已扩展为横纵两轴补偿，位于 RAW10 与 demosaic 之间。
+以下为 48/48 绿色起始曲线的历史验证记录，结果只验证逻辑实现。以下测试使用当时生产源码，
 均只把产物写入打印出的 TEMP 目录，不加入 TD 工程，不生成或下载 bit。
 
 ```powershell
@@ -10,27 +139,28 @@
 & './sim/run_demosaic_quality.ps1' -Lsc
 & './sim/run_demosaic_quality.ps1' -CsiSource -Lsc -Width 1280 -Height 720
 & './sim/run_video_fifo_frame_integrity.ps1' -RawSource -Lsc
-& './sim/run_isp_lighting_integration.ps1'
 ```
 
 独立 LSC 回归用图像坐标和浮点曲线作参考，不复用 DUT ROM、坐标计数或绿色交换路径。
-64×17 下测试四种 Bayer，各通道独立强度和黑电平，生产默认、最大/零增益、关闭，
-覆盖 0..1023、饱和、空拍、早到/保持 SOF、无消隐相邻帧、截断与流水中复位。
+64×17 下测试四种 Bayer，各通道独立强度和黑电平，当时生产默认、最大/零增益、关闭，
+覆盖 0..1023、饱和、空拍、早到/保持 SOF、无消隐相邻帧、截断与流水中复位，
+以及横向/纵向独立增益和均匀场。4×1、4×2 检查最小高度和两行；
 4×5 和 12×7 检查最小宽度和奇数组宽；1280×720 检查默认配置的完整帧。
 `O_tready` 改变只核对 ready 接线；LSC 与生产摄像头链一样不可反压。
 
 实际结果：
 
 ```text
-LSC_RAW10_PASS width=64 height=17 pixels=7616
-LSC_RAW10_PASS width=4 height=5 pixels=140
-LSC_RAW10_PASS width=12 height=7 pixels=588
-LSC_RAW10_PASS width=1280 height=720 pixels=6451200
+LSC_RAW10_PASS width=64 height=17 pixels=8768
+LSC_RAW10_PASS width=4 height=1 pixels=32
+LSC_RAW10_PASS width=4 height=2 pixels=68
+LSC_RAW10_PASS width=4 height=5 pixels=164
+LSC_RAW10_PASS width=12 height=7 pixels=684
+LSC_RAW10_PASS width=1280 height=720 pixels=7374080
 CSI_FRONTEND_QUALITY_PASS frames=7 raw_pixels=6451200 rgb_pixels=6451200
 DEMOSAIC_QUALITY_RESULT bayer=BGGR size=1280x720 frames=7 pixels=6451200 errors=0 markers=0
 LSC_DEMOSAIC_PASS frames=7 pixels=6451200
 VIDEO_FIFO_REGRESSION_PASS writer_bytes=6512640 reader_pixels=3686400
-ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=691200 edge_groups=691200 packed_words=518400 bytes=8294400 ae=3 targets=3 edge_white=556
 ```
 
 LSC→demosaic 参考先在图像域对每个 RAW 像素进行增益、四舍五入、饱和和高八位截取，
@@ -42,16 +172,15 @@ LSC→demosaic 参考先在图像域对每个 RAW 像素进行增益、四舍五
 真实 FIFO 回归检查四种 DDR 相位及完整 720p 彩色/边缘帧，并逐字节核对 DDR 写入，
 输出检查共 3,686,400 像素且无溢出/欠读；原厂 FIFO 模型的接口宽度告警保留。
 该测试中的 AWB 两帧分别复位，像素检查处于单位增益，不替代 AWB 收敛测试。
-原 ISP 集成测试从去马赛克后的 RGB 边界注入图像，新增 LSC 已编译，但该项本身
-不验证 RAW LSC；RAW LSC 算术和到 DDR 的检查由前面两项完成。
+原 ISP 集成测试从去马赛克后的 RGB 边界注入图像，本身不验证 RAW LSC；
+该测试在原横向版已通过，本轮未重复。RAW LSC 算术和到 DDR 的检查由前面两项完成。
 
 本轮 TEMP 日志目录：
 
-- `anlogic_lsc_raw10_68f229ceaac540019afd3571205625b2`
-- `anlogic_demosaic_quality_5f6eaecfdf914b6b8bf1227ccb811890`（直接输入）
-- `anlogic_demosaic_quality_592d1c3d14b14e4aa9d772bd06fec255`（CSI、720p）
-- `anlogic_video_fifo_integrity_12adb7ea0c194d57918f2b09961c6f01`
-- `anlogic_isp_lighting_9e89cc12318941fd9fdf7d5b987c7e89`
+- `anlogic_lsc_raw10_4b3f9d009d15414081544b0e2a8c32db`
+- `anlogic_demosaic_quality_be11aef733904324881e397ee0edc0d8`（直接输入）
+- `anlogic_demosaic_quality_3ee166b49aea4244a14ce1f6f5bec748`（CSI、720p）
+- `anlogic_video_fifo_integrity_50a7982cbaca477aa5211b0985e65080`
 
 整机 TD 路由和 ROM 初值核验见 [LSC 调整说明](../LSC_TUNING.md)。这些是逻辑验证，
 没有模拟实物镜头色差、MIPI 电气、真实 DDR 芯片、显示器或拍屏颜色。
@@ -185,7 +314,7 @@ TEMP 目录，不加入 TD 综合工程：
 
 | 入口 | 实际验证内容 | 成功标志 |
 |---|---|---|
-| `run_auto_exposure.ps1` | 4 个测试台：完整帧亮度统计、控制器闭环/写握手、64 位异步邮箱、统计→CDC→AE→原增益/曝光表的反馈集成 | `AUTO_EXPOSURE_CONTROL_PASS`、`AE_FRAME_STATS_PASS`、`AE_STATS_CDC_PASS`、`AE_LIGHTING_LOOP_PASS` |
+| `run_auto_exposure.ps1` | 4 个测试台、5 组配置：完整帧亮度统计、控制器闭环/写握手、64 位异步邮箱，反馈集成分别使用模块默认目标和读取顶层后的生产目标 | `AUTO_EXPOSURE_CONTROL_PASS`、`AE_FRAME_STATS_PASS`、`AE_STATS_CDC_PASS`、`AE_LIGHTING_LOOP_PASS` |
 | `run_awb_frame_adaptation.ps1` | 按帧计算与提交红/蓝增益、近中性样本选择、平滑/限幅、整帧增益固定、四像素输出和 54 拍总延迟、相邻输入帧的 AWB 算术及完整 720p；延迟缓存使用厂商 DRAM 功能模型 | `AWB_FRAME_ADAPTATION_PASS` |
 | `run_red_target_lighting.ps1` | 独立逐像素 RGB 判定及 3×3 多数滤波参考，暗红、强粉红、非红颜色、门限边界、valid 空拍、截断/连续帧、目标框和像素计数 | `RED_TARGET_LIGHTING_PASS` |
 | `run_isp_lighting_integration.ps1` | 真实 `isp_top` 内预 AWB AE 统计、AWB、彩色/Scharr 切换、红色检测和 96→128 打包，在三个完整 720p 场景中检查帧标志、像素/字节总数及目标结果 | `ISP_LIGHTING_INTEGRATION_PASS` |
@@ -197,15 +326,30 @@ TEMP 目录，不加入 TD 综合工程：
 ```
 
 AE 的生产统计位于 AWB 前，每完整 720p 帧抽取 7,200 像素，
-输出 `{sum32, count16, bright16}`，`sum` 仅累加 `Y<232`，
-`count` 仍统计全部采样，`bright` 为 `Y>=232` 数量。
-控制端默认写曝光 1000/增益 16，范围 4..1991/16..144，非高光均亮目标
-96..128；非高光至少 25% 才能偏暗增亮，少于 12.5% 时减亮，
+输出 `{sum32, count16, bright16}`，`sum` 仅累加非高光亮度，`count` 统计全部采样。
+`bright` 包含 `Y>=232`，生产 LSC 开启时也包含同时满足 R≥232、G≥141、B≥223
+的白光；三通道门限在编译期由网格最小增益计算。通用模块默认只启用 Y 判定。
+控制端默认写曝光 1000/增益 16，生产范围 4..1991/16..176（模块默认增益上限 144），非高光均亮目标
+生产为 **112..144**（design_top_wrapper.v 覆盖，模块通用默认 96..128）；
+非高光至少 25% 才能偏暗增亮，少于 12.5% 时减亮，
 非高光达到 12.5% 但未到 25% 且偏暗时保持。每次实际 I²C done 先低后高后忽略 3 帧统计。
 帧统计测试覆盖空闲帧首、帧首与像素同时到达、保持的帧首、最终像素、
 错误行尾、截断帧、新帧重新同步、未标记额外数据、停止及复位。
 
-AE 回归本轮结果：
+仅验证当前生产亮度微调，可以运行：
+
+```powershell
+./sim/run_auto_exposure.ps1 -ProductionLightingOnly
+```
+
+脚本读取顶层实际 TARGET_LOW/HIGH、GAIN_MAX，并以此展开闭环测试。
+本次生产目标和中心后 LSC 反馈模型结果：
+
+```text
+AE_LIGHTING_LOOP_PASS frames=1685 requests=161 commits=161 stable_checks=5152 convergences=6 mixed=10 boundaries=4 color_fields=4 target=112..144 post_lsc=1 gain_max=176
+```
+
+此前模块默认目标 96..128 的回归结果：
 
 ```text
 AUTO_EXPOSURE_CONTROL_PASS requests=63 commits=61 checks=596
@@ -219,19 +363,20 @@ AE_LIGHTING_LOOP_PASS frames=1571 requests=139 commits=139 stable_checks=4448 co
 以及复位取消在途事务。AE 反馈测试运行 100 MHz 视频域和约 23.81 MHz 控制域，
 通过真实 `SC520GainTbl`、`uics520regAE` 表模拟 8 项写入和 group release，
 亮→暗→亮、源时钟停止/恢复、复位恢复、全白恢复共六个场景均进入目标亮度范围。
-混合场景以 128×40 的实际 RGB 帧输入统计模块，按 32 像素×4 行块组成
+默认 `POST_LSC_RGB=0` 的混合场景以 128×40 的实际 RGB 帧输入统计模块，按 32 像素×4 行块组成
 40 个采样块，光源照度 1000、背景照度 16。光源占 15%/30%/50%/75%
 并改变位置时，背景亮度 103 连续 8 帧达标，随后 20 帧没有新增调节请求。
 85%/90% 边界从光源实际亮度 255 进入，并检查首帧高光计数分别 34/36；
 85% 保持背景 103，90% 为防近全白降至背景 2、光源 133 后停止调节。
 这四项边界测试证明没有反复明暗请求，不证明高光占满画面时背景仍能看清。
+生产模型还以衰减后的白光重跑混合及边界场景，背景均亮达标后保持稳定；
 四项饱和 RGB/粉红固定输入只验证高光计量，不模拟其随曝光变化的色彩，
 也不验证单个通道防过曝。
 这是逻辑反馈及寄存器语义验证，不模拟 SCL/SDA 电气、噪声、镜头或真实传感器感光响应；
 具体收敛帧数不代表实物验证结果。
 
-最新四项 AE 回归日志位于 TEMP 的
-`anlogic_auto_exposure_de1491ffdb20414784be88abd43da9c9/`。
+G144 测光修复版的完整 AE 回归日志位于 TEMP 的
+`anlogic_auto_exposure_ce2affaeaa204c9eba8f70c71dabb041/`。
 旧策略使用冻结的旧统计和旧控制器，以同一混合场景另编译
 `AE_LEGACY_POLICY_REPRO` 分支，复现结果：
 

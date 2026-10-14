@@ -2,7 +2,8 @@
 
 module design_top_wrapper #(
     parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
-    parameter integer SHOW_RED_MASK = 0 // Reserved for compatibility; no mask frame is stored.
+    parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
+    parameter integer SHOW_RAW_STATS = 0 // Enable only for flat-field measurements.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -658,7 +659,14 @@ module design_top_wrapper #(
       .O_dst_data(S_ae_stats_data)
   );
 
-  auto_exposure_control u_auto_exposure (
+  // Slightly brighter metering target after neutral LSC attenuates green.
+  // SC520CS datasheet V1.6 p20: gain code 176 selects 0x3e09=0x1f (32x).
+  // The observed E1991/G144 limit was the previous 16x software ceiling.
+  auto_exposure_control #(
+      .TARGET_LOW(112),
+      .TARGET_HIGH(144),
+      .GAIN_MAX(176)
+  ) u_auto_exposure (
       .I_clk(S_24m_clk),
       .I_rst(~S_rst_n),
       .I_cam_cfg_done(S_cam_cfg_done),
@@ -816,6 +824,66 @@ assign S_raw_tuser  = S_axis_tuser;
 //      .clk(S_csi_rx_clk)
 //  );
 
+
+// Read-only pre-LSC tap, serialized into ten small packets per camera frame.
+// In 720p the closest packets are 152 camera clocks apart, comfortably
+// exceeding mailbox round trip and the HDMI decimal converter's 44 clocks.
+wire S_raw_stats_valid;
+wire [44:0] S_raw_stats_data;
+wire S_ae_readout_valid;
+wire [27:0] S_ae_readout_data;
+generate if (SHOW_RAW_STATS != 0) begin: raw_diagnostics
+    wire stats_valid;
+    wire [44:0] stats_data;
+    raw_region_stats u_stats (
+        .I_clk(S_csi_rx_clk), .I_rst_n(S_rst_n),
+        .I_tdata(S_raw_tdata), .I_tvalid(S_raw_tvalid),
+        .I_tuser(S_raw_tuser), .I_tlast(S_raw_tlast),
+        .O_valid(stats_valid), .O_data(stats_data)
+    );
+    ae_stats_cdc #(.WIDTH(45)) u_cdc (
+        .I_src_clk(S_csi_rx_clk), .I_dst_clk(S_hdmi_pixel_clk),
+        .I_rst_n(S_rst_n), .I_src_valid(stats_valid), .I_src_data(stats_data),
+        .O_dst_valid(S_raw_stats_valid), .O_dst_data(S_raw_stats_data)
+    );
+    // Report completed writes, not new requests. This is not sensor readback.
+    // Only complete AE frames advance the sequence; a parameter-only update
+    // must not reset the HDMI metering freshness indicator.
+    reg ae_done_d, meter_seen;
+    reg [7:0] meter_sequence;
+    reg [10:0] applied_exposure;
+    reg [7:0] applied_gain;
+    wire write_done = S_ae_cfg_done && !ae_done_d && S_cam_cfg_done;
+    always @(posedge S_24m_clk or negedge S_rst_n) begin
+        if (!S_rst_n) begin
+            ae_done_d<=0; meter_seen<=0; meter_sequence<=0;
+            applied_exposure<=1000; applied_gain<=16;
+        end else begin
+            ae_done_d<=S_ae_cfg_done;
+            if (S_ae_stats_valid) begin
+                meter_seen<=1;
+                meter_sequence<=meter_sequence+1'b1;
+            end
+            if (write_done) begin
+                applied_exposure<=S_ae[10:0]; applied_gain<=S_ag[7:0];
+            end
+        end
+    end
+    ae_stats_cdc #(.WIDTH(28)) u_ae_readout_cdc (
+        .I_src_clk(S_24m_clk), .I_dst_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
+        .I_src_valid(S_ae_stats_valid || write_done),
+        .I_src_data({meter_seen || S_ae_stats_valid,
+            meter_sequence+{7'd0,S_ae_stats_valid},
+            write_done ? S_ae[10:0] : applied_exposure,
+            write_done ? S_ag[7:0] : applied_gain}),
+        .O_dst_valid(S_ae_readout_valid), .O_dst_data(S_ae_readout_data)
+    );
+end else begin: no_raw_diagnostics
+    assign S_raw_stats_valid = 1'b0;
+    assign S_raw_stats_data = 45'd0;
+    assign S_ae_readout_valid = 1'b0;
+    assign S_ae_readout_data = 28'd0;
+end endgenerate
 
 //ISP算法顶层模块
 isp_top #(
@@ -1004,7 +1072,8 @@ isp_top #(
         .DEBUG_MODE ( 0    ),
         .SHOW_CAMERA_STATUS ( 1 ),
         .SHOW_COLOR_TARGET  ( 1 ),
-        .SHOW_RED_MASK      ( 0 ) // Front-end metadata carries no per-pixel mask.
+        .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
+        .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
         .I_rst_n         ( S_hdmi_rst_n       ),
@@ -1015,6 +1084,10 @@ isp_top #(
         .I_video_last    ( S_hdmi_last        ),
         .I_debug_status  ( S_hdmi_debug_status),
         .I_cam_fail_index( S_cam_fail_sync    ),
+        .I_raw_stats_valid(S_raw_stats_valid),
+        .I_raw_stats_data (S_raw_stats_data),
+        .I_ae_readout_valid(S_ae_readout_valid),
+        .I_ae_readout_data(S_ae_readout_data),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),
         .I_target_result_ready ( S_target_result_valid_hdmi ),

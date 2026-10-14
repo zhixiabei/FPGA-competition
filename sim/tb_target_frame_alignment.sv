@@ -43,7 +43,8 @@ module tb_target_frame_alignment;
     integer request_count = 0;
     reg request_seen = 0;
 
-    design_top_wrapper dut (
+    // RAW readout is verified separately with the real tap/CDC/HDMI chain.
+    design_top_wrapper #(.SHOW_RAW_STATS(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n), .I_mode_key_n(1'b1)
     );
 

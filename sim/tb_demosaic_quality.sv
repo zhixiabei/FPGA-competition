@@ -48,7 +48,7 @@ module tb_demosaic_quality #(
     wire [39:0] corrected_data;
     wire corrected_valid,corrected_user,corrected_last;
     generate if(LSC_STAGE) begin: with_lsc
-        lsc_raw10_4x #(.IMG_WIDTH(W),.BAYER_MODE(BAYER)) u_lsc (
+        lsc_raw10_4x #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.BAYER_MODE(BAYER)) u_lsc (
             .I_clk(clk),.I_rst_n(rst_n),.I_tdata(source_data),
             .I_tvalid(source_valid),.I_tuser(source_user),.I_tlast(source_last),
             .I_tready(),.O_tdata(corrected_data),.O_tvalid(corrected_valid),
@@ -121,6 +121,8 @@ module tb_demosaic_quality #(
             value=raw(xx,yy)*4+(CSI_SOURCE ? (xx+3*yy+scene_id)%4 : 0);
             n=W/4-1;position=2*(xx/4)-n;
             delta=(48*position*position+n*n/2)/(n*n);
+            n=H-1;position=2*yy-n;
+            delta=delta+(48*position*position+n*n/2)/(n*n);
             if(LSC_STAGE && channel(xx,yy)==1) value=value+(value*delta+128)/256;
             if(value>1023) value=1023;
             corrected_raw=value/4;

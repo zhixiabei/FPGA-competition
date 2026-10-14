@@ -295,6 +295,19 @@ module tb_sc520_config #(
             $fatal(1, "Exposure or gain packing incorrect");
         $display("PASS: exposure 0x1234, gain 144, eight writes with group hold");
 
+        @(negedge clk); exposure=1991; gain=176;
+        request_ae();
+        wait(ae_done);
+        #1;
+        if (writes!=181 || !cfg_done || bus_error ||
+            write_addr[173]!=16'h3812 || write_value[173]!=0 ||
+            write_addr[180]!=16'h3812 || write_value[180]!=8'h30 ||
+            registers[16'h3e00]!==8'h00 || registers[16'h3e01]!==8'h7c ||
+            registers[16'h3e02]!==8'h70 || registers[16'h3e09]!==8'h1f ||
+            registers[16'h3e06]!==8'h00 || registers[16'h3e07]!==8'h80)
+            $fatal(1,"E1991/G176 did not reach sensor register model through SCL/SDA");
+        $display("PASS: exposure 1991, gain 176, 32x analog and unity digital through SCL/SDA");
+
         nack_at = transactions + 1;
         request_ae();
         verify_error();

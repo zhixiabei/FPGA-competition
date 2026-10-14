@@ -32,8 +32,26 @@ set_max_delay -datapath_only -from [get_regs {u_ae_stats_cdc/payload_hold[*]}] -
 # the AE payload bound. Its DDR crossings retain their original exception.
 set_clock_groups -asynchronous \
     -group [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] \
-    -group [get_clocks {sys_clk_50m pll_clk_100m HDMI_PIXEL_CLK HDMI_SERIAL_CLK}] \
+    -group [get_clocks {sys_clk_50m pll_clk_100m HDMI_SERIAL_CLK}] \
     -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]
 set_clock_groups -asynchronous \
     -group [get_clocks {pll_clk_24m}] \
+    -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]
+
+# HDMI pixel and camera clocks must not be grouped away: the raw-statistics
+# mailbox payload is bounded to 13 ns, below two HDMI request stages.
+# The existing target mailbox shares these clocks; bound it too.
+if {[llength [get_regs {raw_diagnostics$u_cdc/req_toggle}]] > 0} {
+    set_false_path -from [get_regs {raw_diagnostics$u_cdc/req_toggle}] -to [get_regs {raw_diagnostics$u_cdc/req_meta}]
+    set_false_path -from [get_regs {raw_diagnostics$u_cdc/ack_toggle}] -to [get_regs {raw_diagnostics$u_cdc/ack_meta}]
+    set_max_delay -datapath_only -from [get_regs {raw_diagnostics$u_cdc/payload_hold[*]}] -to [get_regs {raw_diagnostics$u_cdc/O_dst_data[*]}] 13.000
+    set_false_path -from [get_regs {raw_diagnostics$u_ae_readout_cdc/req_toggle}] -to [get_regs {raw_diagnostics$u_ae_readout_cdc/req_meta}]
+    set_false_path -from [get_regs {raw_diagnostics$u_ae_readout_cdc/ack_toggle}] -to [get_regs {raw_diagnostics$u_ae_readout_cdc/ack_meta}]
+    set_max_delay -datapath_only -from [get_regs {raw_diagnostics$u_ae_readout_cdc/payload_hold[*]}] -to [get_regs {raw_diagnostics$u_ae_readout_cdc/O_dst_data[*]}] 13.000
+}
+set_false_path -from [get_regs {S_target_request}] -to [get_regs {S_target_toggle_meta}]
+set_false_path -from [get_regs {S_target_ack}] -to [get_regs {S_target_ack_meta}]
+set_max_delay -datapath_only -from [get_regs {S_target_mailbox[*]}] 20.000
+set_clock_groups -asynchronous \
+    -group [get_clocks {HDMI_PIXEL_CLK}] \
     -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]

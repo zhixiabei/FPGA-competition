@@ -2,7 +2,12 @@
 
 // Synthetic illumination verifies feedback wiring and sensor-table semantics.
 // It is deliberately not a model of noise, optics, demosaicing or sensor QE.
-module tb_ae_lighting_loop;
+module tb_ae_lighting_loop #(
+    parameter integer TARGET_LOW = 96,
+    parameter integer TARGET_HIGH = 128,
+    parameter integer GAIN_MAX = 144,
+    parameter integer POST_LSC_RGB = 0
+);
     localparam integer WIDTH = 128, HEIGHT = 40, GROUPS = WIDTH/4;
     localparam integer TILE_COUNT = 40, METERED_PIXELS = 40;
     reg src_clk = 0, control_clk = 0;
@@ -24,7 +29,8 @@ module tb_ae_lighting_loop;
     wire [15:0] exposure, gain;
     reg ae_done = 0;
 
-    ae_frame_stats_96 #(.IMG_WIDTH(WIDTH), .IMG_HEIGHT(HEIGHT)) stats (
+    ae_frame_stats_96 #(.IMG_WIDTH(WIDTH), .IMG_HEIGHT(HEIGHT),
+        .BRIGHT_RGB_ENABLE(POST_LSC_RGB),.BRIGHT_G(141),.BRIGHT_B(223)) stats (
         .I_clk(src_clk), .I_rst_n(rst_n), .I_tuser(frame_start),
         .I_tlast(line_last), .I_tvalid(video_valid), .I_tdata(video_data),
         .O_stats_valid(stats_valid), .O_sum_y(frame_sum),
@@ -36,7 +42,9 @@ module tb_ae_lighting_loop;
         .I_src_data({frame_sum, frame_count, frame_bright}),
         .O_dst_valid(cdc_valid), .O_dst_data(cdc_data)
     );
-    auto_exposure_control control (
+    auto_exposure_control #(
+        .TARGET_LOW(TARGET_LOW), .TARGET_HIGH(TARGET_HIGH), .GAIN_MAX(GAIN_MAX)
+    ) control (
         .I_clk(control_clk), .I_rst(!rst_n), .I_cam_cfg_done(camera_done),
         .I_ae_cfg_done(ae_done), .I_stats_valid(cdc_valid),
         .I_sum_y(cdc_data[63:32]), .I_sample_count(cdc_data[31:16]),
@@ -91,6 +99,8 @@ module tb_ae_lighting_loop;
             ae_done <= 1;
             if (ae_request) begin
                 requests = requests + 1;
+                if (exposure<4 || exposure>1991 || gain<16 || gain>GAIN_MAX)
+                    $fatal(1,"Sensor request exceeds configured exposure/gain limits");
                 // Track actual requested sensor settings, independent of
                 // controller thresholds and internal state.
                 transaction_direction =
@@ -181,6 +191,24 @@ module tb_ae_lighting_loop;
         end
     endfunction
 
+    // Separate illumination response from post-LSC metering. The actual
+    // 720p interpolator/demosaic is exercised in tb_lsc_white_field.
+    function automatic [23:0] post_lsc_colour(input integer raw_luma);
+        integer green,blue;
+        begin
+            green=POST_LSC_RGB ? raw_luma*156/256 : raw_luma;
+            blue=POST_LSC_RGB ? raw_luma*247/256 : raw_luma;
+            post_lsc_colour={raw_luma[7:0],green[7:0],blue[7:0]};
+        end
+    endfunction
+    function automatic integer metered_luma(input integer illumination);
+        reg [23:0] colour;
+        begin
+            colour=post_lsc_colour(modeled_luma(illumination));
+            metered_luma=(int'(colour[23:16])+2*int'(colour[15:8])+int'(colour[7:0]))/4;
+        end
+    endfunction
+
     reg [63:0] expected_payload [0:8191];
     integer stats_written = 0, stats_read = 0;
     integer total_frames = 0, convergence_checks = 0;
@@ -236,7 +264,7 @@ module tb_ae_lighting_loop;
                     tile=(row/4)*4+x/32;
                     position=(13*tile+offset)%TILE_COUNT;
                     luma=modeled_luma(position<light_tiles ? 1000 : illumination);
-                    rgb={3{luma[7:0]}};
+                    rgb=post_lsc_colour(luma);
                     case (color_pattern)
                         0: rgb=24'hff0000;
                         1: rgb=24'h00ff00;
@@ -259,7 +287,8 @@ module tb_ae_lighting_loop;
                                    green>=250 || blue>=250;
                     expected_frame_sum=expected_frame_sum+sampled_y;
 `else
-                    sampled_bright=sampled_y>=232;
+                    sampled_bright=sampled_y>=232 ||
+                        (POST_LSC_RGB && red>=232 && green>=141 && blue>=223);
                     if (!sampled_bright)
                         expected_frame_sum=expected_frame_sum+sampled_y;
 `endif
@@ -305,8 +334,8 @@ module tb_ae_lighting_loop;
             frame_index = 0;
             while (consecutive < 8 && frame_index < 200) begin
                 camera_frame(illumination);
-                mean_luma = modeled_luma(illumination);
-                if (mean_luma >= 96 && mean_luma <= 128 && !model_busy)
+                mean_luma = metered_luma(illumination);
+                if (mean_luma >= TARGET_LOW && mean_luma <= TARGET_HIGH && !model_busy)
                     consecutive = consecutive + 1;
                 else
                     consecutive = 0;
@@ -321,6 +350,32 @@ module tb_ae_lighting_loop;
         end
     endtask
 
+    task automatic low_light_limit;
+        integer frame_index,request_base,commit_base;
+        reg [7:0] expected_coarse;
+        begin
+            // Use a scene too dark for either ceiling, then verify the
+            // actual register group and that the loop stops at the bound.
+            expected_coarse=GAIN_MAX==176 ? 8'h1f : 8'h0f;
+            if (GAIN_MAX!=144 && GAIN_MAX!=176)
+                $fatal(1,"Low-light register fixture supports limits 144 or 176");
+            frame_index=0;
+            while ((active_exposure!=1991 || active_coarse!=expected_coarse ||
+                    active_fine!=128 || gain!=GAIN_MAX || model_busy) && frame_index<200) begin
+                camera_frame(1);
+                frame_index=frame_index+1;
+            end
+            if(frame_index==200 || exposure!=1991 || metered_luma(1)>=TARGET_LOW)
+                $fatal(1,"Low-light scene failed to reach the applied register limit");
+            request_base=requests;commit_base=commits;
+            repeat(20) camera_frame(1);
+            if(requests!=request_base || commits!=commit_base || gain!=GAIN_MAX)
+                $fatal(1,"Low-light limit caused redundant writes or gain drift");
+            $display("AE_LOW_LIGHT_LIMIT_PASS E=%0d G=%0d analog=%h digital=00 fine=%h mean=%0d stable_frames=20",
+                active_exposure,gain,active_coarse,active_fine,metered_luma(1));
+        end
+    endtask
+
     task automatic mixed_converge(
         input integer light_tiles, input integer offset, input string label_text
     );
@@ -329,8 +384,8 @@ module tb_ae_lighting_loop;
             consecutive=0;frame_index=0;
             while(consecutive<8 && frame_index<200) begin
                 camera_scene(16,light_tiles,offset);
-                background_y=modeled_luma(16);
-                if(background_y>=96 && background_y<=128 && !model_busy)
+                background_y=metered_luma(16);
+                if(background_y>=TARGET_LOW && background_y<=TARGET_HIGH && !model_busy)
                     consecutive=consecutive+1;
                 else consecutive=0;
                 frame_index=frame_index+1;
@@ -341,8 +396,8 @@ module tb_ae_lighting_loop;
             request_base=requests;commit_base=commits;
             repeat(20) begin
                 camera_scene(16,light_tiles,offset);
-                background_y=modeled_luma(16);
-                if(background_y<96 || background_y>128)
+                background_y=metered_luma(16);
+                if(background_y<TARGET_LOW || background_y>TARGET_HIGH)
                     $fatal(1,"%s background left the target interval",label_text);
             end
             if(requests!=request_base || commits!=commit_base)
@@ -368,7 +423,7 @@ module tb_ae_lighting_loop;
                     $fatal(1,"%s missed the intended first-frame high-white fraction",label_text);
                 if(frame_index==159) late_request_base=requests;
             end
-            background_y=modeled_luma(16);
+            background_y=metered_luma(16);
             // One direction reversal can occur while recovering from a
             // previously bright full-frame scene. Repeated reversals or
             // continued requests at the boundary are not permitted.
@@ -432,6 +487,7 @@ module tb_ae_lighting_loop;
         converge(16, "dark transition");
         if (exposure != 1991 || gain <= 16)
             $fatal(1, "Dark transition did not prioritize exposure before gain");
+        low_light_limit();
         converge(220, "bright recovery");
         if (gain != 16)
             $fatal(1, "Bright recovery did not remove unnecessary gain");
@@ -518,9 +574,9 @@ module tb_ae_lighting_loop;
         repeat (30) @(posedge control_clk);
         if (stats_written != stats_read)
             $fatal(1, "Final complete frame was not delivered through CDC");
-        $display("AE_LIGHTING_LOOP_PASS frames=%0d requests=%0d commits=%0d stable_checks=%0d convergences=%0d mixed=%0d boundaries=%0d color_fields=%0d",
+        $display("AE_LIGHTING_LOOP_PASS frames=%0d requests=%0d commits=%0d stable_checks=%0d convergences=%0d mixed=%0d boundaries=%0d color_fields=%0d target=%0d..%0d post_lsc=%0d gain_max=%0d",
                  total_frames, requests, commits, stability_checks, convergence_checks,
-                 mixed_checks,boundary_checks,color_checks);
+                 mixed_checks,boundary_checks,color_checks,TARGET_LOW,TARGET_HIGH,POST_LSC_RGB,GAIN_MAX);
         $finish;
     end
     initial begin

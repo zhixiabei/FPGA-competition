@@ -1,11 +1,39 @@
 param(
-    [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin'
+    [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
+    [switch] $ProductionLightingOnly
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceRoot = Join-Path $projectRoot 'user_source\hdl_source'
+$wrapper = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'design_top_wrapper.v')
+$productionBlock = [regex]::Match($wrapper,
+    '(?s)auto_exposure_control\s*#\((.*?)\)\s*u_auto_exposure')
+if (-not $productionBlock.Success) { throw 'Cannot read production AE configuration from design_top_wrapper.v' }
+$productionValues=@{}
+foreach($name in @('TARGET_LOW','TARGET_HIGH','GAIN_MAX')) {
+    $setting=[regex]::Match($productionBlock.Groups[1].Value,'\.' + $name + '\s*\(\s*(\d+)\s*\)')
+    if(-not $setting.Success) { throw "Cannot read production AE $name" }
+    $productionValues[$name]=$setting.Groups[1].Value
+}
+$lightingTest = @{
+    Top = 'tb_ae_lighting_loop'; Snapshot = 'ae_production_lighting'; Pass = '^AE_LIGHTING_LOOP_PASS';
+    Generics = @('-generic_top', ('"TARGET_LOW=' + $productionValues['TARGET_LOW'] + '"'),
+                 '-generic_top', ('"TARGET_HIGH=' + $productionValues['TARGET_HIGH'] + '"'),
+                 '-generic_top', ('"GAIN_MAX=' + $productionValues['GAIN_MAX'] + '"'),
+                 '-generic_top', '"POST_LSC_RGB=1"')
+}
+$tests = @($lightingTest)
+if (-not $ProductionLightingOnly) {
+    $tests = @(
+        @{ Top = 'tb_auto_exposure_control'; Snapshot = 'ae_control'; Pass = '^AUTO_EXPOSURE_CONTROL_PASS' },
+        @{ Top = 'tb_ae_frame_stats_96'; Snapshot = 'ae_stats'; Pass = '^AE_FRAME_STATS_PASS' },
+        @{ Top = 'tb_ae_stats_cdc'; Snapshot = 'ae_cdc'; Pass = '^AE_STATS_CDC_PASS' },
+        @{ Top = 'tb_ae_lighting_loop'; Snapshot = 'ae_lighting_loop'; Pass = '^AE_LIGHTING_LOOP_PASS' },
+        $lightingTest
+    )
+}
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SimBin $tool) -PathType Leaf)) {
         throw "XSim tool is missing: $tool"
@@ -29,16 +57,13 @@ Push-Location $simulationDir
 try {
     & (Join-Path $SimBin 'xvlog.bat') -sv @sources -log xvlog.log *> compile_console.log
     if ($LASTEXITCODE -ne 0) { throw 'XSim compile failed; see compile_console.log' }
-    foreach ($test in @(
-        @{ Top = 'tb_auto_exposure_control'; Snapshot = 'ae_control'; Pass = '^AUTO_EXPOSURE_CONTROL_PASS' },
-        @{ Top = 'tb_ae_frame_stats_96'; Snapshot = 'ae_stats'; Pass = '^AE_FRAME_STATS_PASS' },
-        @{ Top = 'tb_ae_stats_cdc'; Snapshot = 'ae_cdc'; Pass = '^AE_STATS_CDC_PASS' },
-        @{ Top = 'tb_ae_lighting_loop'; Snapshot = 'ae_lighting_loop'; Pass = '^AE_LIGHTING_LOOP_PASS' }
-    )) {
+    foreach ($test in $tests) {
         $elaborateLog = $test.Snapshot + '_elaborate_console.log'
         $simulationLog = $test.Snapshot + '_simulate_console.log'
+        $generics = @()
+        if ($test.ContainsKey('Generics')) { $generics = $test.Generics }
         & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
-            ('work.' + $test.Top) -s $test.Snapshot -log ($test.Snapshot + '_xelab.log') *> $elaborateLog
+            ('work.' + $test.Top) @generics -s $test.Snapshot -log ($test.Snapshot + '_xelab.log') *> $elaborateLog
         if ($LASTEXITCODE -ne 0) { throw "XSim elaboration failed; see $elaborateLog" }
         & (Join-Path $SimBin 'xsim.bat') $test.Snapshot -runall `
             -log ($test.Snapshot + '_xsim.log') *> $simulationLog

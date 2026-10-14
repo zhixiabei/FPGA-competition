@@ -9,7 +9,8 @@ module hdmi_mixer #(
     parameter integer SHOW_RED_MASK = 0, // Reserved; front-end mask is not sent over DDR.
     parameter integer TARGET_RED_MIN = 80,
     parameter integer TARGET_RED_DELTA = 30,
-    parameter integer TARGET_MIN_PIXELS = 128
+    parameter integer TARGET_MIN_PIXELS = 128,
+    parameter integer SHOW_RAW_STATS = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -22,6 +23,10 @@ module hdmi_mixer #(
 
     input wire[3:0]   I_debug_status,
     input wire[7:0]   I_cam_fail_index,
+    input wire        I_raw_stats_valid,
+    input wire [44:0] I_raw_stats_data,
+    input wire        I_ae_readout_valid,
+    input wire [27:0] I_ae_readout_data,
 
     output wire       O_video_rd_en,
     input wire[23:0]  I_video_rd_data,
@@ -274,6 +279,22 @@ module hdmi_mixer #(
     );
     wire S_target_text_on = S_target_panel_on &&
         S_target_char_bits[15-S_target_text_x[3:0]];
+
+    wire S_raw_panel, S_raw_text, S_raw_alert;
+    generate if (SHOW_RAW_STATS != 0) begin: raw_readout
+        raw_stats_osd u_osd (
+            .I_clk(I_clk), .I_rst_n(I_rst_n),
+            .I_stats_valid(I_raw_stats_valid), .I_stats_data(I_raw_stats_data),
+            .I_ae_valid(I_ae_readout_valid), .I_ae_data(I_ae_readout_data),
+            .I_frame_start(S_video_de_1d && S_x_1d==0 && S_y_1d==0),
+            .I_de(S_video_de_1d), .I_x(S_x_1d), .I_y(S_y_1d),
+            .O_panel(S_raw_panel), .O_text(S_raw_text), .O_alert(S_raw_alert)
+        );
+    end else begin: no_raw_readout
+        assign S_raw_panel=1'b0;
+        assign S_raw_text=1'b0;
+        assign S_raw_alert=1'b0;
+    end endgenerate
 
     function [4:0] F_logo_text_bits;
         input [3:0] I_char;
@@ -1132,6 +1153,8 @@ module hdmi_mixer #(
                         (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
                     O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[3:0],
                         S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
+                else if(S_raw_panel)
+                    O_hdmi_data <= S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
                 else if(S_osd_hit)
                     O_hdmi_data <= S_osd_color;
                 else if(S_target_panel_on)
