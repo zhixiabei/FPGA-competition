@@ -29,6 +29,13 @@ xsim.dir/
 # Generated programming files and optional exported archives.
 *.bit
 /exports/
+/build/
+
+# Retired scratch/output locations. Documents now live under docs/proposals.
+/tmp/
+/output/
+__pycache__/
+*.pyc
 
 # Do not ignore *.bin, *.dat, *.mif, *.mem, *.hex, *.txt, *.xml, *.ipc,
 # *.v, *.sv, *.vh, *.vhd, *.tcl, *.adc, *.sdc, or *.al globally.

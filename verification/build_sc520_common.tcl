@@ -1,6 +1,6 @@
 # Shared full TD flow. The small entry scripts select the GUI project to build.
 set source_root [file normalize [file join [file dirname [info script]] ..]]
-set build_dir [file join $source_root verification sc520_Runs $sc520_project]
+set build_dir [file join $source_root build td $sc520_project]
 file mkdir $build_dir
 # TD resolves the .al source paths against the process working directory.
 # Keep the same sibling depth as td_project; place deliverables in build_dir.
@@ -39,6 +39,8 @@ if {[catch {
     commit_param -step bitgen
     bitgen -bit [file join $build_dir ${sc520_project}.bit]
     puts "SC520_BUILD_PASS: $sc520_project"
+    puts "Internal build output: $build_dir"
+    puts "Use build_firmware.cmd to update firmware/anlogic_edge_osd.bit."
 } detail]} {
     puts stderr "SC520_BUILD_FAIL: $sc520_project: $detail"
     exit 1
