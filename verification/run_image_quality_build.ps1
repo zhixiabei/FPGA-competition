@@ -1,6 +1,8 @@
-param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute)
+param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute,
+      [switch] $GenerateBit, [string] $OutputDirectory='')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+if($GenerateBit -and $SkipRoute) {throw 'Bit generation requires final routed timing checks'}
 $root=Split-Path -Parent $PSScriptRoot
 $work=Join-Path $env:TEMP ('anlogic_image_quality_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -44,6 +46,23 @@ if(-not $SkipRoute) {
     puts "IMAGE_QUALITY_ROUTE_PASS"
 '@
 }
+$bitgen=''
+if($GenerateBit) {
+    $bitgen=@'
+    set timing_file [open system_pr.timing r]
+    set timing_text [read $timing_file]
+    close $timing_file
+    if {![regexp {SWNS: *([-0-9.]+)ns} $timing_text unused setup_slack] || $setup_slack < 0} {
+        error "Final setup timing failed"
+    }
+    if {![regexp {HWNS: *([-0-9.]+)ns} $timing_text unused hold_slack] || $hold_slack < 0} {
+        error "Final hold timing failed"
+    }
+    commit_param -step bitgen
+    bitgen -bit image_quality.bit
+    puts "IMAGE_QUALITY_BITGEN_PASS"
+'@
+}
 $script=@'
 set root [file dirname [file normalize [info script]]]
 cd $root
@@ -70,6 +89,7 @@ if {[catch {
     export_db system_gate.db
     puts "IMAGE_QUALITY_SYNTHESIS_PASS"
 ROUTE_COMMANDS
+BITGEN_COMMANDS
 } detail]} {
     puts stderr "IMAGE_QUALITY_BUILD_FAIL: $detail"
     exit 1
@@ -77,6 +97,7 @@ ROUTE_COMMANDS
 exit 0
 '@
 $script=$script.Replace('ROUTE_COMMANDS',$route)
+$script=$script.Replace('BITGEN_COMMANDS',$bitgen)
 [IO.File]::WriteAllText((Join-Path $work 'build.tcl'),$script,[Text.UTF8Encoding]::new($false))
 Write-Output "Build output: $work"
 Push-Location $work
@@ -101,6 +122,24 @@ try {
     }
     Select-String -LiteralPath console.log -Pattern '^IMAGE_QUALITY_.*PASS' |
         ForEach-Object { $_.Line }
+    if($GenerateBit) {
+        if($text -notmatch 'IMAGE_QUALITY_BITGEN_PASS' -or
+           -not (Test-Path -LiteralPath (Join-Path $work 'image_quality.bit'))) {
+            throw "Programming file was not generated: $work"
+        }
+        if($OutputDirectory) {
+            $destination=[IO.Path]::GetFullPath((Join-Path $root $OutputDirectory))
+            if(-not $destination.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Output directory must be inside the project workspace'
+            }
+            New-Item -ItemType Directory -Path $destination -Force | Out-Null
+            foreach($name in @('image_quality.bit','system_phy.area','system_pr.timing','constraint_health.timing','source_sha256.csv')) {
+                Copy-Item -LiteralPath (Join-Path $work $name) -Destination $destination
+            }
+            Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $destination 'image_quality.bit')
+            Write-Output "Deliverables: $destination"
+        } else {Write-Output "Programming file: $work/image_quality.bit"}
+    }
 } finally {
     Pop-Location
 }

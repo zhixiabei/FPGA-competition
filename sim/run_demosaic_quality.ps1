@@ -6,7 +6,6 @@ param(
     [switch] $AllowErrors,
     [switch] $LegacyRamTies,
     [switch] $CsiSource,
-    [switch] $Lsc,
     [string] $DemosaicSourceRoot=''
 )
 $ErrorActionPreference = 'Stop'
@@ -23,7 +22,6 @@ $sources = @(
     'blk_mem_gen_zhenghe\RTL\ram_d32970204f32.v'
 ) | ForEach-Object { Join-Path $hdl $_ }
 $sources += Join-Path $PSScriptRoot 'tb_demosaic_quality.sv'
-$sources += Join-Path $root 'user_source\hdl_source\isp\lsc_raw10_4x.v'
 $sources += Join-Path $TdSimLib 'ph1p_logic_eram.v'
 $sources += Join-Path $TdSimLib 'ph1p_phy_gsr.v'
 if($CsiSource) {
@@ -40,8 +38,6 @@ New-Item -ItemType Directory -Path $work | Out-Null
 $sourceArgs = ($sources | ForEach-Object { '{' + $_.Replace('\','/') + '}' }) -join ' '
 $allow = [int] $AllowErrors.IsPresent
 $csi = [int] $CsiSource.IsPresent
-$lscParameter = [int] $Lsc.IsPresent
-if($Lsc -and $LegacyRamTies) { throw 'LSC coverage requires the current demosaic' }
 $defines = ''
 $reference=1
 if ($LegacyRamTies) {
@@ -53,7 +49,7 @@ onerror {quit -code 1 -force}
 onbreak {quit -code 1 -force}
 vlib work
 vlog -sv $defines $sourceArgs
-vsim -t ps -gW=$Width -gH=$Height -gALLOW_ERRORS=$allow -gEDGE_AWARE_REFERENCE=$reference -gCSI_SOURCE=$csi -gLSC_STAGE=$lscParameter work.tb_demosaic_quality work.PH1P_PHY_GSR
+vsim -t ps -gW=$Width -gH=$Height -gALLOW_ERRORS=$allow -gEDGE_AWARE_REFERENCE=$reference -gCSI_SOURCE=$csi work.tb_demosaic_quality work.PH1P_PHY_GSR
 run -all
 quit -code 0 -force
 "@
@@ -86,10 +82,6 @@ try {
             ForEach-Object { $_.Line }
     }
     $result.Line
-    if($Lsc) {
-        if($text -notmatch 'LSC_DEMOSAIC_PASS') { throw "Missing LSC coverage: $work\console.log" }
-        Select-String -LiteralPath console.log -Pattern 'LSC_DEMOSAIC_PASS' | ForEach-Object { $_.Line }
-    }
     Select-String -LiteralPath console.log -Pattern 'GREEN_EDGE_DETAIL_PASS' |
         ForEach-Object { $_.Line }
 } finally {

@@ -348,20 +348,20 @@
                     <Attr Name="CompileOrder" Val="62"/>
                 </FileInfo>
             </File>
+            <File Path="../user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="63"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/isp/lsc_raw10_4x.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
                     <Attr Name="CompileOrder" Val="64"/>
-                </FileInfo>
-            </File>
-            <File Path="../user_source/hdl_source/isp/ae_frame_stats_96.v">
-                <FileInfo>
-                    <Attr Name="UsedInSyn" Val="true"/>
-                    <Attr Name="UsedInP&R" Val="true"/>
-                    <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="63"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/isp/color_edge_detect_96.v">
@@ -379,6 +379,22 @@
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
                     <Attr Name="CompileOrder" Val="53"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/isp/motion_target_detect_96.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="67"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/isp/target_detect_switch_96.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="68"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/anlogic_logo_rom.v">

@@ -1,17 +1,19 @@
 module isp_top #(
     parameter integer ENABLE_EDGE = 1, // Reset default, not a generate-time bypass.
-    // Neutral white-field gains = mean(R/channel) * 256, two photographs.
-    // Nodes 1..9 are row-major, including the centre; see LSC_TUNING.md.
+    // LSC_PROFILE_RGB_20261015: small residual fit from 15 PRE-WB RGB regions.
+    // Preserve global channel ratios; fit the six intermediate regions too.
+    // Nodes 1..9 are row-major; Gr/Gb share each fitted scale.
     // Reciprocal-aware interpolation avoids green bulges between the nodes.
     parameter integer LSC_ENABLE = 1,
     parameter integer LSC_MESH_CURVE_ENABLE = 1,
-    parameter [71:0] LSC_MESH_GR_Q8 = {8'd240,8'd187,8'd226,8'd239,8'd156,8'd225,8'd234,8'd177,8'd217},
-    parameter [71:0] LSC_MESH_GB_Q8 = {8'd224,8'd190,8'd219,8'd217,8'd156,8'd213,8'd221,8'd183,8'd213},
-    parameter [80:0] LSC_MESH_B_Q8 = {9'd294,9'd258,9'd278,9'd291,9'd247,9'd282,9'd296,9'd269,9'd284}
+    parameter [71:0] LSC_MESH_GR_Q8 = {8'd240,8'd192,8'd221,8'd241,8'd161,8'd218,8'd233,8'd177,8'd212},
+    parameter [71:0] LSC_MESH_GB_Q8 = {8'd224,8'd195,8'd214,8'd219,8'd161,8'd206,8'd220,8'd183,8'd208},
+    parameter [80:0] LSC_MESH_B_Q8 = {9'd291,9'd261,9'd272,9'd291,9'd255,9'd277,9'd291,9'd272,9'd281}
 ) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
     input           I_edge_mode_async,
+    input           I_motion_mode_async,
     input 			I_tlast			,
     input 			I_tuser			,
     input [39:0] 	I_tdata			,
@@ -33,6 +35,8 @@ module isp_top #(
     output [11:0]   O_target_center_y,
     output [23:0]   O_target_pixels,
     output          O_target_frame_toggle,
+    output          O_target_motion_mode,
+    output          O_motion_mode_active,
     output          O_edge_mode_active,
     output          O_ae_stats_valid,
     output [31:0]   O_ae_sum_y,
@@ -95,6 +99,28 @@ wire         m_aixs_tvalid;  //synthesis keep
  
 wire [39:0] lsc_data;
 wire lsc_valid, lsc_user, lsc_last, lsc_ready;
+
+// Exposure feedback uses the sensor-linear RAW stream before LSC. Sampling a
+// complete Bayer row pair gives the intended 1:2:1 RGB luminance weighting
+// without demosaic, multipliers or frame storage.
+ae_frame_stats_raw10_4x #(
+    .IMG_WIDTH(1280),
+    .IMG_HEIGHT(720),
+    .BLACK_LEVEL(0),
+    .CLIP_LEVEL(192)
+) u_ae_frame_stats (
+    .I_clk(axi4s_video_aclk),
+    .I_rst_n(I_rst_n),
+    .I_tuser(I_tuser),
+    .I_tlast(I_tlast),
+    .I_tvalid(I_tvalid),
+    .I_tdata(I_tdata),
+    .O_stats_valid(O_ae_stats_valid),
+    .O_sum_y(O_ae_sum_y),
+    .O_sample_count(O_ae_sample_count),
+    .O_bright_count(O_ae_bright_count)
+);
+
 lsc_raw10_4x #(
     .IMG_WIDTH(1280), .IMG_HEIGHT(720), .BAYER_MODE("BGGR"), .ENABLE(LSC_ENABLE),
     .MESH_ENABLE(1), .MESH_CURVE_ENABLE(LSC_MESH_CURVE_ENABLE),
@@ -135,53 +161,6 @@ data128_96 u_data128_96 (
     .O_tdata(m_aixs_tdata_96)
 );
 
-// Meter the unbalanced RGB stream. AWB must not alter exposure feedback.
-// LSC may attenuate clipped white light below the original Y threshold.
-// Derive conservative white RGB thresholds from the minimum grid gains.
-// These loops and multiplications evaluate only at elaboration, not per pixel.
-function integer min_green_gain;
-    input [71:0] mesh;
-    integer node;
-    begin
-        min_green_gain=255;
-        for(node=0;node<9;node=node+1)
-            if(mesh[node*8 +: 8]<min_green_gain)
-                min_green_gain=mesh[node*8 +: 8];
-    end
-endfunction
-function integer min_blue_gain;
-    input [80:0] mesh;
-    integer node;
-    begin
-        min_blue_gain=511;
-        for(node=0;node<9;node=node+1)
-            if(mesh[node*9 +: 9]<min_blue_gain)
-                min_blue_gain=mesh[node*9 +: 9];
-    end
-endfunction
-localparam integer AE_GR_MIN=min_green_gain(LSC_MESH_GR_Q8);
-localparam integer AE_GB_MIN=min_green_gain(LSC_MESH_GB_Q8);
-localparam integer AE_G_MIN=AE_GR_MIN<AE_GB_MIN ? AE_GR_MIN : AE_GB_MIN;
-localparam integer AE_G_WHITE=(232*AE_G_MIN)/256;
-localparam integer AE_B_WHITE=(232*min_blue_gain(LSC_MESH_B_Q8))/256;
-ae_frame_stats_96 #(
-    .IMG_WIDTH(1280),
-    .IMG_HEIGHT(720),
-    .BRIGHT_RGB_ENABLE(LSC_ENABLE), .BRIGHT_R(232),
-    .BRIGHT_G(AE_G_WHITE), .BRIGHT_B(AE_B_WHITE>255 ? 255 : AE_B_WHITE)
-) u_ae_frame_stats (
-    .I_clk(axi4s_video_aclk),
-    .I_rst_n(I_rst_n),
-    .I_tuser(m_aixs_tuser),
-    .I_tlast(m_aixs_tlast),
-    .I_tvalid(m_aixs_tvalid),
-    .I_tdata(m_aixs_tdata_96),
-    .O_stats_valid(O_ae_stats_valid),
-    .O_sum_y(O_ae_sum_y),
-    .O_sample_count(O_ae_sample_count),
-    .O_bright_count(O_ae_bright_count)
-);
-
 awb #(
     .IMG_HEIGHT(720),
     .IMG_WIDTH (1280)
@@ -220,16 +199,19 @@ rgb_edge_switch_96 #(
     .O_edge_mode(O_edge_mode_active)
 );
 
-red_target_detect_96 #(
+target_detect_switch_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
-    .RED_MIN(24),
-    .RED_DELTA(6),
-    .MIN_PIXELS(128)
-) u_red_target_detect_96 (
+    .RED_MIN_PIXELS(128),
+    .DIFF_THRESHOLD(10),
+    .MIN_BLOCKS(12),
+    .GLOBAL_CHANGE_PERCENT(40)
+) u_target_detect_switch (
     .I_clk(axi4s_video_aclk),
     .I_rst_n(I_rst_n),
+    .I_motion_mode_async(I_motion_mode_async),
     .I_tuser(awb_O_tuser),
+    .I_tlast(awb_O_tlast),
     .I_tvalid(awb_O_tvalid),
     .I_tdata(awb_O_tdata),
     .O_result_ready(target_result_ready),
@@ -241,7 +223,9 @@ red_target_detect_96 #(
     .O_center_x(target_center_x),
     .O_center_y(target_center_y),
     .O_pixels(target_pixels),
-    .O_frame_toggle(target_frame_toggle)
+    .O_frame_toggle(target_frame_toggle),
+    .O_target_motion_mode(O_target_motion_mode),
+    .O_motion_mode_active(O_motion_mode_active)
 );
 
 

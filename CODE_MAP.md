@@ -6,13 +6,34 @@
 
 本说明依据当前的 [TD 工程文件](td_project/anlogic_edge_osd.al)、[系统顶层](user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 2026-10-16 K2 帧差运动检测与稳定处理
+
+K1 继续切换彩色/边缘，K2（A9）切换红色/运动检测。
+两种检测从 AWB RGB 分流，持续运行，帧首锁定 K2 模式。
+结果的算法标签随实际 DDR 帧槽保存，显示帧首锁存为 `RED` / `MOV`。
+
+| 文件 | 当前功能 | 阅读入口 |
+|---|---|---|
+| [motion_target_detect_96.v](user_source/hdl_source/isp/motion_target_detect_96.v) | 8×8 灰度均值相邻帧差，片上参考 RAM，邻域过滤、有效支持计数与同向光照事件 | `beat_compare` → `block_sum` → `u_reference` → `difference` → `votes` → `snapshot_found` / `snapshot_scene_change` |
+| [target_detect_switch_96.v](user_source/hdl_source/isp/target_detect_switch_96.v) | K2 请求同步、帧首模式与末拍结果绑定；同文件帧级稳定器 | `u_motion` → `gen_stable_motion.u_stabilizer`、`candidate`、`boxes_match`、`confirmations`、`smooth_coordinate` |
+| [tb_motion_target_detect_96.sv](sim/tb_motion_target_detect_96.sv) | 图像参考、算法切换及 720p 参考缓存全地址验证 | `expect_image`、`tb_target_detect_switch_96`、`tb_motion_full_resolution` |
+
+运动参数在 `isp_top.v` 的 `u_target_detect_switch` 实例设置：
+`DIFF_THRESHOLD=10`、`MIN_BLOCKS=12`、`GLOBAL_CHANGE_PERCENT=40`。
+稳定器默认开启：至少 8 个支持块，`3×支持块数 >= 2×(框宽块数+框高块数)`，
+连续 3 帧确认、漏检保持 2 帧、第三次清除、8 像素死区与四分之一平滑。
+坏参考和大范围光照事件立即清除。原始模块直接实例化的默认值仍为 6/8，
+旧算法与选择器回归显式使用该配置，不能作为生产稳定参数的验证结果。
+稳定运动结果仿真可见延迟为 13 拍，红色结果延迟仍为 6 拍。
+使用说明和本次 bit 见 [VIDEO_MODE_SWITCH.md](VIDEO_MODE_SWITCH.md)。
+
 ## 2026-10-14 HDMI 九区通道读数（默认关闭）
 
 `design_top_wrapper.v` 默认 `SHOW_RAW_STATS=0`，九区数字表及其 E/G/AE 表头不显示，
-对应统计器、诊断邮箱和数字表不实例化。已有白场数据及 LSC 系数保留，
-AE 测光、曝光控制和 AWB 继续正常工作。
+对应分区统计器、诊断邮箱和数字表不实例化。现有 LSC、AE RAW 测光和 AWB 保留；
+曝光由 `auto_exposure_control.v` 闭环调节，范围 E4..1991/G16..176。
 
-诊断时设 `SHOW_RAW_STATS=1` 并重新编译下载，在 LSC 前旁路采样：`isp/raw_region_stats.v` → 45 位
+诊断时设 `SHOW_RAW_STATS=1` 并重新编译下载，在去马赛克前旁路采样：`isp/raw_region_stats.v` → 45 位
 `ae_stats_cdc` 邮箱 → `hdmi_mixer.v` 中的 `raw_stats_osd.v` → 原字符库。
 九个 32×32 区域分别统计 R/Gr/Gb/B，按完整帧提交，每 16 个 HDMI 帧整体刷新。
 同一表首行通过 28 位邮箱显示曝光/增益写完成值 E/G 和完整 AE 测光状态 AL/AW/AS，
@@ -22,13 +43,7 @@ AE 测光、曝光控制和 AWB 继续正常工作。
 
 ## 2026-10-11 RAW 窗口修复
 
-**后续更新：** `isp/lsc_raw10_4x.v` 已由 `isp/isp_top.v` 接入 RAW10 与 demosaic 之间。
-2026-10-14 修正版用两张九区白场读数计算 Gr/Gb/B 中性增益，R 保持原值。
-九点二维插值覆盖中心及中间区域，替换了被上板反馈否定的边缘平方拟合。
-参数集中在 `isp_top.v` 开头，读数与系数见 `LSC_TUNING.md`。
-720×80 位压缩行系数 ROM（四 ERAM）、倒数域纵向插值及横向曲率修正、四个像素乘法器，
-三拍同步像素/标志，原 AWB 延迟不变。
-详细设计、试调和最新占用见 [LSC_TUNING.md](LSC_TUNING.md)。下段是 LSC 前的窗口修复记录。
+当前 RAW10 先旁路送入曝光统计，再经过 LSC 和去马赛克；彩色校准表已移除。
 
 `demosaic/raw_matrix_3x3_buffer.v`（实际目录 `isp/demosaic_4x_2_0/`）
 已改为四个循环 ERAM 行缓存、完整三行中心窗口及保持 Bayer 相位的镜像补边。
@@ -43,32 +58,23 @@ AE 测光、曝光控制和 AWB 继续正常工作。
 未在本轮作为生产配置验证。生产修改仍在原文件路径，无需添加新综合文件。
 AE/AWB、红色检测、Scharr 及 HDMI 路径未改；完整验证与限制见 README 最新章节。
 
-## 当前光照适应通路（2026-10-10）
+## 当前曝光与白平衡通路（2026-10-15）
 
-曝光由 **AWB 前的亮度统计 → 请求/确认 CDC → AE 控制器 → 原 SC520CS I²C 表**
-闭环调整；检测仍在 AWB 后、彩色/边缘选择之前。两种显示模式都使用同一份彩色
+曝光由 **LSC 前 RAW10 统计 → CDC → 自动曝光 → SC520CS I²C 表**控制，
+上电 E1000/G16，范围 E4..1991/G16..176。检测仍在 AWB 后、彩色/边缘选择之前。两种显示模式都使用同一份彩色
 信息识别红色，Scharr 的核、阈值、11 拍选择器延迟和框补偿均保持原设置。
 
 | 文件 | 当前功能 | 阅读入口 |
 |---|---|---|
-| [ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | 每完整 720p 帧抽取 7,200 像素，累加 AWB 前非高光亮度并计总数/高光数；异常或截断帧不发布 | `first_beat`、`sample_beat`、`pixel_bright`、`sum_next`、`O_stats_valid` |
-| [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v) | 将 64 位帧结果整组送到约 23.81 MHz 域；相同值也产生更新脉冲 | `payload_hold`、`pending_data`、`req_toggle`、`ack_toggle` |
-| [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 强光减亮、暗光增亮；等待实际 I²C 写入完成和 3 帧稳定时间 | `stats_ok`、`reduce_light`、`increase_light`、`state` |
+| [ae_frame_stats_raw10_4x.v](user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前每帧抽取 28,800 个 Bayer 分量，累计限幅亮度并统计剪白样本 | `sample_group`、`component_value`、`sum_next`、`O_stats_valid` |
+| [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v) | 将完整 64 位帧统计握手传入摄像头控制时钟域 | `payload_hold`、`pending_data`、`req_toggle`、`ack_toggle` |
+| [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 六帧平均、三帧写后等待、均值和高光滞回判断，产生 E/G 请求 | `highlight_latched`、`increase_light`、`reduce_light`、`ST_COLLECT` |
 | [awb.v](user_source/hdl_source/awb.v) | 近中性色采样、共享顺序除法、增益按帧提交和平滑；四像素输出保持 54 拍 | `sample_neutral_d1`、`stats_ready`、`div_state`、`pixel_gain_r`、`u_video_start_guard` |
 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 以通道比例和红色色相范围识别暗红，排除低饱和粉色；原多数滤波和框统计保留 | `gen_red`、`twice_red`、`hue_green_limit`、`votes` |
 
-AE 默认写入曝光 1000、增益 16，生产控制范围分别为 4..1991、16..176。
-实物 E1991/G144/AL 后，顶层开放原表已有的 G176（32 倍模拟增益）档位；
-依据配套 SC520CS-03 数据手册 V1.6 第 20 页表 2-4，通用控制器默认上限仍为 144。
-`sum_y` 只累计非高光亮度；高光判定为 `Y>=232`，或生产 LSC 开启时同时满足
-R≥232、G≥141、B≥223。G/B 门限由九点网格最小增益在编译期计算。
-总采样数减去高光数即非高光数，生产目标为 112..144（模块通用默认 96..128）。
-非高光至少占 25% 才能偏暗增亮，
-低于 12.5% 时减亮；达到 12.5% 但未到 25% 且偏暗时保持。
-不再因少量亮屏/灯泡直接压暗整帧。
-帧统计/CDC 不插入视频等待。原 `ae_set.v` 的手动控制已不再实例化，
-顶层端口保留；K1 的彩色/边缘切换不变。两份 SDC 对 AE 载荷约束 20 ns，
-只豁免请求/确认进入各自第一级同步寄存器的路径。
+两个 TD 工程均启用 RAW10 统计、CDC 和自动曝光，旧 `ae_set.v` 标为 `AutoExcluded`。
+每次 E/G 写入仍由原 group-hold I2C 表原子提交；K1 只切换彩色／边缘。
+统计支路不向像素主通路施加反压，也不增加图像帧缓存。
 
 AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流水除法器 IP；
 旧 AWB 延迟 RAM 也不再实例化。统计流水与像素流水相互独立，视频为两拍颜色运算
@@ -83,7 +89,7 @@ AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流
 |---|---|---|
 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | 全分辨率亮度边缘算法 | `luminance` → `gaussian` → `scharr` → `magnitude_direction` → `nms` |
 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | AWB 输出上的四像素并行红色检测 | `red_mask` → 两行缓存与 `votes` → 框、中心与面积 |
-| [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 在相同 RGB 源上并行检测并选择显示 | `u_red_target_detect_96`、`u_rgb_edge_switch`；两条视频路径延迟 11 拍 |
+| [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](user_source/hdl_source/isp/isp_top.v) | 在相同 RGB 源上并行检测并选择显示 | `u_target_detect_switch/u_red`、`u_rgb_edge_switch`；两条视频路径延迟 11 拍 |
 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | 帧对应及坐标跨时钟传输 | `S_target_mailbox` 请求/确认 → `S_target_slots` 四槽表 → 当前读槽结果 |
 | [camera_diag_cdc.v](user_source/hdl_source/camera_diag_cdc.v) | 摄像头 4 位配置状态及 8 位错误码的整组跨时钟传输 | `payload_hold` → 请求两级同步 → HDMI 接收 → 确认两级同步；由顶层 `u_camera_diag_cdc` 实例化 |
 | [hdmi_mixer.v](user_source/hdl_source/hdmi_mixer.v) | 叠加前端框、十字和坐标 | `I_target_*` → `S_display_frame_start` → 框/十字/文字 |
@@ -109,10 +115,12 @@ ISP 阈值注释和顶层横向补偿；RGB/模式/标记选择器延迟仍为 1
 flowchart TD
     CAM[SC520CS 摄像头] --> RX[MIPI 接收与 CSI-2 解包]
     RX --> RAW[RAW10 解包与像素流整理]
-    RAW --> ISP[ISP：重建彩色图像、白平衡、边缘检测]
-    ISP -. AWB 前 RGB .-> AE[帧亮度统计 → CDC → 自动曝光]
+    RAW --> AESTATS[RAW10 测光]
+    AESTATS --> LSC[LSC]
+    LSC --> ISP[ISP：重建彩色图像、白平衡、边缘检测]
+    AESTATS -. 完整帧统计 .-> AE[自动曝光控制]
     AE -. 参数更新 .-> CFG
-    ISP --> DET[AWB RGB：红色检测、去噪、框统计]
+    ISP --> DET[AWB RGB：红色/帧差检测、去噪、框统计]
     ISP --> VIN[video_in：彩色或 Scharr 边缘写入图像]
     VIN --> MEM[DDR 帧缓存]
     MEM --> VOUT[video_out：读出图像]
@@ -152,13 +160,15 @@ flowchart TD
 | 构造图像窗口 | [raw_matrix_3x3_buffer.v](user_source/hdl_source/isp/demosaic_4x_2_0/raw_matrix_3x3_buffer.v)、[line_buffer_demosaic.v](user_source/hdl_source/isp/demosaic_4x_2_0/line_buffer_demosaic.v) | 保留相邻行的数据，形成算法所需的邻域 |
 | 插值计算 | [bilinear_interpolation.v](user_source/hdl_source/isp/demosaic_4x_2_0/bilinear_interpolation.v) | 根据 Bayer 排列和邻域数据计算彩色像素 |
 | 像素格式转换 | [data128_96.v](user_source/hdl_source/isp/data128_96/data128_96.v) | 从四个 32 位位置取出 RGB888，并按代码规定的顺序拼成 96 位 |
-| 曝光亮度统计 | [ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | AWB 前的完整帧亮度/高光采样，独立接出统计 |
-| 曝光反馈控制 | [ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v)、[auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 64 位握手跨域后更新摄像头曝光/增益 |
+| 曝光亮度统计 | [ae_frame_stats_raw10_4x.v](user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前 RAW10 抽样，完整帧亮度和剪白比例 |
+| 曝光控制 | [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 目标96..120、六帧平均、高光滞回，通过配置握手写入摄像头 |
 | 自动白平衡 | [awb.v](user_source/hdl_source/awb.v) | 近中性色采样，红/蓝增益按帧更新；四个 RGB888 像素组成的 96 位数据保持 54 拍输出，帧首提前透传 |
 | 边缘检测 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | 96 位 RGB 输入，亮度高斯、Scharr、NMS后输出同宽黑白边缘图 |
 | 红色目标检测 | [red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | 与边缘支路共享 AWB RGB 输入，不依赖显示模式 |
+| 运动目标检测 | [motion_target_detect_96.v](user_source/hdl_source/isp/motion_target_detect_96.v) | 生产差值门槛 10、最少 12 个变化块；3×3 至少 3 票支持细边，输出原始总框及支持/光照指标 |
+| K2 检测选择与运动稳定 | [target_detect_switch_96.v](user_source/hdl_source/isp/target_detect_switch_96.v) | 两种检测持续运行；3 帧确认、短暂保持与框平滑后，按该帧模式转发结果 |
 | 模式切换 | [rgb_edge_switch_96.v](user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘模块持续运行；将彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
-| 板载 K1 控制 | [video_mode_control.v](user_source/hdl_source/video_mode_control.v) | 50 MHz 时钟下同步并消抖 20 ms，每次按下翻转一次模式请求 |
+| 板载 K1/K2 控制 | [video_mode_control.v](user_source/hdl_source/video_mode_control.v) | 两个独立实例，50 MHz 时钟下同步并消抖 20 ms，每次按下翻转一次模式请求 |
 | DDR 数据打包 | [data96_128.v](user_source/hdl_source/isp/data96_128/data96_128.v) | 文件内的 data_96bit_to_128bit 模块把 96 位像素流重新打包为 128 位 |
 
 新边缘每拍处理四个独立像素。亮度 `Y=floor((R+2G+B)/4)` 经高斯、
@@ -174,11 +184,12 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
 | 改边缘阈值 | [isp_top.v](user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 单阈值 20；原始 Scharr 幅值门槛为 320 |
-| 改红色判定 | [isp_top.v](user_source/hdl_source/isp/isp_top.v)、[red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | u_red_target_detect_96、gen_red | RED_MIN=24、RED_DELTA=6、MIN_PIXELS=128，另有通道比例及红色色相 ±20° 条件 |
-| 改自动曝光目标/范围 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | u_auto_exposure、TARGET_LOW/HIGH、EXPOSURE_*、GAIN_*、SETTLE_FRAMES | 生产非高光均亮 112..144、增益 16..176（顶层覆盖；模块默认目标 96..128、增益 16..144）；曝光 4..1991；写完等待 3 个完整帧 |
+| 改红色判定 | [target_detect_switch_96.v](user_source/hdl_source/isp/target_detect_switch_96.v)、[red_target_detect_96.v](user_source/hdl_source/isp/red_target_detect_96.v) | u_red、gen_red | RED_MIN=24、RED_DELTA=6、MIN_PIXELS=128，另有通道比例及红色色相 ±20° 条件 |
+| 改运动检测门槛 | [isp_top.v](user_source/hdl_source/isp/isp_top.v)、[target_detect_switch_96.v](user_source/hdl_source/isp/target_detect_switch_96.v) | DIFF_THRESHOLD、MIN_BLOCKS、GLOBAL_CHANGE_PERCENT、motion_result_stabilizer 参数 | 生产均值差≥10、至少12变化块；3帧确认、8像素死区、四分之一平滑及支持/光照过滤 |
+| 改自动曝光参数 | [auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v)、[design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | TARGET_LOW/HIGH、DARK/BRIGHT_FAST、GAIN_MAX、AVERAGE_FRAMES | 当前目标96..120、范围E4..1991/G16..176、六帧平均；改后必须重跑曝光闭环和完整构建 |
 | 改白平衡 | [awb.v](user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
 | 改上电默认模式 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 主工程 0=彩色；如设为 1 则上电边缘；二者均可按 K1 切换 |
-| 开关九区通道测试表 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | SHOW_RAW_STATS | 默认 0；诊断时设 1 并重新编译下载；关闭不影响 AE/AWB 或已有 LSC 校准 |
+| 开关九区通道测试表 | [design_top_wrapper.v](user_source/hdl_source/design_top_wrapper.v) | SHOW_RAW_STATS | 默认 0；诊断时设 1 并重新编译下载；关闭不影响曝光控制或 AWB |
 | 改边缘算法 | [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) | gaussian、scharr、nms | 修改流水级数须同步切换延迟；修改窗口须同步顶层框补偿 |
 | 改仿真阈值 | [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv) | TH、reference | 默认 20，不自动读取 isp_top；修改后需重新标定场景断言 |
 | 改无板测试尺寸 | [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv)、[run_video_mode.cmd](sim/run_video_mode.cmd) | WIDTH、HEIGHT、SIZE_PARAMS | 默认 64×48；`--no-pause 720` 设为 1280×720、FAST=1 |
@@ -276,7 +287,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 1. 打开 [tb_scharr_edge_detect_96.sv](sim/tb_scharr_edge_detect_96.sv)，阅读 `TH=20`、独立图像参考和逐像素检查。
 2. 按 [仿真说明](sim/README.md) 运行 `sim/run_video_mode.cmd`，确认按键和 Scharr 两项测试均输出 PASS。
 3. 再查看 [scharr_edge_detect_96.v](user_source/hdl_source/isp/scharr_edge_detect_96.v) 的高斯、梯度和非极大值抑制。修改阈值时分别检查测试台参数与 `isp_top.v` 的实例参数。
-4. 查看 `tb_target_frame_alignment.sv` 和 `tb_color_target_mixer.sv`，理解目标框、帧对应和 OSD；LSC 与完整像素通路的测试入口也列在仿真说明中。
+4. 查看 `tb_target_frame_alignment.sv` 和 `tb_color_target_mixer.sv`，理解目标框、帧对应和 OSD；完整像素通路的测试入口也列在仿真说明中。
 
 旧算法对照测试及其 GUI 示例已移除。当前仿真范围和实物验证方法分别见 [sim/README.md](sim/README.md) 和 [SC520CS_TEST.md](SC520CS_TEST.md)。
 
@@ -295,9 +306,9 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/mc_to_user_interface.v](user_source/hdl_source/mc_to_user_interface.v) | 用户读写请求转换为 DDR 控制器接口 | 已登记 |
 | [user_source/hdl_source/signal_delay.v](user_source/hdl_source/signal_delay.v) | 旧 AWB 延迟模块；当前不使用 | AutoExcluded=true |
 | [user_source/hdl_source/awb.v](user_source/hdl_source/awb.v) | 近中性色采样及帧稳定自动白平衡 | 已登记 |
-| [user_source/hdl_source/isp/ae_frame_stats_96.v](user_source/hdl_source/isp/ae_frame_stats_96.v) | 完整帧曝光亮度/高光采样 | 已登记 |
+| [user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v](user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前完整帧 RAW10 亮度/高光采样 | 已登记 |
 | [user_source/hdl_source/ae_stats_cdc.v](user_source/hdl_source/ae_stats_cdc.v) | 曝光统计握手跨时钟邮箱 | 已登记 |
-| [user_source/hdl_source/auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 帧反馈曝光/增益控制器 | 已登记 |
+| [user_source/hdl_source/auto_exposure_control.v](user_source/hdl_source/auto_exposure_control.v) | 当前六帧反馈曝光控制器 | 已登记并实例化 |
 | [user_source/hdl_source/camera_diag_cdc.v](user_source/hdl_source/camera_diag_cdc.v) | 12 位摄像头状态/故障码握手跨时钟 | 已登记 |
 | [user_source/hdl_source/ph1p35_ddr/ph1p35_324_ddr_wrapper.v](user_source/hdl_source/ph1p35_ddr/ph1p35_324_ddr_wrapper.v) | 安路 PH1P35 DDR 封装 | 已登记 |
 | [user_source/hdl_source/isp/csi_unpacket_2lane.v](user_source/hdl_source/isp/csi_unpacket_2lane.v) | 双 lane CSI-2 包解析 | 已登记 |
@@ -318,7 +329,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/uics520_cfg/uics520reg_720p60.v](user_source/hdl_source/uics520_cfg/uics520reg_720p60.v) | SC520CS 720p60 初始化寄存器表 | 已登记 |
 | [user_source/hdl_source/uics520_cfg/uics520regAE.v](user_source/hdl_source/uics520_cfg/uics520regAE.v) | SC520CS 曝光/增益及 group hold 数据生成 | 已登记 |
 | [user_source/hdl_source/uics500_cfg/uii2c.v](user_source/hdl_source/uics500_cfg/uii2c.v) | 旧通用 I2C；当前使用 sc520_i2c | AutoExcluded=true |
-| [user_source/hdl_source/uiisp_beta/ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 旧手动曝光/增益请求；当前未实例化 | AutoExcluded=true |
+| [user_source/hdl_source/uiisp_beta/ae_set.v](user_source/hdl_source/uiisp_beta/ae_set.v) | 旧固定曝光／手动增益控制 | AutoExcluded=true |
 | [user_source/hdl_source/hdmi_tx.v](user_source/hdl_source/hdmi_tx.v) | HDMI 发送子系统封装 | 已登记 |
 | [user_source/hdl_source/hdmi_1_4b_transmitter_core_wrapper.enc.v](user_source/hdl_source/hdmi_1_4b_transmitter_core_wrapper.enc.v) | 加密 HDMI 发送内核封装 | 已登记 |
 | [user_source/hdl_source/hdmi_phy_warpper.v](user_source/hdl_source/hdmi_phy_warpper.v) | HDMI 物理输出封装 | 已登记 |

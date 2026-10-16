@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 // Integration boundary:
 //   Real DUT: design_top_wrapper, video_in, video_out, hdmi_mixer.
-//   Forced inputs: independent clocks/reset, ISP frame marker/results, HDMI
+//   Forced inputs: independent clocks/reset, ISP frame marker/results/mode, HDMI
 //   scan markers, and inactive FIFO occupancy. Camera/ISP algorithms, DDR
 //   transactions, PLL and display timing generation are outside this test.
 //   Reference slot tags come from actual DDR base addresses, not the new
@@ -24,6 +24,7 @@ module tb_target_frame_alignment;
     reg hdmi_user = 0, hdmi_last = 0;
     reg camera_error = 0, camera_pause = 0;
     reg edge_mode = 0;
+    reg motion_mode = 0, result_motion_mode = 0, detection_request = 0;
     reg [3:0] diagnostic_status = 0;
     reg [7:0] diagnostic_fail = 0;
     reg status_i2c_ready = 0, status_cfg_done = 0, status_ae_done = 1;
@@ -34,18 +35,22 @@ module tb_target_frame_alignment;
     bit ref_valid [0:3];
     bit ref_found [0:3];
     bit ref_edge [0:3];
+    bit ref_motion [0:3];
     integer active_frame = -1;
     integer write_events = 0, read_events = 0, display_checks = 0;
     integer result_checks = 0, invalidate_checks = 0;
     integer diagnostic_checks = 0;
     integer actual_status_checks = 0;
+    integer red_display_checks = 0, motion_display_checks = 0;
+    integer buffered_mode_checks = 0;
     integer actual_write_slot = -1, actual_read_slot = -1;
     integer request_count = 0;
     reg request_seen = 0;
 
     // RAW readout is verified separately with the real tap/CDC/HDMI chain.
     design_top_wrapper #(.SHOW_RAW_STATS(0)) dut (
-        .I_sys_clk(ddr_clk), .I_rst_n(rst_n), .I_mode_key_n(1'b1)
+        .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
+        .I_mode_key_n(1'b1), .I_detect_key_n(1'b1)
     );
 
     function automatic integer slot_of_base(input [24:0] address);
@@ -60,6 +65,9 @@ module tb_target_frame_alignment;
 
     function automatic bit frame_has_target(input integer id);
         frame_has_target = ((id % 5) != 1);
+    endfunction
+    function automatic bit frame_motion_mode(input integer id);
+        frame_motion_mode = ((id % 6) >= 3);
     endfunction
     function automatic integer frame_xmin(input integer id);
         frame_xmin = id == 28 ? 1268 : 300 + id * 7;
@@ -94,6 +102,7 @@ module tb_target_frame_alignment;
             ref_valid[actual_write_slot] = 0;
             ref_found[actual_write_slot] = 0;
             ref_edge[actual_write_slot] = edge_mode;
+            ref_motion[actual_write_slot] = motion_mode;
             write_events = write_events + 1;
         end
     end
@@ -144,6 +153,8 @@ module tb_target_frame_alignment;
             y1 = display_y(frame_ymax(id), ref_edge[slot]);
             if (dut.S_target_slots_valid[slot] !== ref_valid[slot])
                 $fatal(1, "Slot valid mismatch slot=%0d frame=%0d", slot, id);
+            if (dut.S_target_slots[slot][73] !== ref_motion[slot])
+                $fatal(1, "Slot detection mode mismatch slot=%0d frame=%0d", slot, id);
             if (ref_valid[slot] && ref_found[slot]) begin
                 if (dut.S_target_slots[slot][72] !== 1'b1 ||
                     dut.S_target_slots[slot][71:60] != x0 ||
@@ -153,7 +164,7 @@ module tb_target_frame_alignment;
                     dut.S_target_slots[slot][23:12] != (x0+x1)/2 ||
                     dut.S_target_slots[slot][11:0] != (y0+y1)/2)
                     $fatal(1, "Result payload mismatch slot=%0d frame=%0d", slot, id);
-            end else if ((!ref_valid[slot] && dut.S_target_slots[slot] !== 73'd0) ||
+            end else if ((!ref_valid[slot] && dut.S_target_slots[slot][72:0] !== 73'd0) ||
                          (ref_valid[slot] && dut.S_target_slots[slot][72] !== 1'b0))
                 $fatal(1, "No-target or invalid slot retains old target slot=%0d frame=%0d",
                        slot, id);
@@ -166,18 +177,22 @@ module tb_target_frame_alignment;
             camera_user = 0; result_ready = 0;
             hdmi_de = 0; hdmi_user = 0; hdmi_last = 0; hdmi_vs = 1;
             camera_error = 0; camera_pause = 0;
+            motion_mode = 0; result_motion_mode = 0; detection_request = 0;
             active_frame = -1;
             for (integer slot = 0; slot < 4; slot = slot+1) begin
                 ref_frame[slot] = -1;
                 ref_valid[slot] = 0;
                 ref_found[slot] = 0;
                 ref_edge[slot] = 0;
+                ref_motion[slot] = 0;
             end
             repeat (10) @(negedge csi_clk);
             if (dut.S_target_slots_valid !== 4'b0000)
                 $fatal(1, "Reset did not clear metadata validity");
             if (dut.u_hdmi_mixer.S_target_found !== 1'b0)
                 $fatal(1, "Reset did not clear mixer target");
+            if (dut.u_hdmi_mixer.S_target_motion_mode !== 1'b0)
+                $fatal(1, "Reset did not clear mixer detection mode");
             rst_n = 1;
             repeat (10) @(negedge csi_clk);
         end
@@ -189,6 +204,8 @@ module tb_target_frame_alignment;
             mailbox_idle();
             active_frame = id;
             edge_mode = ((id >= 8 && id < 18) || id >= 24);
+            motion_mode = frame_motion_mode(id);
+            detection_request = motion_mode;
             before_count = write_events;
             // Sweep arrival phase relative to the DDR and HDMI clocks.
             @(negedge csi_clk);
@@ -201,6 +218,9 @@ module tb_target_frame_alignment;
                 $fatal(1, "Camera marker did not produce exactly one write frame");
             if (ref_frame[actual_write_slot] != id)
                 $fatal(1, "Independent write-address reference has wrong frame");
+            // A request during the frame belongs to a later camera frame.
+            // Published results and slot invalidation must retain this frame.
+            detection_request = ~motion_mode;
         end
     endtask
 
@@ -219,6 +239,7 @@ module tb_target_frame_alignment;
             result_ymax = result_found ? frame_ymax(id) : 0;
             result_cx = result_found ? (frame_xmin(id)+frame_xmax(id))/2 : 0;
             result_cy = result_found ? (frame_ymin(id)+frame_ymax(id))/2 : 0;
+            result_motion_mode = frame_motion_mode(id);
             result_ready = 1;
             @(negedge csi_clk);
             result_ready = 0;
@@ -274,6 +295,8 @@ module tb_target_frame_alignment;
             repeat (5) @(negedge hdmi_clk);
             if (dut.u_hdmi_mixer.S_target_found !== expected_found)
                 $fatal(1, "Mixer latched wrong frame target slot=%0d frame=%0d", slot, id);
+            if (dut.u_hdmi_mixer.S_target_motion_mode !== ref_motion[slot])
+                $fatal(1, "Mixer latched wrong frame detection mode slot=%0d frame=%0d", slot, id);
             if (expected_found &&
                 (dut.u_hdmi_mixer.S_target_xmin != x0 ||
                  dut.u_hdmi_mixer.S_target_xmax != x1 ||
@@ -287,6 +310,12 @@ module tb_target_frame_alignment;
             hdmi_last = 0; hdmi_de = 0;
             repeat (4) @(negedge hdmi_clk);
             display_checks = display_checks+1;
+            if (ref_motion[slot])
+                motion_display_checks = motion_display_checks+1;
+            else
+                red_display_checks = red_display_checks+1;
+            if (id >= 0 && ref_motion[slot] != motion_mode)
+                buffered_mode_checks = buffered_mode_checks+1;
         end
     endtask
 
@@ -427,6 +456,9 @@ module tb_target_frame_alignment;
         force dut.S_ISP_target_ymax = result_ymax;
         force dut.S_ISP_target_center_x = result_cx;
         force dut.S_ISP_target_center_y = result_cy;
+        force dut.S_ISP_target_motion_mode = result_motion_mode;
+        force dut.S_ISP_motion_mode_active = motion_mode;
+        force dut.S_motion_mode_requested = detection_request;
         force dut.S_ISP_edge_mode_active = edge_mode;
         force dut.S_hdmi_vsync = hdmi_vs;
         force dut.S_hdmi_hsync = hdmi_hs;
@@ -491,11 +523,14 @@ module tb_target_frame_alignment;
         test_actual_status();
         if (write_events < 30 || display_checks < 30 ||
             result_checks < 28 || invalidate_checks < 29 ||
-            diagnostic_checks != 14 || actual_status_checks != 19)
+            diagnostic_checks != 14 || actual_status_checks != 19 ||
+            red_display_checks == 0 || motion_display_checks == 0 ||
+            buffered_mode_checks == 0)
             $fatal(1, "Coverage counters did not reach required scenarios");
-        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d",
+        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d",
             write_events, read_events, display_checks, result_checks,
-            invalidate_checks, request_count, diagnostic_checks, actual_status_checks);
+            invalidate_checks, request_count, diagnostic_checks, actual_status_checks,
+            red_display_checks, motion_display_checks, buffered_mode_checks);
         $finish;
     end
 
@@ -517,8 +552,11 @@ endmodule
 module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0)
     (input wire [127:0] I_clk, I_rst_n, I_key_n, O_edge_mode);
 endmodule
-module auto_exposure_control(input wire [127:0] I_clk, I_rst, I_cam_cfg_done,
-    I_ae_cfg_done, I_stats_valid, I_sum_y, I_sample_count, I_bright_count,
+module auto_exposure_control #(
+    parameter TARGET_LOW=0, TARGET_HIGH=0, DARK_FAST=0, BRIGHT_FAST=0,
+    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0
+) (input wire [127:0] I_clk, I_rst, I_cam_cfg_done, I_ae_cfg_done,
+    I_stats_valid, I_sum_y, I_sample_count, I_bright_count,
     O_ae_req, O_ae, O_ag);
 endmodule
 module ae_stats_cdc(input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
@@ -551,12 +589,13 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
     I_data_start, I_data_end, axis_tvalid, axis_tdata, axis_tuser, axis_tlast);
 endmodule
 module isp_top #(parameter ENABLE_EDGE=0)
-    (input wire [127:0] axi4s_video_aclk, I_rst_n, I_edge_mode_async,
+    (input wire [127:0] axi4s_video_aclk, I_rst_n, I_edge_mode_async, I_motion_mode_async,
     I_tlast, I_tuser, I_tdata, I_tvalid, I_tdest, O_tready, O_tdata,
     O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
     O_target_center_x, O_target_center_y, O_target_pixels,
-    O_target_frame_toggle, O_edge_mode_active, I_tready,
+    O_target_frame_toggle, O_target_motion_mode, O_motion_mode_active,
+    O_edge_mode_active, I_tready,
     O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count);
 endmodule
 module mc_to_user_interface(input wire [127:0] I_clk, I_rst_n,

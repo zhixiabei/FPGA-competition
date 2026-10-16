@@ -4,7 +4,6 @@ module tb_demosaic_quality #(
     parameter integer W=64, H=48, ALLOW_ERRORS=0,
     parameter integer EDGE_AWARE_REFERENCE=1,
     parameter integer CSI_SOURCE=0,
-    parameter integer LSC_STAGE=0,
     parameter BAYER="BGGR"
 );
     reg clk=0;
@@ -45,24 +44,10 @@ module tb_demosaic_quality #(
     end endgenerate
     wire out_valid,out_user,out_last;
     wire [127:0] out_data;
-    wire [39:0] corrected_data;
-    wire corrected_valid,corrected_user,corrected_last;
-    generate if(LSC_STAGE) begin: with_lsc
-        lsc_raw10_4x #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.BAYER_MODE(BAYER)) u_lsc (
-            .I_clk(clk),.I_rst_n(rst_n),.I_tdata(source_data),
-            .I_tvalid(source_valid),.I_tuser(source_user),.I_tlast(source_last),
-            .I_tready(),.O_tdata(corrected_data),.O_tvalid(corrected_valid),
-            .O_tuser(corrected_user),.O_tlast(corrected_last),.O_tready(1'b1));
-    end else begin: without_lsc
-        assign corrected_data=source_data;
-        assign corrected_valid=source_valid;
-        assign corrected_user=source_user;
-        assign corrected_last=source_last;
-    end endgenerate
     demosaic #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.BAYER_MODE(BAYER)) dut (
-        .I_clk(clk),.I_rst_n(rst_n),.axi4s_video_tdata(corrected_data),
-        .axi4s_video_tdest(10'd0),.axi4s_video_tvalid(corrected_valid),
-        .axi4s_video_tuser(corrected_user),.axi4s_video_tlast(corrected_last),
+        .I_clk(clk),.I_rst_n(rst_n),.axi4s_video_tdata(source_data),
+        .axi4s_video_tdest(10'd0),.axi4s_video_tvalid(source_valid),
+        .axi4s_video_tuser(source_user),.axi4s_video_tlast(source_last),
         .axi4s_video_tready(),.O_tvalid(out_valid),.O_tuser(out_user),
         .O_tlast(out_last),.O_tdata(out_data),.O_tready(1'b1)
     );
@@ -111,20 +96,13 @@ module tb_demosaic_quality #(
             endcase
         end
     endfunction
-    // Reference is evaluated in image coordinates, independently of the
-    // DUT's folded ROM, row counter, green crossbar and pipeline.
+    // Match RAW10 truncation using image coordinates and reflected borders.
     function automatic integer corrected_raw(input integer px,input integer py);
-        integer xx,yy,value,delta,n,position;
+        integer xx,yy,value;
         begin
             xx=px<0?1:px>=W?W-2:px;
             yy=py<0?1:py>=H?H-2:py;
             value=raw(xx,yy)*4+(CSI_SOURCE ? (xx+3*yy+scene_id)%4 : 0);
-            n=W/4-1;position=2*(xx/4)-n;
-            delta=(48*position*position+n*n/2)/(n*n);
-            n=H-1;position=2*yy-n;
-            delta=delta+(48*position*position+n*n/2)/(n*n);
-            if(LSC_STAGE && channel(xx,yy)==1) value=value+(value*delta+128)/256;
-            if(value>1023) value=1023;
             corrected_raw=value/4;
         end
     endfunction
@@ -183,7 +161,7 @@ module tb_demosaic_quality #(
                         scene_id,x,y,actual,expected);
                     errors=errors+1;
                 end
-                if(!LSC_STAGE && scene_id>=4 && channel(x,y)!=1) begin
+                if(scene_id>=4 && channel(x,y)!=1) begin
                     center=raw(x,y);
                     g=(raw(x-1,y)+raw(x+1,y)+raw(x,y-1)+raw(x,y+1))/4;
                     bilinear_edge_error=bilinear_edge_error+(g>center?g-center:center-g);
@@ -285,8 +263,7 @@ module tb_demosaic_quality #(
         $display("DEMOSAIC_QUALITY_RESULT bayer=%s size=%0dx%0d frames=%0d pixels=%0d errors=%0d markers=%0d",
             BAYER,W,H,frames,total_pixels,errors,marker_errors);
         if(errors==0 && marker_errors==0) $display("DEMOSAIC_QUALITY_PASS");
-        if(LSC_STAGE) $display("LSC_DEMOSAIC_PASS frames=%0d pixels=%0d",frames,total_pixels);
-        if(!LSC_STAGE && EDGE_AWARE_REFERENCE && (directional_edge_error!=0 || bilinear_edge_error==0))
+        if(EDGE_AWARE_REFERENCE && (directional_edge_error!=0 || bilinear_edge_error==0))
             $fatal(1,"Directional green did not preserve the synthetic step");
         if(sharpness_checks!=0)
             $display("GREEN_EDGE_DETAIL_PASS checks=%0d bilinear_error=%0d directional_error=%0d",

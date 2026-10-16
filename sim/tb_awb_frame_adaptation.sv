@@ -35,10 +35,14 @@ module tb_awb_frame_adaptation;
     bit expected_pending = 0;
     integer frames = 0, pixel_checks = 0, large_beats = 0;
     integer pending_checks = 0, hold_checks = 0, resets = 0;
+    integer line_checks = 0, adjacent_lines = 0, invalid_last_inputs = 0;
+    integer large_lines = 0, large_adjacent_lines = 0;
     reg [VIDEO_LATENCY-1:0] ref_valid = 0, large_ref_valid = 0;
+    reg [VIDEO_LATENCY-1:0] ref_last = 0, large_ref_last = 0;
     reg [95:0] ref_data [0:VIDEO_LATENCY-1];
     reg [95:0] large_ref_data [0:VIDEO_LATENCY-1];
     reg [10:0] previous_gain_r = 256, previous_gain_b = 256;
+    reg previous_last = 0, large_previous_last = 0;
     reg sampled_user;
     integer reference_stage;
 
@@ -69,6 +73,7 @@ module tb_awb_frame_adaptation;
         sampled_user = user;
         if (!rst_n) begin
             ref_valid = 0; large_ref_valid = 0;
+            ref_last = 0; large_ref_last = 0;
             for (reference_stage=0; reference_stage<VIDEO_LATENCY;
                  reference_stage=reference_stage+1) begin
                 ref_data[reference_stage] = 0;
@@ -78,6 +83,10 @@ module tb_awb_frame_adaptation;
         end else begin
             ref_valid = {ref_valid[VIDEO_LATENCY-2:0], valid};
             large_ref_valid = {large_ref_valid[VIDEO_LATENCY-2:0], large_valid};
+            ref_last = {ref_last[VIDEO_LATENCY-2:0], valid && last};
+            large_ref_last =
+                {large_ref_last[VIDEO_LATENCY-2:0], large_valid && large_last};
+            if (!valid && last) invalid_last_inputs = invalid_last_inputs+1;
             for (reference_stage=VIDEO_LATENCY-1; reference_stage>0;
                  reference_stage=reference_stage-1) begin
                 ref_data[reference_stage] = ref_data[reference_stage-1];
@@ -88,14 +97,16 @@ module tb_awb_frame_adaptation;
         end
         #1;
         if (out_valid !== ref_valid[VIDEO_LATENCY-1] || out_user !== user ||
-            out_last !== (ref_valid[VIDEO_LATENCY-1] &&
-                          !ref_valid[VIDEO_LATENCY-2]) || in_ready !== ready)
+            out_last !== ref_last[VIDEO_LATENCY-1] || in_ready !== ready)
             $fatal(1, "AWB stream markers/latency mismatch at %0t", $time);
         if (out_data !== (ref_valid[VIDEO_LATENCY-1] ?
                          ref_data[VIDEO_LATENCY-1] : 96'd0))
             $fatal(1, "AWB pixel mismatch at %0t got=%h expected=%h gains=%0d,%0d",
                    $time, out_data, ref_data[VIDEO_LATENCY-1], expected_r, expected_b);
         if (ref_valid[VIDEO_LATENCY-1]) pixel_checks = pixel_checks + 4;
+        if (out_last) line_checks = line_checks+1;
+        if (previous_last && out_valid) adjacent_lines = adjacent_lines+1;
+        previous_last = rst_n && out_last;
         if (rst_n) begin
             if (!sampled_user &&
                 (dut.gain_r_q8 !== previous_gain_r ||
@@ -109,13 +120,16 @@ module tb_awb_frame_adaptation;
         end
         if (large_out_valid !== large_ref_valid[VIDEO_LATENCY-1] ||
             large_out_user !== large_user ||
-            large_out_last !== (large_ref_valid[VIDEO_LATENCY-1] &&
-                               !large_ref_valid[VIDEO_LATENCY-2]))
+            large_out_last !== large_ref_last[VIDEO_LATENCY-1])
             $fatal(1, "720p stream marker mismatch");
         if (large_out_data !== (large_ref_valid[VIDEO_LATENCY-1] ?
                                large_ref_data[VIDEO_LATENCY-1] : 96'd0))
             $fatal(1, "720p data mismatch");
         if (large_ref_valid[VIDEO_LATENCY-1]) large_beats = large_beats+1;
+        if (large_out_last) large_lines = large_lines+1;
+        if (large_previous_last && large_out_valid)
+            large_adjacent_lines = large_adjacent_lines+1;
+        large_previous_last = rst_n && large_out_last;
     end
 
     task automatic tick(
@@ -169,6 +183,32 @@ module tb_awb_frame_adaptation;
         check_candidate(qualifies, qualifies ? g*256/r : 256,
                          qualifies ? g*256/b : 256);
     endtask
+    task automatic explicit_line_frame(input bit adjacent_tail_only);
+        integer beat, lines_before, adjacent_before, invalid_before;
+        begin
+            consume_expected();
+            lines_before = line_checks;
+            adjacent_before = adjacent_lines;
+            invalid_before = invalid_last_inputs;
+            for (beat=0; beat<BEATS; beat=beat+1) begin
+                tick(1,beat==0,rgb4(120,100,80),beat%5==4);
+                if (beat%5==4 && adjacent_tail_only &&
+                    beat/5<HEIGHT-2) begin
+                    // Last is undefined while invalid; it must not leak out.
+                    tick(0,0,96'hfedcba987654321001234567,1);
+                    tick(0,0,0,1);
+                end
+            end
+            frames=frames+1;
+            check_candidate(1,213,320);
+            if (line_checks-lines_before != HEIGHT ||
+                adjacent_lines-adjacent_before !=
+                    (adjacent_tail_only ? 1 : HEIGHT-1))
+                $fatal(1,"Explicit line markers lost across adjacent rows");
+            if (adjacent_tail_only && invalid_last_inputs==invalid_before)
+                $fatal(1,"Invalid-cycle line-marker coverage was not exercised");
+        end
+    endtask
     task automatic reset_all;
         @(negedge clk);
         rst_n = 0;
@@ -194,6 +234,12 @@ module tb_awb_frame_adaptation;
         idle(90);
         // The random truncated frame must not generate an update.
         if (dut.pending_ready) $fatal(1, "A truncated random frame updated AWB");
+
+        // Explicit row markers must survive fully packed rows and the real
+        // demosaic pattern where only the final two rows are contiguous.
+        reset_all();
+        explicit_line_frame(0);
+        explicit_line_frame(1);
 
         reset_all();
         // Warm and cool illumination converge to the known channel ratios.
@@ -283,20 +329,23 @@ module tb_awb_frame_adaptation;
             large_user=0; large_valid=1;
             large_data=rgb4(120,100,80); large_last=i%320==319;
             @(posedge clk); #2;
-            if (i%320==319) begin
-                @(negedge clk); large_valid=0; large_last=0;
+            if (i%320==319 && i/320<718) begin
+                @(negedge clk); large_valid=0; large_last=1;
                 repeat (3) begin @(posedge clk); #2; end
             end
         end
         @(negedge clk); large_valid=0; large_last=0;
         idle(100);
-        if (large_beats != 230400 || full720p.sample_count != 14400 ||
+        if (large_beats != 230400 || large_lines != 720 ||
+            large_adjacent_lines != 1 || full720p.sample_count != 14400 ||
             !full720p.pending_ready ||
             full720p.pending_r_q8 != 213 || full720p.pending_b_q8 != 320)
             $fatal(1, "720p frame/statistics mismatch beats=%0d samples=%0d",
                    large_beats,full720p.sample_count);
-        $display("AWB_FRAME_ADAPTATION_PASS frames=%0d pixels=%0d full720p_beats=%0d candidates=%0d holds=%0d resets=%0d",
-                 frames,pixel_checks,large_beats,pending_checks,hold_checks,resets);
+        $display("AWB_FRAME_ADAPTATION_PASS frames=%0d pixels=%0d full720p_beats=%0d candidates=%0d holds=%0d resets=%0d lines=%0d adjacent=%0d invalid_last=%0d full720p_lines=%0d full720p_adjacent=%0d",
+                 frames,pixel_checks,large_beats,pending_checks,hold_checks,resets,
+                 line_checks,adjacent_lines,invalid_last_inputs,
+                 large_lines,large_adjacent_lines);
         $finish;
     end
     initial begin

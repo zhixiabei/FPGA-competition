@@ -8,7 +8,7 @@
 // plus a 52-clock distributed-RAM delay. video_in needs this lead time to
 // finish its frame FIFO reset before the first pixel arrives. Vertical
 // blanking must let the preceding frame's delayed pixels drain before SOF.
-// O_tlast retains the last-valid-cycle convention derived from valid's fall.
+// O_tlast follows the input line marker through the same 54-clock pixel delay.
 module awb #(
     parameter integer IMG_HEIGHT = 1080,
     parameter integer IMG_WIDTH = 1920,
@@ -295,6 +295,7 @@ module awb #(
     end
 
     reg valid_d1, valid_d2;
+    reg last_d1, last_d2;
     reg [18:0] product_r [0:3];
     reg [18:0] product_b [0:3];
     reg [7:0] green_d1 [0:3];
@@ -304,6 +305,8 @@ module awb #(
         if (!I_rst_n) begin
             valid_d1 <= 1'b0;
             valid_d2 <= 1'b0;
+            last_d1 <= 1'b0;
+            last_d2 <= 1'b0;
             output_data <= 0;
             for (lane = 0; lane < 4; lane = lane+1) begin
                 product_r[lane] <= 0;
@@ -313,6 +316,8 @@ module awb #(
         end else begin
             valid_d1 <= I_tvalid;
             valid_d2 <= valid_d1;
+            last_d1 <= I_tvalid && I_tlast;
+            last_d2 <= last_d1;
             for (lane = 0; lane < 4; lane = lane+1) begin
                 product_r[lane] <=
                     I_tdata[lane*24+16 +: 8] * pixel_gain_r;
@@ -336,6 +341,7 @@ module awb #(
     // and a 4992-flip-flop pixel shift register.
     reg [5:0] video_write_address, video_read_address;
     reg [51:0] video_valid_delay;
+    reg [51:0] video_last_delay;
     wire [95:0] video_delayed_data;
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
@@ -343,10 +349,12 @@ module awb #(
             // 51 stored clocks behind the write pointer plus one read FF.
             video_read_address <= 6'd13;
             video_valid_delay <= 52'd0;
+            video_last_delay <= 52'd0;
         end else begin
             video_write_address <= video_write_address + 1'b1;
             video_read_address <= video_read_address + 1'b1;
             video_valid_delay <= {video_valid_delay[50:0], valid_d2};
+            video_last_delay <= {video_last_delay[50:0], last_d2};
         end
     end
     PH1P_LOGIC_DRAM #(
@@ -365,5 +373,5 @@ module awb #(
     assign O_tuser = I_tuser;
     assign O_tvalid = video_valid_delay[51];
     assign O_tdata = O_tvalid ? video_delayed_data : 96'd0;
-    assign O_tlast = video_valid_delay[51] && !video_valid_delay[50];
+    assign O_tlast = O_tvalid && video_last_delay[51];
 endmodule

@@ -1,19 +1,25 @@
 `timescale 1ns/1ps
-// Real ISP wiring from the post-demosaic RGB boundary through AE metering,
-// AWB, mode/Scharr, red detection and the byte packer. Camera RAW/MIPI and
-// demosaic arithmetic are deliberately outside this integration test.
-module tb_isp_lighting_integration;
+// Real RAW AE tap plus the post-demosaic RGB path through AWB, mode/Scharr,
+// selected target detection and the byte packer. Camera MIPI and demosaic
+// arithmetic are deliberately outside this integration test.
+module tb_isp_lighting_integration #(
+    parameter integer MOTION_MODE=0
+);
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
     localparam integer AWB_LATENCY=54;
+    localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 6;
     reg clk=0;
     always #5 clk=~clk;
     reg rst_n=0, request_edge=0;
+    reg raw_valid=0, raw_user=0, raw_last=0;
+    reg [39:0] raw_data=0;
     reg injected_valid=0, injected_user=0, injected_last=0;
     reg [95:0] injected_data=0;
     wire [127:0] output_data;
     wire output_valid, output_user, output_last, mode;
     wire target_ready, target_found, target_toggle;
+    wire target_motion_mode, motion_mode;
     wire [11:0] xmin,xmax,ymin,ymax,cx,cy;
     wire [23:0] target_pixels;
     wire stats_valid;
@@ -21,13 +27,15 @@ module tb_isp_lighting_integration;
     wire [15:0] sample_count, bright_count;
     isp_top #(.ENABLE_EDGE(0)) dut (
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),.I_edge_mode_async(request_edge),
-        .I_tlast(1'b0),.I_tuser(1'b0),.I_tdata(40'd0),.I_tvalid(1'b0),
+        .I_motion_mode_async(MOTION_MODE!=0),
+        .I_tlast(raw_last),.I_tuser(raw_user),.I_tdata(raw_data),.I_tvalid(raw_valid),
         .I_tdest(10'd0),.O_tready(1'b1),.O_tdata(output_data),
         .O_tlast(output_last),.O_tuser(output_user),.O_tvalid(output_valid),
         .I_tready(),.O_target_result_ready(target_ready),.O_target_found(target_found),
         .O_target_xmin(xmin),.O_target_xmax(xmax),.O_target_ymin(ymin),
         .O_target_ymax(ymax),.O_target_center_x(cx),.O_target_center_y(cy),
         .O_target_pixels(target_pixels),.O_target_frame_toggle(target_toggle),
+        .O_target_motion_mode(target_motion_mode),.O_motion_mode_active(motion_mode),
         .O_edge_mode_active(mode),.O_ae_stats_valid(stats_valid),
         .O_ae_sum_y(sum_y),.O_ae_sample_count(sample_count),
         .O_ae_bright_count(bright_count)
@@ -35,8 +43,8 @@ module tb_isp_lighting_integration;
 
     integer source_frame=-1, awb_frame=-1, edge_frame=-1, packed_frame=-1;
     integer awb_count[0:2], edge_count[0:2], packed_count[0:2];
-    integer expected_sum[0:2], expected_bright[0:2];
-    integer ae_results=0, target_results=0, bytes_checked=0;
+    integer expected_sum[0:2], expected_count[0:2], expected_bright[0:2];
+    integer ae_results=0, target_results=0, raw_motion_results=0, bytes_checked=0;
     integer cycle_number=0, awb_last_cycle[0:2], white_pixels=0;
     reg [7:0] byte_queue[0:127];
     integer byte_tag[0:127];
@@ -52,13 +60,18 @@ module tb_isp_lighting_integration;
     function automatic [23:0] scene(
         input integer frame_id,input integer x,input integer y
     );
-        case (frame_id)
-            0: scene = x>=200 && x<=359 && y>=180 && y<=299 ?
-                       24'hc8231e : 24'h8c6e64;
-            1: scene = x>=700 && x<=859 && y>=400 && y<=519 ?
-                       24'h320f0c : 24'hffaaBE;
-            default: scene = x<128 && y<80 ? 24'hffffff : 24'h646e8c;
-        endcase
+        if(MOTION_MODE)
+            scene = frame_id>0 && x>=(frame_id==2?248:200) &&
+                    x<=(frame_id==2?407:359) && y>=184 && y<=303 ?
+                    24'hc8c8c8 : 24'h505050;
+        else
+            case (frame_id)
+                0: scene = x>=200 && x<=359 && y>=180 && y<=299 ?
+                           24'hc8231e : 24'h8c6e64;
+                1: scene = x>=700 && x<=859 && y>=400 && y<=519 ?
+                           24'h320f0c : 24'hffaaBE;
+                default: scene = x<128 && y<80 ? 24'hffffff : 24'h646e8c;
+            endcase
     endfunction
     function automatic [95:0] scene_group(
         input integer frame_id,input integer group_id,input integer row_id
@@ -66,6 +79,17 @@ module tb_isp_lighting_integration;
         integer n;
         for(n=0;n<4;n=n+1)
             scene_group[95-n*24 -:24]=scene(frame_id,group_id*4+n,row_id);
+    endfunction
+    function automatic [39:0] raw_scene(input integer frame_id);
+        case (frame_id)
+            // Scaled lanes are 100,191,192,255. The last two are bright and
+            // both contribute the capped value 192 to the full-frame sum.
+            0: raw_scene={10'd1023,10'd768,10'd767,10'd400};
+            // Scaled lanes are 0,1,128,200; only the final lane is bright.
+            1: raw_scene={10'd800,10'd512,10'd4,10'd0};
+            // Ordinary unsaturated values spanning the AE control thresholds.
+            default: raw_scene={10'd576,10'd480,10'd384,10'd252};
+        endcase
     endfunction
     function automatic [95:0] awb_reference(
         input [95:0] original,input integer frame_id
@@ -76,8 +100,8 @@ module tb_isp_lighting_integration;
             // Its early SOF still precedes all of the new frame's pixels.
             // Division
             // from frame0 finishes during frame1, and commits at frame2 SOF.
-            rg=frame_id==2 ? 249 : 256;
-            bg=frame_id==2 ? 260 : 256;
+            rg=!MOTION_MODE && frame_id==2 ? 249 : 256;
+            bg=!MOTION_MODE && frame_id==2 ? 260 : 256;
             for(n=0;n<4;n=n+1) begin
                 r=original[n*24+16 +:8]*rg/256;
                 b=original[n*24 +:8]*bg/256;
@@ -138,6 +162,9 @@ module tb_isp_lighting_integration;
         end
         #1;
         if(rst_n) begin
+            if(motion_mode !== (MOTION_MODE!=0 && awb_frame>=0) ||
+                (!MOTION_MODE && target_motion_mode !== 1'b0))
+                $fatal(1,"Fixed target-detection mode changed or became unknown");
             if(dut.awb_O_tvalid!==reference_valid[AWB_LATENCY-1] ||
                 dut.awb_O_tdata!==(reference_valid[AWB_LATENCY-1] ?
                     reference_data[AWB_LATENCY-1] : 96'd0) ||
@@ -149,18 +176,60 @@ module tb_isp_lighting_integration;
                     awb_last_cycle[awb_frame]=cycle_number;
             end
             if(stats_valid) begin
-                if(ae_results>=3 || sample_count!=7200 ||
+                if(ae_results>=3 || sample_count!=expected_count[ae_results] ||
                     sum_y!=expected_sum[ae_results] ||
                     bright_count!=expected_bright[ae_results])
                     $fatal(1,"AE stats wrong frame=%0d sum=%0d samples=%0d bright=%0d",
                         ae_results,sum_y,sample_count,bright_count);
                 ae_results=ae_results+1;
             end
+            if(MOTION_MODE && dut.u_target_detect_switch.raw_motion_ready) begin
+                if(raw_motion_results>=3 ||
+                    cycle_number-awb_last_cycle[raw_motion_results]!=11 ||
+                    (^{dut.u_target_detect_switch.raw_motion_found,
+                        dut.u_target_detect_switch.raw_motion_pixels,
+                        dut.u_target_detect_switch.raw_motion_xmin,
+                        dut.u_target_detect_switch.raw_motion_xmax,
+                        dut.u_target_detect_switch.raw_motion_ymin,
+                        dut.u_target_detect_switch.raw_motion_ymax})===1'bx)
+                    $fatal(1,"Raw motion result timing/metadata mismatch frame=%0d",
+                        raw_motion_results);
+                if(raw_motion_results==0) begin
+                    if(dut.u_target_detect_switch.raw_motion_found!==0 ||
+                        dut.u_target_detect_switch.raw_motion_pixels!==0)
+                        $fatal(1,"Raw motion warm-up produced a false target");
+                end else if(dut.u_target_detect_switch.raw_motion_found!==1 ||
+                    dut.u_target_detect_switch.raw_motion_pixels!==
+                        (raw_motion_results==1 ? 19200 : 11520) ||
+                    dut.u_target_detect_switch.raw_motion_xmin!==200 ||
+                    dut.u_target_detect_switch.raw_motion_xmax!==
+                        (raw_motion_results==1 ? 359 : 407) ||
+                    dut.u_target_detect_switch.raw_motion_ymin!==184 ||
+                    dut.u_target_detect_switch.raw_motion_ymax!==303 ||
+                    dut.u_target_detect_switch.raw_motion_cx!==
+                        (raw_motion_results==1 ? 279 : 303) ||
+                    dut.u_target_detect_switch.raw_motion_cy!==243)
+                    $fatal(1,"Raw motion rectangle result wrong frame=%0d",
+                        raw_motion_results);
+                raw_motion_results=raw_motion_results+1;
+            end
             if(target_ready) begin
+                if((^{target_found,target_pixels,xmin,xmax,ymin,ymax,cx,cy,
+                    target_toggle,target_motion_mode})===1'bx)
+                    $fatal(1,"Unknown target result metadata");
                 if(target_results>=3 || target_toggle===previous_toggle ||
-                    cycle_number-awb_last_cycle[target_results]!=6)
-                    $fatal(1,"Target result timing/frame mismatch");
-                if(target_results<2) begin
+                    cycle_number-awb_last_cycle[target_results]!=TARGET_LATENCY ||
+                    target_motion_mode !== (MOTION_MODE!=0))
+                    $fatal(1,"Target result timing/frame/mode mismatch frame=%0d latency=%0d expected=%0d",
+                        target_results,cycle_number-awb_last_cycle[target_results],TARGET_LATENCY);
+                if(MOTION_MODE) begin
+                    // Only two positive candidates have arrived. A stable
+                    // track requires three compatible motion observations.
+                    if(target_found!==0 || target_pixels!==0 ||
+                        xmin!==0 || xmax!==0 || ymin!==0 || ymax!==0 || cx!==0 || cy!==0)
+                        $fatal(1,"Unconfirmed motion candidate was displayed frame=%0d pixels=%0d box=%0d,%0d,%0d,%0d center=%0d,%0d",
+                            target_results,target_pixels,xmin,xmax,ymin,ymax,cx,cy);
+                end else if(target_results<2) begin
                     if(!target_found || target_pixels!=19196 ||
                         xmin!=(target_results==0?200:700) ||
                         xmax!=(target_results==0?359:859) ||
@@ -202,11 +271,13 @@ module tb_isp_lighting_integration;
 
     task automatic tick(input bit v,input bit u,input bit l,input [95:0] d);
         @(negedge clk);
+        raw_valid=v;raw_user=u;raw_last=l;
+        raw_data=v ? raw_scene(source_frame) : 40'd0;
         injected_valid=v;injected_user=u;injected_last=l;injected_data=d;
         @(posedge clk);#2;
     endtask
-    integer f,y,g,i,r,b,green,lum;
-    reg [23:0] metered;
+    integer f,y,g,i,raw_value,scaled;
+    reg [39:0] metered_raw;
     initial begin
         force dut.m_aixs_tdata_96=injected_data;
         force dut.m_aixs_tvalid=injected_valid;
@@ -214,17 +285,20 @@ module tb_isp_lighting_integration;
         force dut.m_aixs_tlast=injected_last;
         for(f=0;f<3;f=f+1) begin
             awb_count[f]=0;edge_count[f]=0;packed_count[f]=0;
-            awb_last_cycle[f]=-1;expected_sum[f]=0;expected_bright[f]=0;
-            for(y=0;y<H;y=y+4) for(g=0;g<GROUPS;g=g+8) begin
-                metered=scene(f,g*4,y);
-                r=metered[23:16];green=metered[15:8];b=metered[7:0];
-                lum=(r+2*green+b)/4;
-                // AE meters the surroundings independently of white lights.
-                // A saturated single color remains a usable luma sample.
-                if(lum>=232)
-                    expected_bright[f]=expected_bright[f]+1;
-                else
-                    expected_sum[f]=expected_sum[f]+lum;
+            awb_last_cycle[f]=-1;expected_sum[f]=0;
+            expected_count[f]=0;expected_bright[f]=0;
+            metered_raw=raw_scene(f);
+            // Production RAW metering samples one four-pixel group per eight
+            // groups on the two Bayer rows at row mod 8 = 0 and 1.
+            for(y=0;y<H;y=y+1) for(g=0;g<GROUPS;g=g+1) begin
+                if((y%8)<2 && (g%8)==0) for(i=0;i<4;i=i+1) begin
+                    raw_value=metered_raw[i*10 +:10];
+                    scaled=raw_value>>2;
+                    expected_sum[f]=expected_sum[f]+(scaled>=192?192:scaled);
+                    expected_count[f]=expected_count[f]+1;
+                    if(scaled>=192)
+                        expected_bright[f]=expected_bright[f]+1;
+                end
             end
         end
         repeat(5) tick(0,0,0,0);
@@ -246,7 +320,8 @@ module tb_isp_lighting_integration;
             repeat(64) tick(0,0,0,0);
         end
         repeat(100) tick(0,0,0,0);
-        if(ae_results!=3 || target_results!=3 || byte_write!=byte_read ||
+        if(ae_results!=3 || target_results!=3 || (MOTION_MODE && raw_motion_results!=3) ||
+            byte_write!=byte_read ||
             bytes_checked!=3*W*H*3 || white_pixels==0)
             $fatal(1,"ISP integration coverage/count mismatch");
         for(f=0;f<3;f=f+1)
@@ -254,9 +329,14 @@ module tb_isp_lighting_integration;
                 packed_count[f]!=FRAME_WORDS)
                 $fatal(1,"ISP frame%0d groups AWB=%0d edge=%0d packed=%0d",
                     f,awb_count[f],edge_count[f],packed_count[f]);
-        $display("ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d",
-            3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
-            ae_results,target_results,white_pixels);
+        if(MOTION_MODE)
+            $display("ISP_MOTION_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d target_latency=%0d raw_results=%0d confirmed=0",
+                3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
+                ae_results,target_results,white_pixels,TARGET_LATENCY,raw_motion_results);
+        else
+            $display("ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d",
+                3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
+                ae_results,target_results,white_pixels);
         $finish;
     end
     initial begin
@@ -265,8 +345,8 @@ module tb_isp_lighting_integration;
     end
 endmodule
 
-// A single inert boundary replaces sensor demosaic only; every subsequent
-// processing module is its production RTL. Forced RGB nets supply stimulus.
+// A single inert boundary replaces sensor demosaic only; RAW AE still receives
+// the real isp_top input, while forced RGB nets stimulate every later module.
 module demosaic #(
     parameter IMG_HEIGHT=1080,IMG_WIDTH=1920,data_complete_delay=50,
     parameter BAYER_MODE="BGGR"

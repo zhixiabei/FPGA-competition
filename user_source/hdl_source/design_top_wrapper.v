@@ -3,7 +3,7 @@
 module design_top_wrapper #(
     parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
     parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
-    parameter integer SHOW_RAW_STATS = 0 // Enable only for flat-field measurements.
+    parameter integer SHOW_RAW_STATS = 0 // RAW diagnostics.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -15,6 +15,7 @@ module design_top_wrapper #(
       
     inout wire [1:0]  I_button,
     input wire        I_mode_key_n, // Board K1 (D5), active low.
+    input wire        I_detect_key_n, // Board K2 (A9), active low.
 
     output wire       O_screen_pwm,
     output wire       O_tmds_ch0_p,
@@ -52,6 +53,7 @@ module design_top_wrapper #(
 	wire        	S_pll_lock;
     wire        	S_rst_n;
     wire        S_edge_mode_requested;
+    wire        S_motion_mode_requested;
 	reg  [17:0] 	S_cam_power_cnt;
 	reg         	S_cam_pwdnb;
 	reg         	S_cam_i2c_ready;
@@ -99,7 +101,7 @@ module design_top_wrapper #(
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
 
-    // Per-frame red-target result generated from the AWB RGB stream.
+    // Per-frame selected red/motion result from the AWB RGB stream.
     wire        S_ISP_target_result_ready;
     wire        S_ISP_target_found;
     wire [11:0] S_ISP_target_xmin;
@@ -110,6 +112,8 @@ module design_top_wrapper #(
     wire [11:0] S_ISP_target_center_y;
     wire [23:0] S_ISP_target_pixels;
     wire        S_ISP_target_frame_toggle;
+    wire        S_ISP_target_motion_mode;
+    wire        S_ISP_motion_mode_active;
     wire        S_ISP_edge_mode_active;
     wire        S_ISP_ae_stats_valid;
     wire [31:0] S_ISP_ae_sum_y;
@@ -147,21 +151,23 @@ module design_top_wrapper #(
     (* async_reg = "true" *) reg [1:0] S_read_slot_sync;
 
     // Bundled-data mailbox.  The camera domain holds all coordinates and
-    // the slot tag until the HDMI domain acknowledges their capture.
-    reg [75:0] S_target_mailbox;
+    // the slot tag and detection mode until HDMI acknowledges their capture.
+    reg [76:0] S_target_mailbox;
     reg S_target_request;
     reg S_target_ack;
     reg S_target_frame_pending;
+    reg S_target_frame_motion_mode;
     reg [5:0] S_target_frame_wait;
     (* async_reg = "true" *) reg S_target_ack_meta;
     (* async_reg = "true" *) reg S_target_ack_sync;
     (* async_reg = "true" *) reg S_target_toggle_meta;
     (* async_reg = "true" *) reg S_target_toggle_sync;
-    reg [72:0] S_target_slots [0:3];
+    reg [73:0] S_target_slots [0:3];
     reg [3:0] S_target_slots_valid;
     integer S_target_slot_index;
     wire S_target_result_valid_hdmi = S_target_slots_valid[S_read_slot_sync];
-    wire [72:0] S_target_display_result = S_target_slots[S_read_slot_sync];
+    wire [73:0] S_target_display_result = S_target_slots[S_read_slot_sync];
+    wire S_target_motion_mode_hdmi = S_target_display_result[73];
     wire S_target_found_hdmi = S_target_display_result[72];
     wire [11:0] S_target_xmin_hdmi = S_target_display_result[71:60];
     wire [11:0] S_target_xmax_hdmi = S_target_display_result[59:48];
@@ -486,9 +492,10 @@ module design_top_wrapper #(
         if(!S_rst_n) begin
             S_write_slot_meta <= 2'd0;
             S_write_slot_sync <= 2'd0;
-            S_target_mailbox <= 76'd0;
+            S_target_mailbox <= 77'd0;
             S_target_request <= 1'b0;
             S_target_frame_pending <= 1'b0;
+            S_target_frame_motion_mode <= 1'b0;
             S_target_frame_wait <= 6'd0;
             S_target_ack_meta <= 1'b0;
             S_target_ack_sync <= 1'b0;
@@ -499,13 +506,15 @@ module design_top_wrapper #(
             S_target_ack_sync <= S_target_ack_meta;
             if(S_ISP_O_tuser) begin
                 S_target_frame_pending <= 1'b1;
+                S_target_frame_motion_mode <= S_ISP_motion_mode_active;
                 S_target_frame_wait <= 6'd0;
             end else if(S_target_frame_pending && S_target_frame_wait != 6'd31)
                 S_target_frame_wait <= S_target_frame_wait + 1'b1;
 
             if(S_ISP_target_result_ready &&
                (S_target_request == S_target_ack_sync)) begin
-                S_target_mailbox <= {1'b1, S_write_slot_sync, S_ISP_target_found,
+                S_target_mailbox <= {S_ISP_target_motion_mode,
+                    1'b1, S_write_slot_sync, S_ISP_target_found,
                     S_target_display_xmin, S_target_display_xmax,
                     S_target_display_ymin, S_target_display_ymax,
                     S_target_display_center_x_sum[12:1],
@@ -518,7 +527,8 @@ module design_top_wrapper #(
                 // synchronizer has assigned the write slot.  A truncated
                 // frame must not retain the box from four frames earlier.
                 // 32 CSI clocks covers the existing DDR/CSI sync latency.
-                S_target_mailbox <= {1'b0, S_write_slot_sync, 73'd0};
+                S_target_mailbox <= {S_target_frame_motion_mode,
+                    1'b0, S_write_slot_sync, 73'd0};
                 S_target_request <= ~S_target_request;
                 S_target_frame_pending <= 1'b0;
             end
@@ -538,14 +548,15 @@ module design_top_wrapper #(
             S_read_slot_sync <= 2'd0;
             S_target_slots_valid <= 4'd0;
             for(S_target_slot_index=0; S_target_slot_index<4; S_target_slot_index=S_target_slot_index+1)
-                S_target_slots[S_target_slot_index] <= 73'd0;
+                S_target_slots[S_target_slot_index] <= 74'd0;
         end else begin
             S_target_toggle_meta <= S_target_request;
             S_target_toggle_sync <= S_target_toggle_meta;
             S_read_slot_meta <= S_read_frame_slot;
             S_read_slot_sync <= S_read_slot_meta;
             if(S_target_toggle_sync != S_target_ack) begin
-                S_target_slots[S_target_mailbox[74:73]] <= S_target_mailbox[72:0];
+                S_target_slots[S_target_mailbox[74:73]] <=
+                    {S_target_mailbox[76], S_target_mailbox[72:0]};
                 S_target_slots_valid[S_target_mailbox[74:73]] <= S_target_mailbox[75];
                 S_target_ack <= S_target_toggle_sync;
             end
@@ -639,6 +650,8 @@ module design_top_wrapper #(
 	
 
   
+    wire S_button_mode;
+    assign S_edge_mode_requested=S_button_mode;
     video_mode_control #(
         .DEBOUNCE_CYCLES(1000000), // 20 ms at I_sys_clk = 50 MHz
         .DEFAULT_EDGE_MODE(ENABLE_EDGE)
@@ -646,7 +659,17 @@ module design_top_wrapper #(
         .I_clk(I_sys_clk),
         .I_rst_n(S_rst_n),
         .I_key_n(I_mode_key_n), // K1: one toggle per debounced press.
-        .O_edge_mode(S_edge_mode_requested)
+        .O_edge_mode(S_button_mode)
+    );
+
+    video_mode_control #(
+        .DEBOUNCE_CYCLES(1000000),
+        .DEFAULT_EDGE_MODE(0)
+    ) u_detection_mode_control (
+        .I_clk(I_sys_clk),
+        .I_rst_n(S_rst_n),
+        .I_key_n(I_detect_key_n),
+        .O_edge_mode(S_motion_mode_requested)
     );
 
   ae_stats_cdc u_ae_stats_cdc (
@@ -659,13 +682,16 @@ module design_top_wrapper #(
       .O_dst_data(S_ae_stats_data)
   );
 
-  // Slightly brighter metering target after neutral LSC attenuates green.
-  // SC520CS datasheet V1.6 p20: gain code 176 selects 0x3e09=0x1f (32x).
-  // The observed E1991/G144 limit was the previous 16x software ceiling.
+  // RAW10 frame feedback: protect daylight highlights while still allowing
+  // the sensor's final 32x gain stage for lit indoor night scenes.
   auto_exposure_control #(
-      .TARGET_LOW(112),
-      .TARGET_HIGH(144),
-      .GAIN_MAX(176)
+      .TARGET_LOW(96),
+      .TARGET_HIGH(120),
+      .DARK_FAST(64),
+      .BRIGHT_FAST(144),
+      .GAIN_MAX(176),
+      .SETTLE_FRAMES(3),
+      .AVERAGE_FRAMES(6)
   ) u_auto_exposure (
       .I_clk(S_24m_clk),
       .I_rst(~S_rst_n),
@@ -825,7 +851,7 @@ assign S_raw_tuser  = S_axis_tuser;
 //  );
 
 
-// Read-only pre-LSC tap, serialized into ten small packets per camera frame.
+// Read-only RAW tap, serialized into ten small packets per camera frame.
 // In 720p the closest packets are 152 camera clocks apart, comfortably
 // exceeding mailbox round trip and the HDMI decimal converter's 44 clocks.
 wire S_raw_stats_valid;
@@ -892,6 +918,7 @@ isp_top #(
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
 .I_edge_mode_async(S_edge_mode_requested),
+.I_motion_mode_async(S_motion_mode_requested),
 .I_tlast         (S_raw_tlast	),
 .I_tuser         (S_raw_tuser	),
 .I_tdata         (S_raw_tdata	),
@@ -912,6 +939,8 @@ isp_top #(
 .O_target_center_y     (S_ISP_target_center_y),
 .O_target_pixels       (S_ISP_target_pixels),
 .O_target_frame_toggle (S_ISP_target_frame_toggle),
+.O_target_motion_mode  (S_ISP_target_motion_mode),
+.O_motion_mode_active  (S_ISP_motion_mode_active),
 .O_edge_mode_active    (S_ISP_edge_mode_active),
 .O_ae_stats_valid      (S_ISP_ae_stats_valid),
 .O_ae_sum_y            (S_ISP_ae_sum_y),
@@ -1092,6 +1121,7 @@ isp_top #(
         .I_video_rd_data ( S_video_rd_data    ),
         .I_target_result_ready ( S_target_result_valid_hdmi ),
         .I_target_found        ( S_target_found_hdmi ),
+        .I_target_motion_mode  ( S_target_motion_mode_hdmi ),
         .I_target_xmin         ( S_target_xmin_hdmi ),
         .I_target_xmax         ( S_target_xmax_hdmi ),
         .I_target_ymin         ( S_target_ymin_hdmi ),

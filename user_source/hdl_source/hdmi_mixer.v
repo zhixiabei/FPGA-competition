@@ -35,6 +35,7 @@ module hdmi_mixer #(
     // domain and transferred here once per frame.
     input wire        I_target_result_ready,
     input wire        I_target_found,
+    input wire        I_target_motion_mode,
     input wire [11:0] I_target_xmin,
     input wire [11:0] I_target_xmax,
     input wire [11:0] I_target_ymin,
@@ -158,6 +159,7 @@ module hdmi_mixer #(
     wire [11:0] S_result_center_x = I_target_center_x;
     wire [11:0] S_result_center_y = I_target_center_y;
     reg S_target_found;
+    reg S_target_motion_mode;
     reg [11:0] S_target_xmin, S_target_xmax, S_target_ymin, S_target_ymax;
     reg [11:0] S_target_center_x, S_target_center_y;
     // Double-dabble conversion runs once per frame, during the first scan
@@ -187,6 +189,7 @@ module hdmi_mixer #(
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             S_target_found <= 1'b0;
+            S_target_motion_mode <= 1'b0;
             S_target_xmin <= 12'd0; S_target_xmax <= 12'd0;
             S_target_ymin <= 12'd0; S_target_ymax <= 12'd0;
             S_target_center_x <= 12'd0; S_target_center_y <= 12'd0;
@@ -196,6 +199,7 @@ module hdmi_mixer #(
             S_target_bcd_busy <= 1'b0;
         end else if (S_display_frame_start) begin
             S_target_found <= S_target_result_ready && S_target_result_found;
+            S_target_motion_mode <= I_target_motion_mode;
             S_target_xmin <= S_result_xmin; S_target_xmax <= S_result_xmax;
             S_target_ymin <= S_result_ymin; S_target_ymax <= S_result_ymax;
             S_target_center_x <= S_result_center_x;
@@ -235,7 +239,7 @@ module hdmi_mixer #(
         (((S_target_dx <= 1) && (S_target_dy <= 6)) ||
          ((S_target_dy <= 1) && (S_target_dx <= 6)));
 
-    // Bottom-left panel: RED:FOUND X:0000 Y:0000, or RED:NONE.
+    // Bottom-left panel: RED/MOV:FOUND X:0000 Y:0000, or RED/MOV:NONE.
     // Uses the existing character ROM; coordinates are zero-based decimals.
     localparam TARGET_TEXT_X = 16;
     localparam TARGET_TEXT_Y = IMG_HEIGHT-32;
@@ -250,9 +254,9 @@ module hdmi_mixer #(
     always @(*) begin
         S_target_char = 8'h20;
         case (S_target_char_index)
-            0: S_target_char = "R";
-            1: S_target_char = "E";
-            2: S_target_char = "D";
+            0: S_target_char = S_target_motion_mode ? "M" : "R";
+            1: S_target_char = S_target_motion_mode ? "O" : "E";
+            2: S_target_char = S_target_motion_mode ? "V" : "D";
             3: S_target_char = ":";
             4: S_target_char = S_target_found ? "F" : "N";
             5: S_target_char = "O";

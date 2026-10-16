@@ -10,7 +10,15 @@ $sourceRoot = Join-Path $projectRoot 'user_source\hdl_source'
 $wrapper = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'design_top_wrapper.v')
 $productionBlock = [regex]::Match($wrapper,
     '(?s)auto_exposure_control\s*#\((.*?)\)\s*u_auto_exposure')
-if (-not $productionBlock.Success) { throw 'Cannot read production AE configuration from design_top_wrapper.v' }
+$tests = @(
+    @{ Top = 'tb_auto_exposure_control'; Snapshot = 'ae_control'; Pass = '^AUTO_EXPOSURE_CONTROL_PASS' },
+    @{ Top = 'tb_ae_frame_stats_raw10_4x'; Snapshot = 'ae_raw_stats'; Pass = '^AE_FRAME_STATS_RAW10_PASS' },
+    @{ Top = 'tb_ae_stats_cdc'; Snapshot = 'ae_cdc'; Pass = '^AE_STATS_CDC_PASS' },
+    @{ Top = 'tb_ae_lighting_loop'; Snapshot = 'ae_lighting_loop'; Pass = '^AE_LIGHTING_LOOP_PASS' }
+)
+if (-not $productionBlock.Success) {
+    throw 'Production auto_exposure_control instance was not found.'
+} else {
 $productionValues=@{}
 foreach($name in @('TARGET_LOW','TARGET_HIGH','GAIN_MAX')) {
     $setting=[regex]::Match($productionBlock.Groups[1].Value,'\.' + $name + '\s*\(\s*(\d+)\s*\)')
@@ -21,18 +29,18 @@ $lightingTest = @{
     Top = 'tb_ae_lighting_loop'; Snapshot = 'ae_production_lighting'; Pass = '^AE_LIGHTING_LOOP_PASS';
     Generics = @('-generic_top', ('"TARGET_LOW=' + $productionValues['TARGET_LOW'] + '"'),
                  '-generic_top', ('"TARGET_HIGH=' + $productionValues['TARGET_HIGH'] + '"'),
-                 '-generic_top', ('"GAIN_MAX=' + $productionValues['GAIN_MAX'] + '"'),
-                 '-generic_top', '"POST_LSC_RGB=1"')
+                 '-generic_top', ('"GAIN_MAX=' + $productionValues['GAIN_MAX'] + '"'))
 }
 $tests = @($lightingTest)
 if (-not $ProductionLightingOnly) {
     $tests = @(
         @{ Top = 'tb_auto_exposure_control'; Snapshot = 'ae_control'; Pass = '^AUTO_EXPOSURE_CONTROL_PASS' },
-        @{ Top = 'tb_ae_frame_stats_96'; Snapshot = 'ae_stats'; Pass = '^AE_FRAME_STATS_PASS' },
+        @{ Top = 'tb_ae_frame_stats_raw10_4x'; Snapshot = 'ae_raw_stats'; Pass = '^AE_FRAME_STATS_RAW10_PASS' },
         @{ Top = 'tb_ae_stats_cdc'; Snapshot = 'ae_cdc'; Pass = '^AE_STATS_CDC_PASS' },
         @{ Top = 'tb_ae_lighting_loop'; Snapshot = 'ae_lighting_loop'; Pass = '^AE_LIGHTING_LOOP_PASS' },
         $lightingTest
     )
+}
 }
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SimBin $tool) -PathType Leaf)) {
@@ -44,11 +52,11 @@ New-Item -ItemType Directory -Path $simulationDir | Out-Null
 $sources = @(
     (Join-Path $sourceRoot 'auto_exposure_control.v'),
     (Join-Path $sourceRoot 'ae_stats_cdc.v'),
-    (Join-Path $sourceRoot 'isp\ae_frame_stats_96.v'),
+    (Join-Path $sourceRoot 'isp\ae_frame_stats_raw10_4x.v'),
     (Join-Path $sourceRoot 'uics520_cfg\SC520GainTbl.v'),
     (Join-Path $sourceRoot 'uics520_cfg\uics520regAE.v'),
     (Join-Path $PSScriptRoot 'tb_auto_exposure_control.sv'),
-    (Join-Path $PSScriptRoot 'tb_ae_frame_stats_96.sv'),
+    (Join-Path $PSScriptRoot 'tb_ae_frame_stats_raw10_4x.sv'),
     (Join-Path $PSScriptRoot 'tb_ae_stats_cdc.sv'),
     (Join-Path $PSScriptRoot 'tb_ae_lighting_loop.sv')
 )

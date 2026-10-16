@@ -6,8 +6,7 @@ module tb_video_fifo_frame_integrity #(
     parameter integer W=1280,H=720,
     parameter real DDR_PHASE=9.3,
     parameter integer READY_GAPS=1,
-    parameter integer RAW_SOURCE=0,
-    parameter integer LSC_STAGE=0
+    parameter integer RAW_SOURCE=0
 );
 localparam integer GROUPS=W/4,PIXELS=W*H,WORDS=PIXELS*3/16;
 reg camera_clk=0,ddr_clk=0;
@@ -31,17 +30,10 @@ generate if(RAW_SOURCE) begin: raw_input
         end
     end
     wire [127:0] reconstructed;
-    wire [39:0] corrected_data;
-    wire corrected_valid,corrected_user,corrected_last;
-    lsc_raw10_4x #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.ENABLE(LSC_STAGE)) u_lsc (
-        .I_clk(camera_clk),.I_rst_n(rst_n),.I_tdata(raw_data),
-        .I_tvalid(in_valid),.I_tuser(in_user),.I_tlast(in_last),.I_tready(),
-        .O_tdata(corrected_data),.O_tvalid(corrected_valid),
-        .O_tuser(corrected_user),.O_tlast(corrected_last),.O_tready(1'b1));
     demosaic #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.BAYER_MODE("BGGR")) u_demosaic (
-        .I_clk(camera_clk),.I_rst_n(rst_n),.axi4s_video_tdata(corrected_data),
-        .axi4s_video_tdest(10'd0),.axi4s_video_tvalid(corrected_valid),
-        .axi4s_video_tuser(corrected_user),.axi4s_video_tlast(corrected_last),
+        .I_clk(camera_clk),.I_rst_n(rst_n),.axi4s_video_tdata(raw_data),
+        .axi4s_video_tdest(10'd0),.axi4s_video_tvalid(in_valid),
+        .axi4s_video_tuser(in_user),.axi4s_video_tlast(in_last),
         .axi4s_video_tready(),.O_tvalid(rgb_valid),.O_tuser(rgb_user),
         .O_tlast(rgb_last),.O_tdata(reconstructed),.O_tready(1'b1));
     data128_96 u_order(.I_tdata(reconstructed),.O_tdata(rgb_source));
@@ -92,7 +84,7 @@ function [23:0] source_rgb(input integer pixel_index);
     source_rgb=pixel_index;
 endfunction
 function automatic integer source_raw(input integer px,input integer py);
-    integer xx,yy,value,n,position,delta;
+    integer xx,yy;
     reg [23:0] colour;
     begin
         xx=px<0?1:px>=W?W-2:px;
@@ -100,15 +92,6 @@ function automatic integer source_raw(input integer px,input integer py);
         colour=source_rgb(yy*W+xx);
         source_raw=(yy%2==0 && xx%2==0)?colour[7:0]:
                    (yy%2==1 && xx%2==1)?colour[23:16]:colour[15:8];
-        if(LSC_STAGE && xx%2!=yy%2) begin
-            n=W/4-1;position=2*(xx/4)-n;
-            delta=(48*position*position+n*n/2)/(n*n);
-            n=H-1;position=2*yy-n;
-            delta=delta+(48*position*position+n*n/2)/(n*n);
-            value=4*source_raw;
-            value=value+(value*delta+128)/256;
-            source_raw=value>1023?255:value/4;
-        end
     end
 endfunction
 function automatic [23:0] expected_rgb(input integer pixel_index);
@@ -267,7 +250,6 @@ initial begin
     if(frames_passed!=2) $fatal(1,"Missing complete frame coverage");
     $display("FIFO_FRAME_INTEGRITY_PASS H=%0d phase=%0.3f frames=%0d bytes=%0d",H,DDR_PHASE,frames_passed,byte_checks);
     if(RAW_SOURCE) $display("RAW_TO_DDR_FRAME_PASS pixels=%0d",PIXELS*frames_passed);
-    if(RAW_SOURCE && LSC_STAGE) $display("LSC_TO_DDR_FRAME_PASS pixels=%0d",PIXELS*frames_passed);
     $finish;
 end
 initial begin #150000000;$fatal(1,"Pixel-chain integrity test timeout");end

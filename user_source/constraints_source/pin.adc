@@ -13,6 +13,7 @@ set_pin_assignment	{ I_button[1] }			{ LOCATION = J14; IOSTANDARD = LVCMOS33; DR
 
 # HX1P35A manual: K1/KEY1=D5, K2=A9, K3=B9, K4=C7 (active low).
 set_pin_assignment { I_mode_key_n } { LOCATION = D5; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { I_detect_key_n } { LOCATION = A9; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 
 set_pin_assignment	{ O_screen_pwm } 		{ LOCATION = R11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLDOWN; }
 set_pin_assignment	{ O_tmds_ch0_p }		{ LOCATION = G16; IOSTANDARD = TMDS33; PULLTYPE = NONE; }

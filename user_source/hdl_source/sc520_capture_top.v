@@ -10,6 +10,7 @@ module sc520_capture_top (
       
     inout wire [1:0]  I_button,
     input wire        I_mode_key_n, // Board K1 (D5), active low.
+    input wire        I_detect_key_n, // Board K2 (A9), active low.
 
     output wire       O_screen_pwm,
     output wire       O_tmds_ch0_p,
@@ -46,6 +47,7 @@ module sc520_capture_top (
         .O_cam_rst(O_cam_rst),
         .I_button(I_button),
         .I_mode_key_n(I_mode_key_n),
+        .I_detect_key_n(I_detect_key_n),
         .O_screen_pwm(O_screen_pwm),
         .O_tmds_ch0_p(O_tmds_ch0_p),
         .O_tmds_ch1_p(O_tmds_ch1_p),

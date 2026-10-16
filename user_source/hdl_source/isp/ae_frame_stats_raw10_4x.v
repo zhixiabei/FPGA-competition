@@ -1,28 +1,22 @@
-// Frame-complete, sparse pre-white-balance metering for four RGB pixels/clock.
-// sum_y includes NON-HIGHLIGHT samples only; sample_count includes all samples.
-// bright_count records white highlights, so sample_count-bright_count is the
-// denominator for background metering. Lamps/screens may clip without forcing
-// nearby non-emissive objects to be underexposed.
-// This is a statistics tap: it does not stall or modify the video stream.
-module ae_frame_stats_96 #(
+// Sparse, frame-complete exposure statistics from four RAW10 pixels/clock.
+// Metering is placed before LSC so the feedback remains monotonic with sensor
+// exposure. Every eighth group is sampled on two adjacent rows out of eight.
+// A Bayer row pair therefore contributes 2R + 4G + 2B without demosaic logic.
+// Each component is converted to eight bits and capped, but never discarded.
+module ae_frame_stats_raw10_4x #(
     parameter integer IMG_WIDTH = 1280,
     parameter integer IMG_HEIGHT = 720,
     parameter integer SAMPLE_GROUP_LOG2 = 3,
-    parameter integer SAMPLE_ROW_LOG2 = 2,
-    parameter integer BRIGHT_Y = 232,
-    // Post-LSC metering can use channel thresholds derived at elaboration
-    // from the minimum grid gains. Keep the original policy when disabled.
-    parameter integer BRIGHT_RGB_ENABLE = 0,
-    parameter integer BRIGHT_R = 232,
-    parameter integer BRIGHT_G = 232,
-    parameter integer BRIGHT_B = 232
+    parameter integer SAMPLE_ROW_LOG2 = 3,
+    parameter integer BLACK_LEVEL = 0,
+    parameter integer CLIP_LEVEL = 192
 ) (
     input wire I_clk,
     input wire I_rst_n,
     input wire I_tuser,
     input wire I_tlast,
     input wire I_tvalid,
-    input wire [95:0] I_tdata,
+    input wire [39:0] I_tdata,
     output reg O_stats_valid,
     output reg [31:0] O_sum_y,
     output reg [15:0] O_sample_count,
@@ -48,11 +42,16 @@ module ae_frame_stats_96 #(
     localparam integer ROW_BITS = bit_width(IMG_HEIGHT);
     localparam integer GROUP_PERIOD = 1 << SAMPLE_GROUP_LOG2;
     localparam integer ROW_PERIOD = 1 << SAMPLE_ROW_LOG2;
-    localparam integer SAMPLE_TOTAL =
-        ((GROUPS + GROUP_PERIOD - 1) / GROUP_PERIOD) *
-        ((IMG_HEIGHT + ROW_PERIOD - 1) / ROW_PERIOD);
+    localparam integer SAMPLED_GROUPS =
+        (GROUPS + GROUP_PERIOD - 1) / GROUP_PERIOD;
+    localparam integer ROW_REMAINDER = IMG_HEIGHT % ROW_PERIOD;
+    localparam integer SAMPLED_ROWS =
+        (IMG_HEIGHT / ROW_PERIOD) * (ROW_PERIOD > 1 ? 2 : 1) +
+        (ROW_REMAINDER == 0 ? 0 :
+         (ROW_PERIOD == 1 ? 1 : (ROW_REMAINDER > 1 ? 2 : 1)));
+    localparam integer SAMPLE_TOTAL = SAMPLED_GROUPS * SAMPLED_ROWS * 4;
     localparam integer COUNT_BITS = bit_width(SAMPLE_TOTAL + 1);
-    localparam integer SUM_BITS = bit_width(SAMPLE_TOTAL * 255 + 1);
+    localparam integer SUM_BITS = bit_width(SAMPLE_TOTAL * CLIP_LEVEL + 1);
     localparam [GROUP_BITS-1:0] GROUP_MASK = GROUP_PERIOD - 1;
     localparam [ROW_BITS-1:0] ROW_MASK = ROW_PERIOD - 1;
 
@@ -66,8 +65,6 @@ module ae_frame_stats_96 #(
     reg [COUNT_BITS-1:0] sample_count;
     reg [COUNT_BITS-1:0] bright_count;
 
-    // A marker may precede its first valid RGB beat. A held marker denotes
-    // one frame, and a new marker discards an incomplete preceding frame.
     wire frame_marker = I_tuser && !user_d;
     wire first_beat = frame_pending || frame_marker;
     wire accept_beat = I_tvalid && (frame_open || first_beat);
@@ -78,28 +75,45 @@ module ae_frame_stats_96 #(
     wire final_group = beat_group == GROUPS - 1;
     wire final_beat = final_group && (beat_row == IMG_HEIGHT - 1);
     wire bad_line_marker = I_tlast != final_group;
-    wire sample_beat = ((beat_group & GROUP_MASK) == 0) &&
-                       ((beat_row & ROW_MASK) == 0);
+    wire [ROW_BITS-1:0] row_phase = beat_row & ROW_MASK;
+    wire sample_row = (row_phase == 0) ||
+                      ((ROW_PERIOD > 1) && (row_phase == 1));
+    wire sample_beat = ((beat_group & GROUP_MASK) == 0) && sample_row;
 
-    // Lane zero is the earliest pixel, RGB bytes in 95:72.
-    // Y=(R+2G+B)/4 avoids multipliers and cannot exceed 255.
-    wire [8:0] rb = {1'b0, I_tdata[95:88]} +
-                    {1'b0, I_tdata[79:72]};
-    wire [9:0] rgb_sum = {1'b0, rb} + {1'b0, I_tdata[87:80], 1'b0};
-    wire [7:0] pixel_y = rgb_sum[9:2];
-    // A saturated single colour (e.g. 255,0,0) is not a white-light highlight.
-    // A single channel reaching 255 is not sufficient to exclude this sample.
-    wire pixel_bright = (pixel_y >= BRIGHT_Y) ||
-        (BRIGHT_RGB_ENABLE != 0 && I_tdata[95:88] >= BRIGHT_R &&
-         I_tdata[87:80] >= BRIGHT_G && I_tdata[79:72] >= BRIGHT_B);
+    wire [9:0] raw0 = I_tdata[9:0];
+    wire [9:0] raw1 = I_tdata[19:10];
+    wire [9:0] raw2 = I_tdata[29:20];
+    wire [9:0] raw3 = I_tdata[39:30];
+    wire [9:0] signal0 = raw0 > BLACK_LEVEL ? raw0 - BLACK_LEVEL : 10'd0;
+    wire [9:0] signal1 = raw1 > BLACK_LEVEL ? raw1 - BLACK_LEVEL : 10'd0;
+    wire [9:0] signal2 = raw2 > BLACK_LEVEL ? raw2 - BLACK_LEVEL : 10'd0;
+    wire [9:0] signal3 = raw3 > BLACK_LEVEL ? raw3 - BLACK_LEVEL : 10'd0;
+    wire [7:0] value0 = signal0[9:2];
+    wire [7:0] value1 = signal1[9:2];
+    wire [7:0] value2 = signal2[9:2];
+    wire [7:0] value3 = signal3[9:2];
+    wire bright0 = value0 >= CLIP_LEVEL;
+    wire bright1 = value1 >= CLIP_LEVEL;
+    wire bright2 = value2 >= CLIP_LEVEL;
+    wire bright3 = value3 >= CLIP_LEVEL;
+    wire [7:0] meter0 = bright0 ? CLIP_LEVEL : value0;
+    wire [7:0] meter1 = bright1 ? CLIP_LEVEL : value1;
+    wire [7:0] meter2 = bright2 ? CLIP_LEVEL : value2;
+    wire [7:0] meter3 = bright3 ? CLIP_LEVEL : value3;
+    wire [9:0] beat_sum = {2'd0, meter0} + {2'd0, meter1} +
+                           {2'd0, meter2} + {2'd0, meter3};
+    wire [2:0] beat_bright = {2'd0, bright0} + {2'd0, bright1} +
+                              {2'd0, bright2} + {2'd0, bright3};
+
     wire [SUM_BITS-1:0] sum_next =
         (first_beat ? {SUM_BITS{1'b0}} : sum_y) +
-        ((sample_beat && !pixel_bright) ? pixel_y : 8'd0);
+        (sample_beat ? beat_sum : 10'd0);
     wire [COUNT_BITS-1:0] count_next =
-        (first_beat ? {COUNT_BITS{1'b0}} : sample_count) + sample_beat;
+        (first_beat ? {COUNT_BITS{1'b0}} : sample_count) +
+        (sample_beat ? 3'd4 : 3'd0);
     wire [COUNT_BITS-1:0] bright_next =
         (first_beat ? {COUNT_BITS{1'b0}} : bright_count) +
-        (sample_beat && pixel_bright);
+        (sample_beat ? beat_bright : 3'd0);
 
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
@@ -137,8 +151,6 @@ module ae_frame_stats_96 #(
                     group_pos <= beat_group + 1'b1;
                     row_pos <= beat_row;
                 end
-                // Include the final beat, and never publish a malformed or
-                // truncated frame. Held output payload is suitable for CDC.
                 if (final_beat && !(first_beat ? 1'b0 : frame_bad) &&
                     !bad_line_marker && (count_next == SAMPLE_TOTAL)) begin
                     O_stats_valid <= 1'b1;
@@ -149,4 +161,17 @@ module ae_frame_stats_96 #(
             end
         end
     end
+
+    // synthesis translate_off
+    initial begin
+        if ((IMG_WIDTH % 4) != 0)
+            $fatal(1, "AE RAW statistics require a width divisible by four");
+        if (CLIP_LEVEL < 1 || CLIP_LEVEL > 255)
+            $fatal(1, "AE RAW statistics clip level is outside 1..255");
+        if (BLACK_LEVEL < 0 || BLACK_LEVEL > 1023)
+            $fatal(1, "AE RAW statistics black level is outside RAW10");
+        if (SAMPLE_TOTAL > 65535)
+            $fatal(1, "AE RAW statistics count exceeds the 16-bit interface");
+    end
+    // synthesis translate_on
 endmodule
