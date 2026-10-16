@@ -6,6 +6,23 @@
 
 本说明依据当前的 [TD 工程文件](../td_project/anlogic_edge_osd.al)、[系统顶层](../user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](../user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 2026-10-16 处理延迟可视化
+
+HDMI 右上角显示同帧总延迟、ISP 延迟、缓存与输出等待、累计最小/最大值，
+以及最近 64 个显示帧的曲线。K1/K2 操作保持原样。
+
+| 文件 | 当前功能 | 阅读入口 |
+|---|---|---|
+| [video_latency_timebase.v](../user_source/hdl_source/video_latency_timebase.v) | 50 MHz 系统时钟产生微秒时间和寄存 Gray 编码 | `O_time_us`、`O_time_gray` |
+| [video_latency_monitor.v](../user_source/hdl_source/video_latency_monitor.v) | RAW/ISP 首像素时间、实际 DDR 槽位和 HDMI 显示帧配对 | `S_raw_times`、`S_start_raw_us`、`S_slot_raw`、`S_read_payload`、`O_sample_strobe` |
+| [video_latency_osd.v](../user_source/hdl_source/video_latency_osd.v) | 共享十进制转换、64 帧历史、数字和曲线绘制 | `bcd_work`、`history`、`O_panel`、`O_text`、`O_graph` |
+
+帧号经过 ISP 行缓存和打包器随真实图像传递，读记录在 DDR 实际选择基地址时冻结。
+`video_in.v` 的 `O_write_frame_start/O_write_start_slot` 提供实际写槽分配事件，
+`video_out.v` 的 `O_read_frame_start` 提供实际读地址选择事件，
+`hdmi_mixer.v` 的 `O_display_frame_start` 对齐最终首个输出像素。
+测量范围、无效样本及资源/时序见 [延迟可视化说明](LATENCY_VISUALIZATION.md)。
+
 ## 2026-10-16 K2 帧差运动检测与稳定处理
 
 K1 继续切换彩色/边缘，K2（A9）切换红色/运动检测。

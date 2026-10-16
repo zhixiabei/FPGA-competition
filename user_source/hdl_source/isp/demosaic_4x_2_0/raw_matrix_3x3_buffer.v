@@ -13,6 +13,7 @@ module raw_matrix_3x3_buffer #(
     input wire axi4s_video_tlast,axi4s_video_tvalid,axi4s_video_tuser,
     output wire axi4s_video_tready,
     output reg O_tlast,O_tuser,O_tvalid,
+    output reg [9:0] O_frame_id,
     input wire O_tready,
     output reg bayer_ypos,
     output reg [95:0] matrix_last_line,matrix_cur_line,matrix_next_line
@@ -23,6 +24,7 @@ module raw_matrix_3x3_buffer #(
     reg [AB-1:0] write_x,read_x;
     reg [YB-1:0] write_y,read_y;
     reg frame_active,sof_seen,reading,bottom_pending;
+    reg [9:0] frame_id;
     wire new_frame=axi4s_video_tuser && !sof_seen;
     wire accept=axi4s_video_tvalid && (frame_active || new_frame);
     wire [AB-1:0] wx=new_frame ? {AB{1'b0}} : write_x;
@@ -59,10 +61,13 @@ module raw_matrix_3x3_buffer #(
 
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
-            write_x<=0;write_y<=0;frame_active<=0;sof_seen<=0;
+            write_x<=0;write_y<=0;frame_active<=0;sof_seen<=0;frame_id<=0;
         end else begin
             sof_seen<=axi4s_video_tuser;
-            if(new_frame) begin write_x<=0;write_y<=0;frame_active<=1;end
+            if(new_frame) begin
+                write_x<=0;write_y<=0;frame_active<=1;
+                frame_id<=axi4s_video_tdest;
+            end
             if(accept) begin
                 if(wx==GROUPS-1) begin
                     write_x<=0;
@@ -119,7 +124,7 @@ module raw_matrix_3x3_buffer #(
     reg flush_last;
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
-            O_tvalid<=0;O_tuser<=0;O_tlast<=0;bayer_ypos<=0;
+            O_tvalid<=0;O_tuser<=0;O_tlast<=0;bayer_ypos<=0;O_frame_id<=0;
             matrix_last_line<=0;matrix_cur_line<=0;matrix_next_line<=0;
             top_hold<=0;mid_hold<=0;bot_hold<=0;
             top_left<=0;mid_left<=0;bot_left<=0;hold_x<=0;hold_y<=0;
@@ -140,6 +145,7 @@ module raw_matrix_3x3_buffer #(
                     matrix_cur_line <={24'd0,mid_left,mid_hold,mid_word[31:24],24'd0};
                     matrix_next_line<={24'd0,bot_left,bot_hold,bot_word[31:24],24'd0};
                     O_tvalid<=1;O_tuser<=hold_y==0 && hold_x==0;
+                    if(hold_y==0 && hold_x==0) O_frame_id<=frame_id;
                     bayer_ypos<=hold_y[0];
                 end
             end

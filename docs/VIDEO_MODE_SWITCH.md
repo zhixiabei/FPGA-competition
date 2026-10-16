@@ -167,14 +167,24 @@ DDR 帧槽/算法/框的元数据对齐由独立顶层测试覆盖。
 - 视频运动过程中反复切换，观察是否有花屏、卡死或半帧混合。
 - 复位后检查默认彩色与红色检测；检查模式切换不会改变摄像头增益。
 
-## 本次稳定版构建
+## 延迟显示版构建
+
+当前 `firmware/anlogic_edge_osd.bit` 已加入右上角延迟数字和 64 帧曲线。
+2026-10-16 最终布局布线为 Slice 14,554/21,216（68.60%）、
+ERAM 62/108、DSP 13/40；SWNS +0.132 ns，HWNS +0.020 ns。
+版本为 `src-49a1164317e0`，完整结果见
+[延迟可视化说明](LATENCY_VISUALIZATION.md)，bit 身份以
+`build/release/release_manifest.json` 为准。
+
+## 稳定运动版构建（历史）
 
 2026-10-16 完成综合、布局布线和 bit 生成。
 Slice 13,106/21,216，ERAM 62/108，DSP 13/40；
 SWNS +0.166 ns，HWNS +0.020 ns。
 213 个生产文件及主 SDC 与构建快照一致。
-烧录文件为 `firmware/anlogic_edge_osd.bit`，
-SHA256 为 `9C14E875C611F4F86B4CFA605EB2C4BE185149FA864ACF59A8C256798B8BC4CD`。
+当时 bit 的 SHA256 为
+`9C14E875C611F4F86B4CFA605EB2C4BE185149FA864ACF59A8C256798B8BC4CD`，
+固定烧录路径已更新为上述延迟显示版。
 406 帧场景在两种 RAM 模型下均通过，静止/干扰误触 0/168，
 确认后的要求运动 120/120；六帧真实 RAW 链路另行通过。
 完整说明见 [运动检测说明](MOTION_DETECTION.md)，报告和压缩日志见 `build/release/`。

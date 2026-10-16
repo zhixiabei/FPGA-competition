@@ -7,6 +7,10 @@
 
 | 内容 | 命令 |
 |---|---|
+| 延迟时基、同帧元数据与生产 DDR 字数边界 | `& './sim/run_video_latency.ps1'` |
+| 真实 ISP 帧号、短帧恢复与回绕 | `& './sim/run_video_latency_frame_tag.ps1'` |
+| 延迟数字、64 帧曲线与完整 HDMI 像素 | `& './sim/run_video_latency_osd.ps1'` |
+| DDR 帧槽、红色/运动框与模式对应 | `& './sim/run_target_frame_alignment.ps1'` |
 | 运动稳定性：生产参数、两种 RAM 模型 | `& './sim/run_motion_stability.ps1' -Pipeline Stable -Mode Both -CheckBehavior` |
 | 三帧确认、短暂保持、平滑和复位 | `& './sim/run_motion_result_stabilizer.ps1'` |
 | 真实 RAW 全链路六帧、连续 4 像素右移 | `& './sim/run_isp_motion_camera.ps1' -LineBlanking 32 -MovePixels 4` |
@@ -27,13 +31,20 @@
 .\sim\run_video_mode.cmd --no-pause 720
 ```
 
-摄像头 I2C 配置、帧槽和 HDMI 目标叠加：
+摄像头 I2C 配置：
 
 ```powershell
 .\sim\run_sc520.cmd --no-pause
 ```
 
 ## 当前结果与边界
+
+2026-10-16 延迟监测测试通过 49 个显示样本、29 次 Gray 计数回绕及生产
+172799/172800 写计数边界；真实 ISP 侧带测试核对 518400 个输出字，
+覆盖两次短帧中止和帧号回绕。OSD 检查 495 项、128262 个独立像素，
+并核对四帧共 3686400 个 mixer 输出像素。
+读数含义与测量范围见 [延迟可视化说明](../docs/LATENCY_VISUALIZATION.md)；
+新增验证证据集中在 `build/release/latency_validation.zip`。
 
 2026-10-16 运动稳定性测试在便携 RAM、厂商 ERAM 下各通过 406 帧：
 静止/干扰误触 0/168，8 组要求运动在前两帧确认后检出 120/120。

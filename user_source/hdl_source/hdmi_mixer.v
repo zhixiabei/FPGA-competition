@@ -10,7 +10,8 @@ module hdmi_mixer #(
     parameter integer TARGET_RED_MIN = 80,
     parameter integer TARGET_RED_DELTA = 30,
     parameter integer TARGET_MIN_PIXELS = 128,
-    parameter integer SHOW_RAW_STATS = 0
+    parameter integer SHOW_RAW_STATS = 0,
+    parameter integer SHOW_LATENCY = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -27,8 +28,14 @@ module hdmi_mixer #(
     input wire [44:0] I_raw_stats_data,
     input wire        I_ae_readout_valid,
     input wire [27:0] I_ae_readout_data,
+    input wire        I_latency_sample_strobe,
+    input wire        I_latency_sample_valid,
+    input wire [19:0] I_latency_total_us,
+    input wire [19:0] I_latency_isp_us,
+    input wire [19:0] I_latency_buffer_us,
 
     output wire       O_video_rd_en,
+    output wire       O_display_frame_start,
     input wire[23:0]  I_video_rd_data,
 
     // Target result is computed from the AWB RGB stream in the camera clock
@@ -172,6 +179,7 @@ module hdmi_mixer #(
     integer S_target_digit;
     wire S_display_frame_start = S_video_de_2d &&
                                  (S_x_2d == 0) && (S_y_2d == 0);
+    assign O_display_frame_start = S_display_frame_start;
 
     always @(*) begin
         S_target_bcd_adjust_x = S_target_bcd_work_x;
@@ -298,6 +306,25 @@ module hdmi_mixer #(
         assign S_raw_panel=1'b0;
         assign S_raw_text=1'b0;
         assign S_raw_alert=1'b0;
+    end endgenerate
+
+    wire S_latency_panel, S_latency_text, S_latency_graph, S_latency_alert;
+    generate if (SHOW_LATENCY != 0) begin: latency_readout
+        video_latency_osd u_osd (
+            .I_clk(I_clk), .I_rst_n(I_rst_n),
+            .I_sample_strobe(I_latency_sample_strobe),
+            .I_sample_valid(I_latency_sample_valid),
+            .I_total_us(I_latency_total_us), .I_isp_us(I_latency_isp_us),
+            .I_buffer_us(I_latency_buffer_us),
+            .I_de(S_video_de_1d), .I_x(S_x_1d), .I_y(S_y_1d),
+            .O_panel(S_latency_panel), .O_text(S_latency_text),
+            .O_graph(S_latency_graph), .O_alert(S_latency_alert)
+        );
+    end else begin: no_latency_readout
+        assign S_latency_panel=1'b0;
+        assign S_latency_text=1'b0;
+        assign S_latency_graph=1'b0;
+        assign S_latency_alert=1'b0;
     end endgenerate
 
     function [4:0] F_logo_text_bits;
@@ -1157,6 +1184,10 @@ module hdmi_mixer #(
                         (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
                     O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[3:0],
                         S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
+                else if(S_latency_panel)
+                    O_hdmi_data <= S_latency_text ?
+                        (S_latency_alert ? 24'hffb040 : 24'hffffff) :
+                        S_latency_graph ? (S_latency_alert ? 24'hff4040 : 24'h40e0a0) : 24'h101418;
                 else if(S_raw_panel)
                     O_hdmi_data <= S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
                 else if(S_osd_hit)

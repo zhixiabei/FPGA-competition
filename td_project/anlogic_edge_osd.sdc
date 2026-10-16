@@ -26,10 +26,11 @@ set_false_path -from [get_regs -nowarn {u_camera_diag_cdc/ack_toggle u_ae_stats_
 set_max_delay -datapath_only -from [get_regs -nowarn {u_camera_diag_cdc/payload_hold[*] raw_diagnostics$u_cdc/payload_hold[*] raw_diagnostics$u_ae_readout_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_camera_diag_cdc/O_dst_data[*] raw_diagnostics$u_cdc/O_dst_data[*] raw_diagnostics$u_ae_readout_cdc/O_dst_data[*]}] 13.000
 set_max_delay -datapath_only -from [get_regs -nowarn {u_ae_stats_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_ae_stats_cdc/O_dst_data[*]}] 20.000
 
-# Leave pll_clk_24m out of the MIPI group exception so it cannot override
-# the mailbox payload bounds. DDR crossings retain their original exception.
+# Latency mailboxes cross CSI/DDR/HDMI; their payload bounds must remain
+# active. TD's broad asynchronous groups would override those bounds.
+# Use relaxed datapath limits for those pairs, then constrain the specific
+# held payloads and single-step Gray source below.
 set_clock_groups -asynchronous \
-    -group [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] \
     -group [get_clocks {sys_clk_50m pll_clk_100m HDMI_SERIAL_CLK}] \
     -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]
 set_clock_groups -asynchronous \
@@ -42,9 +43,24 @@ set_clock_groups -asynchronous \
 set_false_path -from [get_regs {S_target_request}] -to [get_regs {S_target_toggle_meta}]
 set_false_path -from [get_regs {S_target_ack}] -to [get_regs {S_target_ack_meta}]
 set_max_delay -datapath_only -from [get_regs {S_target_mailbox[*]}] 20.000
-set_clock_groups -asynchronous \
-    -group [get_clocks {HDMI_PIXEL_CLK}] \
-    -group [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}]
+set_max_delay -datapath_only -from [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] -to [get_clocks {sys_clk_50m pll_clk_100m HDMI_SERIAL_CLK}] 100.000
+set_max_delay -datapath_only -from [get_clocks {sys_clk_50m pll_clk_100m HDMI_SERIAL_CLK}] -to [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] 100.000
+set_max_delay -datapath_only -from [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] -to [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] 100.000
+set_max_delay -datapath_only -from [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] -to [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] 100.000
+set_max_delay -datapath_only -from [get_clocks {HDMI_PIXEL_CLK}] -to [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] 100.000
+set_max_delay -datapath_only -from [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] -to [get_clocks {HDMI_PIXEL_CLK}] 100.000
+
+set_false_path -from [get_regs {u_video_latency/S_isp_request}] -to [get_regs {u_video_latency/S_isp_req_meta}]
+set_false_path -from [get_regs {u_video_latency/S_isp_ack}] -to [get_regs {u_video_latency/S_isp_ack_meta}]
+set_false_path -from [get_regs {u_video_latency/S_read_request}] -to [get_regs {u_video_latency/S_read_req_meta}]
+set_false_path -from [get_regs {u_video_latency/S_read_ack}] -to [get_regs {u_video_latency/S_read_ack_meta}]
+# A registered Gray value changes one bit per microsecond. 20 ns is much
+# shorter than that update interval; the second synchronizer is timed normally.
+set_max_delay -datapath_only -from [get_regs {u_video_latency/u_timebase/O_time_gray[*]}] -to [get_regs {u_video_latency/S_csi_gray_meta[*] u_video_latency/S_hdmi_gray_meta[*]}] 20.000
+# ISP SOF and its held tag share the existing two-stage video_in SOF crossing.
+set_max_delay -datapath_only -from [get_regs {u_video_latency/S_start_id[*] u_video_latency/S_start_raw_us[*] u_video_latency/S_start_valid}] -to [get_regs {u_video_latency/S_slot*}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_video_latency/S_isp_payload[*]}] -to [get_regs {u_video_latency/S_slot* u_video_latency/S_last_isp_payload[*]}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_video_latency/S_read_payload[*]}] -to [get_regs {u_video_latency/S_pending_payload[*] u_video_latency/S_pending_valid}] 13.000
 
 # The mode key crosses into the camera clock domain through the mode synchronizer.
 set_false_path -from [get_regs {u_video_mode_control/O_edge_mode}] -to [get_regs {u_isp_top/u_rgb_edge_switch/mode_meta}]

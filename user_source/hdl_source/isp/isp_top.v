@@ -41,7 +41,8 @@ module isp_top #(
     output          O_ae_stats_valid,
     output [31:0]   O_ae_sum_y,
     output [15:0]   O_ae_sample_count,
-    output [15:0]   O_ae_bright_count
+    output [15:0]   O_ae_bright_count,
+    output reg [9:0] O_latency_frame_id
 );
  
 wire         m_aixs_tvalid;  //synthesis keep 
@@ -99,6 +100,22 @@ wire         m_aixs_tvalid;  //synthesis keep
  
 wire [39:0] lsc_data;
 wire lsc_valid, lsc_user, lsc_last, lsc_ready;
+wire [9:0] demosaic_frame_id;
+reg [9:0] lsc_frame_id_1d, lsc_frame_id_2d, lsc_frame_id_3d;
+reg [9:0] rgb_frame_id;
+always @(posedge axi4s_video_aclk or negedge I_rst_n) begin
+    if (!I_rst_n) begin
+        lsc_frame_id_1d<=0; lsc_frame_id_2d<=0; lsc_frame_id_3d<=0;
+        rgb_frame_id<=0; O_latency_frame_id<=0;
+    end else begin
+        lsc_frame_id_1d<=I_tdest;
+        lsc_frame_id_2d<=lsc_frame_id_1d;
+        lsc_frame_id_3d<=lsc_frame_id_2d;
+        if (m_aixs_tuser) rgb_frame_id<=demosaic_frame_id;
+        // The packer's SOF is one cycle after the edge/RGB SOF.
+        if (edge_O_tuser) O_latency_frame_id<=rgb_frame_id;
+    end
+end
 
 // Exposure feedback uses the sensor-linear RAW stream before LSC. Sampling a
 // complete Bayer row pair gives the intended 1:2:1 RGB luminance weighting
@@ -144,11 +161,12 @@ u_demosaic
     .I_clk   			(axi4s_video_aclk)	,   // 时钟信号
     .I_rst_n 			(I_rst_n)	,   // 复位信号，低有效
     .axi4s_video_tdata 	(lsc_data)	,  // Corrected RAW10, before truncation/demosaic.
-    .axi4s_video_tdest 	(I_tdest)	,
+    .axi4s_video_tdest 	(lsc_frame_id_3d)	,
     .axi4s_video_tlast 	(lsc_last)	,  // 行结束信号
     .axi4s_video_tvalid	(lsc_valid)	,  // 数据有效信号
     .axi4s_video_tuser 	(lsc_user)	,  // 帧开始信号
     .axi4s_video_tready	(lsc_ready)	,  // 从模块准备好接受数据
+    .O_frame_id         (demosaic_frame_id),
     .O_tlast  			(m_aixs_tlast)	,  // 输出行结束信号
     .O_tuser  			(m_aixs_tuser)	,  // 输出帧开始信号
     .O_tdata  			(m_aixs_tdata)	,  // 输出数据

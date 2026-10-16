@@ -596,7 +596,8 @@ module isp_top #(parameter ENABLE_EDGE=0)
     O_target_center_x, O_target_center_y, O_target_pixels,
     O_target_frame_toggle, O_target_motion_mode, O_motion_mode_active,
     O_edge_mode_active, I_tready,
-    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count);
+    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count,
+    O_latency_frame_id);
 endmodule
 module mc_to_user_interface(input wire [127:0] I_clk, I_rst_n,
     I_ddr_user_wr_en, I_ddr_user_rd_en, I_ddr_user_addr, I_ddr_user_wr_data,

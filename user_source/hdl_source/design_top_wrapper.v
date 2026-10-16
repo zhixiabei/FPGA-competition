@@ -145,6 +145,12 @@ module design_top_wrapper #(
     // Associate each target result with the DDR slot that holds its image.
     wire [1:0] S_write_frame_slot;
     wire [1:0] S_read_frame_slot;
+    wire S_write_frame_start, S_read_frame_start, S_display_frame_start;
+    wire [1:0] S_write_start_slot;
+    wire [9:0] S_raw_frame_id, S_isp_frame_id;
+    wire S_latency_sample_strobe, S_latency_sample_valid;
+    wire [9:0] S_latency_frame_id;
+    wire [19:0] S_latency_total_us, S_latency_isp_us, S_latency_buffer_us;
     (* async_reg = "true" *) reg [1:0] S_write_slot_meta;
     (* async_reg = "true" *) reg [1:0] S_write_slot_sync;
     (* async_reg = "true" *) reg [1:0] S_read_slot_meta;
@@ -911,6 +917,22 @@ end else begin: no_raw_diagnostics
     assign S_ae_readout_data = 28'd0;
 end endgenerate
 
+    video_latency_monitor u_video_latency (
+        .I_time_clk(I_sys_clk), .I_csi_clk(S_csi_rx_clk),
+        .I_ddr_clk(S_ddr_clk), .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
+        .I_raw_sof(S_raw_tuser), .I_raw_valid(S_raw_tvalid),
+        .O_raw_frame_id(S_raw_frame_id),
+        .I_isp_sof(S_ISP_O_tuser), .I_isp_valid(S_ISP_O_tvalid),
+        .I_isp_frame_id(S_isp_frame_id),
+        .I_write_start(S_write_frame_start), .I_write_slot(S_write_start_slot),
+        .I_write_word(S_vi_ddr_wr_en),
+        .I_read_start(S_read_frame_start), .I_read_slot(S_video_out_rp),
+        .I_display_frame_start(S_display_frame_start),
+        .O_sample_strobe(S_latency_sample_strobe), .O_sample_valid(S_latency_sample_valid),
+        .O_frame_id(S_latency_frame_id), .O_total_us(S_latency_total_us),
+        .O_isp_us(S_latency_isp_us), .O_buffer_us(S_latency_buffer_us)
+    );
+
 //ISP算法顶层模块
 isp_top #(
         .ENABLE_EDGE(ENABLE_EDGE)
@@ -923,7 +945,7 @@ isp_top #(
 .I_tuser         (S_raw_tuser	),
 .I_tdata         (S_raw_tdata	),
 .I_tvalid        (S_raw_tvalid	),
-.I_tdest         (),
+.I_tdest         (S_raw_frame_id),
 .O_tready        (S_ISP_O_tready),
 .O_tdata         (S_ISP_O_tdata ),
 .O_tlast         (S_ISP_O_tlast ),
@@ -946,6 +968,7 @@ isp_top #(
 .O_ae_sum_y            (S_ISP_ae_sum_y),
 .O_ae_sample_count     (S_ISP_ae_sample_count),
 .O_ae_bright_count     (S_ISP_ae_bright_count),
+.O_latency_frame_id   (S_isp_frame_id),
 .I_tready        ()
   );
 
@@ -965,6 +988,8 @@ isp_top #(
         .O_video_in_wr_busy   ( S_video_in_wr_busy    ),
         .O_video_out_rp       ( S_video_out_rp        ),
         .O_write_frame_slot   ( S_write_frame_slot    ),
+        .O_write_frame_start  ( S_write_frame_start   ),
+        .O_write_start_slot   ( S_write_start_slot    ),
 
         .O_ddr_user_wr_en     ( S_vi_ddr_wr_en        ),
         .O_ddr_user_addr      ( S_vi_ddr_wr_addr      ),
@@ -994,6 +1019,7 @@ isp_top #(
         .I_video_in_wr_busy  ( S_video_in_wr_busy   ),
         .I_video_out_rp      ( S_video_out_rp       ),
         .O_read_frame_slot   ( S_read_frame_slot    ),
+        .O_read_frame_start  ( S_read_frame_start   ),
  
         .O_ddr_user_rd_en    ( S_vo_ddr_rd_en       ),
         .O_ddr_user_addr     ( S_vo_ddr_rd_addr     ),
@@ -1102,6 +1128,7 @@ isp_top #(
         .SHOW_CAMERA_STATUS ( 1 ),
         .SHOW_COLOR_TARGET  ( 1 ),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
+        .SHOW_LATENCY       ( 1 ),
         .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
@@ -1117,6 +1144,12 @@ isp_top #(
         .I_raw_stats_data (S_raw_stats_data),
         .I_ae_readout_valid(S_ae_readout_valid),
         .I_ae_readout_data(S_ae_readout_data),
+        .I_latency_sample_strobe(S_latency_sample_strobe),
+        .I_latency_sample_valid(S_latency_sample_valid),
+        .I_latency_total_us(S_latency_total_us),
+        .I_latency_isp_us(S_latency_isp_us),
+        .I_latency_buffer_us(S_latency_buffer_us),
+        .O_display_frame_start(S_display_frame_start),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),
         .I_target_result_ready ( S_target_result_valid_hdmi ),
