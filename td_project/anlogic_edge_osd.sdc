@@ -40,10 +40,7 @@ set_clock_groups -asynchronous \
 
 # HDMI pixel and camera clocks must not be grouped away: the raw-statistics
 # mailbox payload is bounded to 13 ns, below two HDMI request stages.
-# The existing target mailbox shares these clocks; bound it too.
-set_false_path -from [get_regs {S_target_request}] -to [get_regs {S_target_toggle_meta}]
-set_false_path -from [get_regs {S_target_ack}] -to [get_regs {S_target_ack_meta}]
-set_max_delay -datapath_only -from [get_regs {S_target_mailbox[*]}] 20.000
+# Target metadata crosses CSI -> DDR -> HDMI in held payload mailboxes.
 set_max_delay -datapath_only -from [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] -to [get_clocks {sys_clk_50m pll_clk_100m HDMI_SERIAL_CLK}] 100.000
 set_max_delay -datapath_only -from [get_clocks {sys_clk_50m pll_clk_100m HDMI_SERIAL_CLK}] -to [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] 100.000
 set_max_delay -datapath_only -from [get_clocks {mipi_rx_ck_pad MIPI_RX_BYTE_CLK}] -to [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] 100.000
@@ -54,7 +51,7 @@ set_max_delay -datapath_only -from [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/
 # Keep this bound after the broad limits: TD gives later max-delay rules priority.
 # Display mode crosses sys_clk_50m -> CSI in one held-payload mailbox.
 # The CSI frame commits that snapshot; its DDR-slot record then crosses to
-# HDMI through S_target_mailbox, including the twelve configuration bits.
+# HDMI through u_target_frame_bridge, including the configuration bits.
 set_false_path -from [get_regs {u_display_effect_cdc/req_toggle}] -to [get_regs {u_display_effect_cdc/req_meta}]
 set_false_path -from [get_regs {u_display_effect_cdc/ack_toggle}] -to [get_regs {u_display_effect_cdc/ack_meta}]
 set_max_delay -datapath_only -from [get_regs {u_display_effect_cdc/payload_hold[*]}] -to [get_regs {u_display_effect_cdc/O_dst_data[*]}] 13.000
@@ -70,6 +67,14 @@ set_max_delay -datapath_only -from [get_regs {u_video_latency/u_timebase/O_time_
 set_max_delay -datapath_only -from [get_regs {u_video_latency/S_start_id[*] u_video_latency/S_start_raw_us[*] u_video_latency/S_start_valid}] -to [get_regs {u_video_latency/S_slot*}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_video_latency/S_isp_payload[*]}] -to [get_regs {u_video_latency/S_slot* u_video_latency/S_last_isp_payload[*]}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_video_latency/S_read_payload[*]}] -to [get_regs {u_video_latency/S_pending_payload[*] u_video_latency/S_pending_valid}] 13.000
+
+set_false_path -from [get_regs {u_target_frame_bridge/S_result_request}] -to [get_regs {u_target_frame_bridge/S_result_req_meta}]
+set_false_path -from [get_regs {u_target_frame_bridge/S_result_ack}] -to [get_regs {u_target_frame_bridge/S_result_ack_meta}]
+set_false_path -from [get_regs {u_target_frame_bridge/S_read_request}] -to [get_regs {u_target_frame_bridge/S_read_req_meta}]
+set_false_path -from [get_regs {u_target_frame_bridge/S_read_ack}] -to [get_regs {u_target_frame_bridge/S_read_ack_meta}]
+set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_start_nonce[*] u_target_frame_bridge/S_start_frame_id[*] u_target_frame_bridge/S_start_effect_config[*] u_target_frame_bridge/S_start_motion_mode u_target_frame_bridge/S_start_valid}] -to [get_regs {u_target_frame_bridge/S_slot*}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_result_payload[*]}] -to [get_regs {u_target_frame_bridge/S_slot* u_target_frame_bridge/S_last_result_payload[*]}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_read_payload[*]}] -to [get_regs {u_target_frame_bridge/O_*}] 13.000
 
 # K2 selects detection only at a camera frame boundary.
 set_false_path -from [get_regs {u_detection_mode_control/O_edge_mode}] -to [get_regs {u_isp_top/u_target_detect_switch/mode_meta}]

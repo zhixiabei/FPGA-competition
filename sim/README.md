@@ -16,6 +16,13 @@
 | 真实 ISP 帧号、短帧恢复与回绕 | `& './sim/run_video_latency_frame_tag.ps1'` |
 | 延迟数字、64 帧曲线与完整 HDMI 像素 | `& './sim/run_video_latency_osd.ps1'` |
 | DDR 帧槽、显示配置及红色/运动框对应 | `& './sim/run_target_frame_alignment.ps1'` |
+| 红色多目标检测：便携/真实安路 RAM | `& './sim/run_red_multi_target.ps1' -Mode Both` |
+| 红色多目标 720p、四段逐行零消隐 | `& './sim/run_red_multi_target.ps1' -Mode Portable -Width 1280 -Height 720` |
+| 多目标/真实运动选择、跨 SOF 原帧身份 | `& './sim/run_red_multi_switch.ps1' -Mode Both` |
+| 帧身份、实际 DDR 槽和读冻结桥 | `& './sim/run_target_frame_bridge.ps1'` |
+| 四框、跟随标签、紧凑退化及固定 OSD 优先 | `& './sim/run_multi_target_mixer.ps1'` |
+| 多目标生产顶层、172800 字/帧与九种框补偿 | `& './sim/run_red_multi_frame_alignment.ps1'` |
+| 去马赛克后 RGB 注入→AWB→四框→DDR 打包 | `& './sim/run_isp_red_multi.ps1'` |
 | 运动稳定性：生产参数、两种 RAM 模型 | `& './sim/run_motion_stability.ps1' -Pipeline Stable -Mode Both -CheckBehavior` |
 | 三帧确认、短暂保持、平滑和复位 | `& './sim/run_motion_result_stabilizer.ps1'` |
 | 真实 RAW 全链路六帧、连续 4 像素右移 | `& './sim/run_isp_motion_camera.ps1' -LineBlanking 32 -MovePixels 4` |
@@ -50,7 +57,62 @@
 .\sim\run_sc520.cmd --no-pause
 ```
 
-## 当前结果与边界
+## 当前多目标结果与边界
+
+生产顶层默认 `RED_MULTI_ENABLE=1`。红色分支复用全分辨率多数滤波掩码，
+使用行程段、64 深度 FIFO、16 项活动候选和最大四候选选择，
+再由四轨迹完成两帧确认、两帧保持及跟随编号。
+FIFO 或候选表溢出令整帧无效、清轨迹并显示 `OVF`，不会退回原单总框。
+运动分支仍为单个总框和原三帧确认策略，K2 在摄像头帧首切换两种检测。
+显示算法仍为九项，K1 单向循环 0..8。
+
+本版不是完整 CCL：候选每行只保留一个合并区间，
+U 形、环形空隙内的独立目标可能被合并；四像素拍内部也有合段近似。
+最近邻关联在目标交叉、合并或快速移动时可能换号或重建轨迹。
+具体操作、容量、标签和帧对应见 [红色多目标说明](../docs/RED_MULTI_TARGET.md)。
+
+| 本轮入口 | 已通过结果 |
+|---|---|
+| `run_red_multi_target.ps1 -Mode Both` | 两种 RAM 各 30 个结果、50 项检查，FIFO 高水位 63 |
+| 同脚本 `-Mode Portable -Width 1280 -Height 720` | 720p 30 个结果、50 项检查；四目标每行四段、行消隐为 0 |
+| `run_red_multi_switch.ps1 -Mode Both` | 两种 RAM 各 18 个结果、28 项检查，跨下一 SOF 3 次、真实原始运动结果 11 个 |
+| `run_target_frame_bridge.ps1` | 24 项；回绕 1、繁忙 2、冻结 2、碰撞 2、生产字数 4、几何补偿 5、迟到 2000 周期 |
+| `run_multi_target_mixer.ps1` | 12 帧/2,764,800 像素，标签 2,641,920，紧凑 106、交叉 69、固定 OSD 优先 1,774、计数区 57,600 |
+| `run_red_multi_frame_alignment.ps1` | 写入 17、读取/显示各 14，四红框 9、运动 2、缓存模式 3；短帧/迟到/回滚/冻结各 1，几何 38，每完整帧 172,800 字 |
+| `run_isp_red_multi.ps1` | 去马赛克后 RGB 注入 3 帧、帧号 1023/0/1，AWB/显示各 691,200 组、打包 518,400 字、结果 3、框 8、稳定槽 4、打包标签 3 |
+
+成功标志分别为 `RED_MULTI_TARGET_PASS`、`RED_MULTI_SWITCH_PASS`、
+`TARGET_FRAME_BRIDGE_PASS`、`MULTI_TARGET_MIXER_PASS`、
+`RED_MULTI_FRAME_ALIGNMENT_PASS` 和 `ISP_RED_MULTI_PASS`。
+检测器覆盖两/四目标、同 x 不同 y、最大四候选、轨迹保持、噪声、边界、
+短帧恢复、跨 SOF 完成、FIFO 超载、18 个活动目标耗尽候选及模式取消。
+零行消隐四矩形检查只证明该指定场景可持续处理，不代表任意高段密度图案均不溢出。
+旧单红框照明分支仍通过 15 个结果、776 次空拍和 66,612 个颜色检查。
+
+`run_isp_red_multi.ps1` 使用惰性 demosaic 模块边界，在其输出注入 RGB、时序与帧号；
+AWB、检测、显示选择/延迟和打包使用生产 RTL，不验证 RAW 解包和去马赛克算法。
+`run_red_multi_frame_alignment.ps1` 使用生产系统顶层与外设 stub，
+注入 ISP 结果、DDR 写字及显示接口，验证帧/槽/框对应，不模拟物理 MIPI、DDR 或 HDMI 器件。
+
+帧号随排队任务和结果传递，不用下一帧 SOF 的当前模式替代。
+实际 DDR 槽绑定 10 位帧号、16 位 nonce 和模式；只对完整 172,800 字图像发布有效槽记录。
+读槽选择冻结元数据，HDMI 帧首提交并保持整帧。
+约束为帧上下文 20 ns、检测结果 20 ns、读快照 13 ns，
+显示配置系统→CSI 邮箱另外为 13 ns。最终三组目标路径分别
+7,872/4,132/247 条、显示配置 4 条，均通过覆盖检查。
+
+当前 `src-9e019affb36a` 于 2026-10-17 21:44:57（北京时间）完成完整构建和 bit 生成。
+最终 Slice 17,483/21,216（82.40%）、LUT6 16,707、寄存器 17,555、
+ERAM 80/108、DSP 13/40，建立/保持余量 +0.108/+0.020 ns。
+两处 bit 同一 SHA256，身份见 [发布清单](../build/release/release_manifest.json)。
+八组本轮运行的日志和源码校验值集中于
+[多目标回归证据包](../build/verification/red_multi_target_regression.zip)。
+这些验证没有替代真实摄像头、真实 DDR 器件或板上 HDMI 的最终验收。
+
+## 九模式验证基线（历史）
+
+以下属于加入多目标前的 `src-0917069cbe5c`。
+显示算法保留，但下述旧单框 mixer/对齐结果及资源不能代替本轮多目标回归。
 
 当前九种画面为 0 原画加原 Gamma、1 灰度、2 原 Scharr 边缘、3 反色、
 4 灰度浮雕、5 红绿保色、6 彩色漫画、7 Scharr 反色和 8 形态学边缘。
@@ -117,12 +179,13 @@ HDMI 取反由像素和 mixer 回归核对。运动结果保持 13 拍延迟，
 九模式版 `src-0917069cbe5c` 于 2026-10-17 20:11:21（北京时间）完成 bit 生成。
 最终 Slice 16,035/21,216（75.58%）、LUT6 14,773、寄存器 13,573、ERAM 69、DSP 13；
 建立/保持余量 +0.128/+0.020 ns，13 ns 配置约束覆盖全部 4 条有效路径。
-221 个生产构建输入与当前文件 SHA256 一致，两处 bit 内容一致，身份见
-[发布清单](../build/release/release_manifest.json)。
-本轮 12 套当前运行（控制、像素、mixer、对齐、4 套核心图像和 4 套 ISP）的日志、
+当时 221 个生产构建输入与当时文件 SHA256 一致，两处 bit 内容一致。
+固定发布清单随成功构建更新，不能用于核对这一历史身份。
+该版 12 套运行（控制、像素、mixer、对齐、4 套核心图像和 4 套 ISP）的日志、
 源码校验值及合成预览见[算法回归证据包](../build/verification/algorithm_regression.zip)；
-以前各版结果单独作为历史保存，不算作本轮已重跑。
-连通区域和多目标框只有[设计方案](../docs/CONNECTED_COMPONENTS_PLAN.md)，不在当前 bit 或本轮功能验收范围。
+以前各版结果单独作为历史保存，不算作本轮多目标已重跑。
+该历史 bit 不含多目标；当前源码及新 bit 的实际实现见上节，
+原[完整连通域方案](../docs/CONNECTED_COMPONENTS_PLAN.md)继续作为后续规划。
 
 ## 七模式验证基线（历史）
 

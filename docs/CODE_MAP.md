@@ -6,6 +6,26 @@
 
 本说明依据当前的 [TD 工程文件](../td_project/anlogic_edge_osd.al)、[系统顶层](../user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](../user_source/hdl_source/isp/isp_top.v) 整理。
 
+## 当前红色多目标版
+
+主工程默认 `RED_MULTI_ENABLE=1`。K2 红色模式最多 4 框，保留九项显示算法；
+运动仍为单总框。红色使用全分辨率多数滤波后的有界行段连接、Top4 和四槽跟踪，
+不是完整 CCL。两帧确认、漏检保持两帧，容量溢出整帧无效并显示 OVF。
+跟随标签为 `1 RED OK` / `1 RED H`，紧凑标签为 `1 OK` / `1 H`；
+左下显示 `RED COUNT:0..4` 或 `MOV COUNT:0..1`。
+实际操作与限制见[红色多目标说明](RED_MULTI_TARGET.md)。
+
+当前发布 `src-9e019affb36a` 于 2026-10-17 21:44:57（北京时间）完成 bit：
+Slice 17,483/21,216（82.40%）、LUT6 16,707、寄存器 17,555、
+ERAM 80/108、DSP 13/40，建立/保持余量 +0.108/+0.020 ns。
+显示配置 13 ns 覆盖 4 条路径；目标帧上下文/结果/显示快照的
+20/20/13 ns 分别覆盖 7,872/4,132/247 条路径。
+222 个生产输入与发布快照一致。烧录入口固定为
+`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`，
+脚本副本位于 `firmware/anlogic_edge_osd.bit`，两者身份见[发布清单](../build/release/release_manifest.json)。
+本轮结果见[仿真说明](../sim/README.md#当前多目标结果与边界)和
+[唯一回归证据包](../build/verification/red_multi_target_regression.zip)。
+
 ## 2026-10-17 九项显示模式
 
 K1（D5）按 0..8 单向循环选择模式，按下/释放均消抖 20 ms。
@@ -34,7 +54,8 @@ K3/K4 单独或与 K1 同时按下均不影响 K1 的单向循环。12 位配置
 | 文件 | 职责 | 阅读入口 |
 |---|---|---|
 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | 50 MHz 域的 K1 同步、消抖和九项单向循环请求；K3/K4 无操作、参数固定 0 | `MODE_COUNT`、`O_effect_mode` |
-| [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | 12 位配置跨入 CSI；将实际帧配置和框随 DDR 槽保存到 HDMI | `u_display_effect_cdc`、`S_target_mailbox`、`S_target_slots`、`S_effect_config_hdmi` |
+| [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | 12 位配置跨入 CSI；默认多目标，并将实际帧配置和框随 DDR 槽保存到 HDMI | `RED_MULTI_ENABLE`、`u_display_effect_cdc`、`u_target_frame_bridge`、`S_effect_config_hdmi` |
+| [target_frame_bridge.v](../user_source/hdl_source/target_frame_bridge.v) | 将原帧 ID/代次、完整写帧和实际读槽冻结绑定，整组元数据握手跨域 | `I_frame_id`、`I_write_start`、`I_read_start` |
 | [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | 帧首提交，模式 2/7 选正 Scharr、4 选浮雕、6 选漫画、8 选形态学，其余 RGB；统一 11 拍 | `I_effect_config`、`O_effect_config` |
 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 原高斯、Scharr、NMS；共享灰度窗口浮雕/形态学和低位宽彩色窗口漫画 | `gw`、`sw`、`O_morph_data`、`cartoon_channel`、`O_cartoon_data` |
 | [hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 帧首锁存实际槽配置，显示九项名称，复用目标文字字库 | `S_effect_mode`、`S_effect_char` |
@@ -54,30 +75,31 @@ K3/K4 单独或与 K1 同时按下均不影响 K1 的单向循环。12 位配置
 本轮控制器通过 468 项检查，像素模块通过 709,647 次参考对照，
 名称/mixer 核对 28 帧、3,612,672 个像素；DDR 对齐覆盖全部九项模式。
 720p 核心核对 22 帧、18,439,680 个像素，新增两模式的红色/运动配置共四项 ISP 打包也已通过。
-当前测试结果和边界见 [仿真说明](../sim/README.md#当前结果与边界)。
+这些九模式历史基线与当前多目标结果分别见 [仿真说明](../sim/README.md)。
 浮雕[合成输入](../build/verification/emboss_synthetic_input.png)与
 [RTL 输出](../build/verification/emboss_synthetic_rtl.png)可对照；它们不是实物摄像头画面。
 漫画[合成输入](../build/verification/cartoon_synthetic_input.png)与
 [RTL 输出](../build/verification/cartoon_synthetic_rtl.png)也仅来自合成场景。
 红绿保色的[RTL 对照预览](../build/verification/color_keep_rtl_preview.png)同样不代替实拍。
 
-九模式版 `src-0917069cbe5c` 于 2026-10-17 20:11:21（北京时间）完成构建。
-最终 Slice 16,035/21,216（75.58%）、LUT6 14,773、寄存器 13,573、
+九模式单框历史基线 `src-0917069cbe5c` 于 2026-10-17 20:11:21（北京时间）完成构建。
+当时最终 Slice 16,035/21,216（75.58%）、LUT6 14,773、寄存器 13,573、
 ERAM 69/108、DSP 13/40，建立/保持余量 +0.128/+0.020 ns。
 显示配置跨时钟的 13 ns 规则覆盖全部 4 条有效路径，未被宽松规则覆盖或忽略。
 相对七模式基线增加 789 Slice、796 LUT6、387 个寄存器，ERAM 与 DSP 不变。
-221 个生产构建输入与当前文件 SHA256 一致，两处 bit 内容一致；版本和文件身份见发布清单。
+当时 221 个生产构建输入与当时文件 SHA256 一致；当前资源和 bit 身份以上节多目标版及发布清单为准。
 
 资源和时序报告位于 [资源报告](../build/release/system_phy.area) 与
 [最终时序](../build/release/system_pr.timing)，需结合清单的源码指纹判断版本。
 根目录构建入口成功后更新 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`
 和 `firmware` 副本。固定报告路径随成功构建更新，需按
 [构建清单](../build/release/release_manifest.json) 核对源码身份。本轮回归日志和源码校验值见
-[验证证据包](../build/verification/algorithm_regression.zip)；
+[九模式历史验证证据包](../build/verification/algorithm_regression.zip)；
 Scharr 反色与形态学在红色/运动两种检测配置的 ISP 选择与打包检查均通过；
 真实摄像头画质仍待重新烧录后确认。
-当前仍是单个红色/运动总框；[低资源连通区域方案](CONNECTED_COMPONENTS_PLAN.md)
-规划多区域统计及 Top4，同本次九模式 bit 无关，尚未实现。
+当前红色最多四框、运动一个总框，使用说明见[红色多目标说明](RED_MULTI_TARGET.md)。
+[低资源连通区域方案](CONNECTED_COMPONENTS_PLAN.md)是尚未实现的完整 CCL 历史提案，
+与当前有界行段连接实现不同。
 
 ## 前版固定色调查表与资源基线（2026-10-17）
 
@@ -148,7 +170,8 @@ K2（A9）切换红色/运动检测，当前 K1 单向循环显示算法，K3/K4
 连续 3 帧确认、漏检保持 2 帧、第三次清除、8 像素死区与四分之一平滑。
 坏参考和大范围光照事件立即清除。原始模块直接实例化的默认值仍为 6/8，
 旧算法与选择器回归显式使用该配置，不能作为生产稳定参数的验证结果。
-稳定运动结果仿真可见延迟为 13 拍，红色结果延迟仍为 6 拍。
+稳定运动结果仿真可见延迟为 13 拍；6 拍红色结果仅适用于关闭多目标的旧单框分支，
+当前红色结果由行段队列与串行处理完成后携带原帧号提交，不是固定 6 拍。
 使用说明和本次 bit 见 [VIDEO_MODE_SWITCH.md](VIDEO_MODE_SWITCH.md)。
 
 ## 2026-10-14 HDMI 九区通道读数（默认关闭）
@@ -212,17 +235,22 @@ AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流
 | 文件 | 当前功能 | 阅读入口 |
 |---|---|---|
 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 全分辨率亮度边缘、共享灰度窗口浮雕/形态学及低位宽彩色漫画 | `luminance` → `gaussian` → `scharr` → `magnitude_direction` → `nms`；`O_morph_data`、`O_cartoon_data` |
-| [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | AWB 输出上的四像素并行红色检测 | `red_mask` → 两行缓存与 `votes` → 框、中心与面积 |
+| [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | AWB 四像素红色判定、全分辨率过滤、有界行段连接、Top4 和四槽跟踪 | `red_mask` → `votes` → RUN/FIFO → 候选/Top4 → 四槽确认与保持 |
 | [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](../user_source/hdl_source/isp/isp_top.v) | 在相同 RGB 源上并行检测并选择显示 | `u_target_detect_switch/u_red`、`u_rgb_edge_switch`；RGB、Scharr、浮雕、漫画、形态学统一 11 拍 |
-| [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | 帧对应及坐标跨时钟传输 | `S_target_mailbox` 请求/确认 → `S_target_slots` 四槽表 → 当前读槽结果 |
+| [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) / [target_frame_bridge.v](../user_source/hdl_source/target_frame_bridge.v) | 原帧、代次、配置绑定实际 DDR 槽；整组结果跨域并按读帧冻结 | `RED_MULTI_ENABLE=1` → `u_target_frame_bridge` → HDMI 帧快照 |
 | [camera_diag_cdc.v](../user_source/hdl_source/camera_diag_cdc.v) | 摄像头 4 位配置状态及 8 位错误码的整组跨时钟传输 | `payload_hold` → 请求两级同步 → HDMI 接收 → 确认两级同步；由顶层 `u_camera_diag_cdc` 实例化 |
-| [hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 叠加前端框、十字和坐标 | `I_target_*` → `S_display_frame_start` → 框/十字/文字 |
+| [hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 最多四个红色框、跟随标签与 COUNT/OVF；运动保持一个框 | `I_target_multi_*` → `S_display_frame_start` → 四框/标签/计数 |
 | [anlogic_logo_rom.v](../user_source/hdl_source/anlogic_logo_rom.v) | 精确保留原 Logo 颜色和透明度，用 ERAM 保存索引及调色板 | `index_addr_d` → `index_rom` → `palette_rom`；两拍读取，由 mixer 提前提供输入坐标 |
 | [video_in.v](../user_source/hdl_source/video_in.v) / [video_out.v](../user_source/hdl_source/video_out.v) | 提供当前图像的 DDR 槽标记 | `O_write_frame_slot` / `O_read_frame_slot`；原地址与 FIFO 控制不变 |
 
 检测在 **AWB 后、显示算法切换前**，因此所有显示模式均能识别红色物体。
 框按存图的实际 DDR 槽选择；模式 2/6/7 补偿向右下各 3 像素，模式 4/8 各 1 像素。
-多数滤波忽略最外侧一像素边界；多个红色区域仍合为一个总包围框。
+多数滤波忽略最外侧一像素边界。默认红色分支用 64 深 token FIFO、16 项活动候选及
+四条跟踪槽输出最多四框；每候选每行仅存一个合并区间、四像素拍内间隙也有近似，
+U 形/环形或很近的小目标可能误连，不是完整连通域算法。运动分支仍输出单个总框。
+帧桥以完整 10 位原帧号和 16 位代次核对来源，短帧、复用槽和迟到结果不会串到其他帧；
+实际读槽时冻结元数据，迟到结果可用于同一原帧的后续重复显示，不会中途换框。
+`RED_MULTI_ENABLE=0` 才保留旧 `S_target_mailbox/S_target_slots` 单框路径。
 官方 `edge_detect_96.v`、旧 `color_edge_detect_96.v` 和 `color_target_detect.v`
 留作历史对照，不在当前运行通路内。本版为高斯、Scharr、NMS及固定单阈值，
 没有自适应阈值、色度边缘或 Canny 追踪；红色检测仍使用原始 RGB。
@@ -431,13 +459,14 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 下面的索引从当前 .al 提取；新增模块或更换 IP 后，应与 .al 一起更新。它列出登记入口，不展开 IP 的所有内部依赖，也不等同于最终综合网表中保留的模块。
 
 <details>
-<summary>展开：当前 TD 主工程的 76 个登记文件及作用</summary>
+<summary>展开：当前 TD 主工程的 77 个登记文件及作用</summary>
 
 | 文件 | 作用 | 登记状态 |
 |---|---|---|
 | [user_source/hdl_source/design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | 系统顶层、外设连线和实例参数 | 已登记 |
 | [user_source/hdl_source/video_in.v](../user_source/hdl_source/video_in.v) | 输入图像 FIFO、写帧指针与 DDR 写请求 | 已登记 |
 | [user_source/hdl_source/video_out.v](../user_source/hdl_source/video_out.v) | DDR 读请求、输出 FIFO 与显示像素读出 | 已登记 |
+| [user_source/hdl_source/target_frame_bridge.v](../user_source/hdl_source/target_frame_bridge.v) | 四框、配置、原帧 ID/代次与实际 DDR 写读槽绑定及跨域 | 已登记 |
 | [user_source/hdl_source/mc_to_user_interface.v](../user_source/hdl_source/mc_to_user_interface.v) | 用户读写请求转换为 DDR 控制器接口 | 已登记 |
 | [user_source/hdl_source/signal_delay.v](../user_source/hdl_source/signal_delay.v) | 旧 AWB 延迟模块；当前不使用 | AutoExcluded=true |
 | [user_source/hdl_source/awb.v](../user_source/hdl_source/awb.v) | 近中性色采样及帧稳定自动白平衡 | 已登记 |
@@ -514,7 +543,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 
 </details>
 
-当前 Scharr、红色/运动检测、K1/K2 控制、九项显示效果、延迟和 AE 模块均已登记到两个工程，K3/K4 引脚保留但无操作。主工程现有 76 个登记入口；上表的 AutoExcluded 状态按主工程记录。
+当前 Scharr、红色多目标/运动检测、帧桥、K1/K2 控制、九项显示效果、延迟和 AE 模块均已登记到两个工程，K3/K4 引脚保留但无操作。主工程现有 77 个登记入口；上表的 AutoExcluded 状态按主工程记录。
 
-彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 77 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数仅指定复位默认值；运行中均由 K1 单向循环选择算法。
+彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 78 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数仅指定复位默认值；运行中均由 K1 单向循环选择算法。
 

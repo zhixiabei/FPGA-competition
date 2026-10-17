@@ -132,6 +132,44 @@ function Assert-DisplayEffectConstraintHealth([string] $Path) {
     return [pscustomobject]@{payload_paths=$total; max_delay_ns=$limit; status='passed'}
 }
 
+function Assert-TargetFrameConstraintHealth([string] $Path) {
+    $health=[IO.File]::ReadAllText($Path)
+    $rules=@(
+        @{Name='frame_context'; From='u_target_frame_bridge/S_start_nonce[*]';
+            To='u_target_frame_bridge/S_slot*'; Limit=20.0},
+        @{Name='detector_result'; From='u_target_frame_bridge/S_result_payload[*]';
+            To='u_target_frame_bridge/S_last_result_payload[*]'; Limit=20.0},
+        @{Name='display_snapshot'; From='u_target_frame_bridge/S_read_payload[*]';
+            To='u_target_frame_bridge/O_*'; Limit=13.0}
+    )
+    $pattern='^\s*(?<total>\d+)\s+(?<dominated>\d+)\s+(?<shadowed>\d+)\s+(?<ignored>\d+)\s+set_max_delay\s+-datapath_only\b.*\s(?<limit>\d+(?:\.\d+)?)\s*$'
+    $results=[ordered]@{}
+    foreach($rule in $rules) {
+        $rows=@($health -split '\r?\n' | Where-Object {
+            $_.Contains($rule.From) -and $_.Contains($rule.To)
+        })
+        if($rows.Count -ne 1) {
+            throw "Expected one target-frame $($rule.Name) CDC constraint: $Path"
+        }
+        $row=[regex]::Match($rows[0],$pattern)
+        if(-not $row.Success) {
+            throw "Unrecognized target-frame $($rule.Name) constraint health: $Path"
+        }
+        $total=[int]$row.Groups['total'].Value
+        $limit=[double]::Parse($row.Groups['limit'].Value,
+            [Globalization.CultureInfo]::InvariantCulture)
+        if($total -le 0 -or [int]$row.Groups['dominated'].Value -ne $total -or
+           [int]$row.Groups['shadowed'].Value -ne 0 -or
+           [int]$row.Groups['ignored'].Value -ne 0 -or $limit -ne $rule.Limit) {
+            throw "Target-frame $($rule.Name) CDC bound must cover every payload path: $Path"
+        }
+        $results[$rule.Name]=[pscustomobject]@{
+            payload_paths=$total; max_delay_ns=$limit; status='passed'
+        }
+    }
+    return [pscustomobject]$results
+}
+
 $firmwareDirectory=Get-WorkspaceDestination 'firmware'
 $bestResultDirectory=Get-WorkspaceDestination 'td_project\anlogic_edge_osd_Runs\best_result'
 $reportDirectory=$null
@@ -282,6 +320,7 @@ try {
     }
     $slacks=@{}
     $displayEffectConstraint=$null
+    $targetFrameConstraint=$null
     if(-not $SkipRoute) {
         $timing=[IO.File]::ReadAllText((Join-Path $work 'system_pr.timing'))
         foreach($kind in @('SWNS','HWNS')) {
@@ -296,6 +335,8 @@ try {
         }
         $displayEffectConstraint=Assert-DisplayEffectConstraintHealth (Join-Path $work 'constraint_health.timing')
         Write-Output "DISPLAY_EFFECT_CDC_CONSTRAINT_PASS paths=$($displayEffectConstraint.payload_paths) max_delay_ns=$($displayEffectConstraint.max_delay_ns)"
+        $targetFrameConstraint=Assert-TargetFrameConstraintHealth (Join-Path $work 'constraint_health.timing')
+        Write-Output 'TARGET_FRAME_CDC_CONSTRAINT_PASS context=20ns result=20ns display=13ns'
     }
     Select-String -LiteralPath console.log -Pattern '^IMAGE_QUALITY_.*PASS' |
         ForEach-Object { $_.Line }
@@ -383,6 +424,7 @@ try {
                 setup_slack_ns=$slacks['SWNS']
                 hold_slack_ns=$slacks['HWNS']
                 display_effect_cdc=$displayEffectConstraint
+                target_frame_cdc=$targetFrameConstraint
             }
             build=[ordered]@{
                 started_at_utc=$startedAtUtc

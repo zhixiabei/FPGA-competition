@@ -12,7 +12,8 @@ module hdmi_mixer #(
     parameter integer TARGET_MIN_PIXELS = 128,
     parameter integer SHOW_RAW_STATS = 0,
     parameter integer SHOW_LATENCY = 0,
-    parameter integer SHOW_EFFECT_LABEL = 0
+    parameter integer SHOW_EFFECT_LABEL = 0,
+    parameter integer MULTI_TARGET_ENABLE = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -52,6 +53,11 @@ module hdmi_mixer #(
     input wire [11:0] I_target_ymax,
     input wire [11:0] I_target_center_x,
     input wire [11:0] I_target_center_y,
+    input wire [3:0]  I_target_multi_valid,
+    input wire [3:0]  I_target_multi_hold,
+    // Slot i occupies i*48+:48, with {ymax,ymin,xmax,xmin}.
+    input wire [191:0] I_target_multi_boxes,
+    input wire        I_target_multi_overflow,
 
     output reg        O_hdmi_vsync,
     output reg        O_hdmi_hsync,
@@ -153,6 +159,11 @@ module hdmi_mixer #(
     reg [3:0]  S_pf_row;
     wire [15:0] S_pf_row_bits;
     reg        S_pf_on;
+    reg        S_pf_valid;
+    reg [7:0]  S_pf_next_char;
+    reg [3:0]  S_pf_next_col;
+    reg [3:0]  S_pf_next_row;
+    reg        S_pf_next_valid;
 
     localparam LOGO_X = 12'd0;
     localparam LOGO_Y = 12'd0;
@@ -228,7 +239,8 @@ module hdmi_mixer #(
             S_target_bcd_x <= 16'd0; S_target_bcd_y <= 16'd0;
             S_target_bcd_count <= 4'd0;
             S_target_bcd_busy <= 1'b0;
-        end else if (S_display_frame_start) begin
+        end else if (((MULTI_TARGET_ENABLE == 0) && S_display_frame_start) ||
+                     ((MULTI_TARGET_ENABLE != 0) && I_video_user)) begin
             S_target_found <= S_target_result_ready && S_target_result_found;
             S_target_motion_mode <= I_target_motion_mode;
             S_target_xmin <= S_result_xmin; S_target_xmax <= S_result_xmax;
@@ -238,7 +250,7 @@ module hdmi_mixer #(
             S_target_bcd_work_x <= {16'd0, S_result_center_x};
             S_target_bcd_work_y <= {16'd0, S_result_center_y};
             S_target_bcd_count <= 4'd0;
-            S_target_bcd_busy <= 1'b1;
+            S_target_bcd_busy <= MULTI_TARGET_ENABLE == 0;
         end else if (S_target_bcd_busy) begin
             S_target_bcd_work_x <= S_target_bcd_adjust_x << 1;
             S_target_bcd_work_y <= S_target_bcd_adjust_y << 1;
@@ -270,12 +282,285 @@ module hdmi_mixer #(
         (((S_target_dx <= 1) && (S_target_dy <= 6)) ||
          ((S_target_dy <= 1) && (S_target_dx <= 6)));
 
-    // Bottom-left panel: RED/MOV:FOUND X:0000 Y:0000, or RED/MOV:NONE.
-    // Uses the existing character ROM; coordinates are zero-based decimals.
+    wire [2:0] S_multi_count;
+    wire S_multi_overflow;
+    wire S_multi_box_on;
+    wire [23:0] S_multi_box_color;
+    wire S_follow_panel_on;
+    wire [23:0] S_follow_color;
+    wire [7:0] S_follow_char;
+    wire [3:0] S_follow_row;
+    wire [3:0] S_follow_col;
+    wire S_follow_text_on;
     localparam TARGET_TEXT_X = 16;
     localparam TARGET_TEXT_Y = IMG_HEIGHT-32;
+
+    function F_rect_overlap;
+        input [12:0] ax, ay, aw, ah, bx, by, bw, bh;
+        begin
+            F_rect_overlap = (ax < bx+bw) && (bx < ax+aw) &&
+                             (ay < by+bh) && (by < ay+ah);
+        end
+    endfunction
+
+    function [23:0] F_target_color;
+        input [1:0] slot;
+        begin
+            case (slot)
+                0: F_target_color = 24'hff3030;
+                1: F_target_color = 24'h00e6ff;
+                2: F_target_color = 24'hfff200;
+                default: F_target_color = 24'h40ff70;
+            endcase
+        end
+    endfunction
+
+    generate if (MULTI_TARGET_ENABLE != 0) begin: multi_target
+        reg [3:0] valid, held;
+        reg overflow;
+        reg [11:0] xmin [0:3], xmax [0:3], ymin [0:3], ymax [0:3];
+        reg [3:0] label_valid, label_compact;
+        reg [11:0] label_x [0:3], label_y [0:3];
+        reg layout_busy;
+        reg [1:0] layout_slot;
+        reg [4:0] layout_attempt;
+        reg [12:0] candidate_x, candidate_y, candidate_width;
+        reg candidate_valid;
+        reg [12:0] anchor_x, box_right;
+        integer target_index, peer_index, render_index;
+        reg box_hit, label_hit;
+        reg [1:0] box_slot, label_slot;
+        reg [11:0] label_local_x, label_local_y;
+        reg [7:0] label_char;
+
+        assign S_multi_count = {2'd0,valid[0]} + {2'd0,valid[1]} +
+                               {2'd0,valid[2]} + {2'd0,valid[3]};
+        assign S_multi_overflow = overflow;
+        assign S_multi_box_on = box_hit;
+        assign S_multi_box_color = F_target_color(box_slot);
+        assign S_follow_panel_on = label_hit;
+        assign S_follow_color = F_target_color(label_slot);
+        assign S_follow_char = label_char;
+        assign S_follow_row = label_local_y[3:0];
+        assign S_follow_col = label_local_x[3:0];
+
+        // Four labels take at most 128 clocks to place. Starting at row 16
+        // keeps the scan behind layout, including worst-case rejected slots.
+        always @(*) begin
+            candidate_width = layout_attempt[4] ? 13'd64 : 13'd128;
+            anchor_x = {1'b0,xmin[layout_slot]};
+            box_right = {1'b0,xmax[layout_slot]};
+            candidate_x = anchor_x;
+            candidate_y = 13'd16;
+            candidate_valid = IMG_WIDTH >= 128 && IMG_HEIGHT >= 32;
+            if (candidate_x+candidate_width > IMG_WIDTH)
+                candidate_x = IMG_WIDTH-candidate_width;
+            case (layout_attempt[3:2])
+                1: begin
+                    if (anchor_x >= candidate_width+13'd2)
+                        candidate_x = anchor_x-candidate_width-13'd2;
+                    else
+                        candidate_valid = 1'b0;
+                end
+                2: candidate_x = box_right+13'd3;
+                3: candidate_x = (box_right+13'd1 >= candidate_width) ?
+                    box_right+13'd1-candidate_width : 13'd0;
+                default: begin end
+            endcase
+            case (layout_attempt[1:0])
+                0: begin
+                    if (ymin[layout_slot] >= 12'd20)
+                        candidate_y = {1'b0,ymin[layout_slot]}-13'd18;
+                    else
+                        candidate_valid = 1'b0;
+                end
+                1: candidate_y = {1'b0,ymax[layout_slot]}+13'd3;
+                2: candidate_y = {1'b0,ymin[layout_slot]}+13'd3;
+                default: begin
+                    if (ymax[layout_slot] >= 12'd20)
+                        candidate_y = {1'b0,ymax[layout_slot]}-13'd18;
+                    else
+                        candidate_valid = 1'b0;
+                end
+            endcase
+            if (candidate_x+candidate_width > IMG_WIDTH ||
+                candidate_y < 16 || candidate_y+13'd16 > IMG_HEIGHT)
+                candidate_valid = 1'b0;
+            if (F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd0,13'd0,13'd160,13'd160) ||
+                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd375,13'd120,13'd200,13'd24) ||
+                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd16,TARGET_TEXT_Y,13'd240,13'd16))
+                candidate_valid = 1'b0;
+            if ((SHOW_CAMERA_STATUS != 0) &&
+                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd192,13'd16,13'd88,13'd48))
+                candidate_valid = 1'b0;
+            if ((SHOW_EFFECT_LABEL != 0) &&
+                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd192,13'd80,13'd240,13'd16))
+                candidate_valid = 1'b0;
+            if ((SHOW_LATENCY != 0) &&
+                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd864,13'd16,13'd400,13'd216))
+                candidate_valid = 1'b0;
+            if ((SHOW_RAW_STATS != 0) &&
+                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    13'd496,13'd176,13'd768,13'd352))
+                candidate_valid = 1'b0;
+            for (peer_index=0; peer_index<4; peer_index=peer_index+1)
+                if (label_valid[peer_index] &&
+                    F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                        {1'b0,label_x[peer_index]},{1'b0,label_y[peer_index]},
+                        label_compact[peer_index] ? 13'd64 : 13'd128,13'd16))
+                    candidate_valid = 1'b0;
+        end
+
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if (!I_rst_n) begin
+                valid <= 4'd0;
+                held <= 4'd0;
+                overflow <= 1'b0;
+                label_valid <= 4'd0;
+                label_compact <= 4'd0;
+                layout_busy <= 1'b0;
+                layout_slot <= 2'd0;
+                layout_attempt <= 5'd0;
+                for (target_index=0; target_index<4; target_index=target_index+1) begin
+                    xmin[target_index] <= 12'd0; xmax[target_index] <= 12'd0;
+                    ymin[target_index] <= 12'd0; ymax[target_index] <= 12'd0;
+                    label_x[target_index] <= 12'd0;
+                    label_y[target_index] <= 12'd0;
+                end
+            end else if (I_video_user) begin
+                held <= I_target_motion_mode ? 4'd0 : I_target_multi_hold;
+                overflow <= I_target_result_ready && !I_target_motion_mode &&
+                            I_target_multi_overflow;
+                label_valid <= 4'd0;
+                label_compact <= 4'd0;
+                layout_busy <= I_target_result_ready;
+                layout_slot <= 2'd0;
+                layout_attempt <= 5'd0;
+                for (target_index=0; target_index<4; target_index=target_index+1) begin
+                    if (I_target_motion_mode) begin
+                        valid[target_index] <= I_target_result_ready &&
+                            I_target_found && target_index == 0 &&
+                            I_target_xmin <= I_target_xmax &&
+                            I_target_ymin <= I_target_ymax &&
+                            I_target_xmin < IMG_WIDTH && I_target_ymin < IMG_HEIGHT;
+                        xmin[target_index] <= I_target_xmin;
+                        xmax[target_index] <= I_target_xmax >= IMG_WIDTH ?
+                            IMG_WIDTH-1 : I_target_xmax;
+                        ymin[target_index] <= I_target_ymin;
+                        ymax[target_index] <= I_target_ymax >= IMG_HEIGHT ?
+                            IMG_HEIGHT-1 : I_target_ymax;
+                    end else begin
+                        valid[target_index] <= I_target_result_ready &&
+                            I_target_multi_valid[target_index] &&
+                            I_target_multi_boxes[target_index*48 +: 12] <=
+                                I_target_multi_boxes[target_index*48+12 +: 12] &&
+                            I_target_multi_boxes[target_index*48+24 +: 12] <=
+                                I_target_multi_boxes[target_index*48+36 +: 12] &&
+                            I_target_multi_boxes[target_index*48 +: 12] < IMG_WIDTH &&
+                            I_target_multi_boxes[target_index*48+24 +: 12] < IMG_HEIGHT;
+                        xmin[target_index] <=
+                            I_target_multi_boxes[target_index*48 +: 12];
+                        xmax[target_index] <=
+                            I_target_multi_boxes[target_index*48+12 +: 12] >= IMG_WIDTH ?
+                            IMG_WIDTH-1 : I_target_multi_boxes[target_index*48+12 +: 12];
+                        ymin[target_index] <=
+                            I_target_multi_boxes[target_index*48+24 +: 12];
+                        ymax[target_index] <=
+                            I_target_multi_boxes[target_index*48+36 +: 12] >= IMG_HEIGHT ?
+                            IMG_HEIGHT-1 : I_target_multi_boxes[target_index*48+36 +: 12];
+                    end
+                end
+            end else if (layout_busy) begin
+                if (!valid[layout_slot] || candidate_valid || layout_attempt == 31) begin
+                    if (valid[layout_slot] && candidate_valid) begin
+                        label_valid[layout_slot] <= 1'b1;
+                        label_compact[layout_slot] <= layout_attempt[4];
+                        label_x[layout_slot] <= candidate_x[11:0];
+                        label_y[layout_slot] <= candidate_y[11:0];
+                    end
+                    layout_attempt <= 5'd0;
+                    if (layout_slot == 3)
+                        layout_busy <= 1'b0;
+                    else
+                        layout_slot <= layout_slot+1'b1;
+                end else
+                    layout_attempt <= layout_attempt+1'b1;
+            end
+        end
+
+        always @(*) begin
+            box_hit = 1'b0;
+            label_hit = 1'b0;
+            box_slot = 2'd0;
+            label_slot = 2'd0;
+            label_local_x = 12'd0;
+            label_local_y = 12'd0;
+            label_char = " ";
+            for (render_index=3; render_index>=0; render_index=render_index-1) begin
+                if (valid[render_index] && S_video_de_2d &&
+                    S_x_2d >= xmin[render_index] && S_x_2d <= xmax[render_index] &&
+                    S_y_2d >= ymin[render_index] && S_y_2d <= ymax[render_index] &&
+                    (({1'b0,S_x_2d} < {1'b0,xmin[render_index]}+13'd2) ||
+                     ({1'b0,S_x_2d}+13'd2 > {1'b0,xmax[render_index]}) ||
+                     ({1'b0,S_y_2d} < {1'b0,ymin[render_index]}+13'd2) ||
+                     ({1'b0,S_y_2d}+13'd2 > {1'b0,ymax[render_index]}))) begin
+                    box_hit = 1'b1;
+                    box_slot = render_index;
+                end
+                if (label_valid[render_index] && S_video_de_2d &&
+                    S_x_2d >= label_x[render_index] &&
+                    {1'b0,S_x_2d} < {1'b0,label_x[render_index]}+
+                        (label_compact[render_index] ? 13'd64 : 13'd128) &&
+                    S_y_2d >= label_y[render_index] &&
+                    {1'b0,S_y_2d} < {1'b0,label_y[render_index]}+13'd16) begin
+                    label_hit = 1'b1;
+                    label_slot = render_index;
+                    label_local_x = S_x_2d-label_x[render_index];
+                    label_local_y = S_y_2d-label_y[render_index];
+                end
+            end
+            if (label_compact[label_slot]) begin
+                case (label_local_x[6:4])
+                    0: label_char = 8'h31+{6'd0,label_slot};
+                    2: label_char = held[label_slot] ? "H" : "O";
+                    3: label_char = held[label_slot] ? " " : "K";
+                    default: label_char = " ";
+                endcase
+            end else begin
+                case (label_local_x[6:4])
+                    0: label_char = 8'h31+{6'd0,label_slot};
+                    2: label_char = S_target_motion_mode ? "M" : "R";
+                    3: label_char = S_target_motion_mode ? "O" : "E";
+                    4: label_char = S_target_motion_mode ? "V" : "D";
+                    6: label_char = held[label_slot] ? "H" : "O";
+                    7: label_char = held[label_slot] ? " " : "K";
+                    default: label_char = " ";
+                endcase
+            end
+        end
+    end else begin: legacy_target
+        assign S_multi_count = 3'd0;
+        assign S_multi_overflow = 1'b0;
+        assign S_multi_box_on = 1'b0;
+        assign S_multi_box_color = 24'd0;
+        assign S_follow_panel_on = 1'b0;
+        assign S_follow_color = 24'd0;
+        assign S_follow_char = 8'h20;
+        assign S_follow_row = 4'd0;
+        assign S_follow_col = 4'd0;
+    end endgenerate
+
+    // Bottom-left panel: RED/MOV:FOUND X:0000 Y:0000, or RED/MOV:NONE.
+    // Uses the existing character ROM; coordinates are zero-based decimals.
     wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && S_video_de_2d &&
-        (S_x_2d >= TARGET_TEXT_X) && (S_x_2d < TARGET_TEXT_X+368) &&
+        (S_x_2d >= TARGET_TEXT_X) &&
+        (S_x_2d < TARGET_TEXT_X+((MULTI_TARGET_ENABLE != 0) ? 240 : 368)) &&
         (S_y_2d >= TARGET_TEXT_Y) && (S_y_2d < TARGET_TEXT_Y+16);
     wire [11:0] S_target_text_x = S_x_2d - TARGET_TEXT_X;
     wire [3:0] S_target_text_y = S_y_2d - TARGET_TEXT_Y;
@@ -284,7 +569,24 @@ module hdmi_mixer #(
     wire [15:0] S_target_char_bits;
     always @(*) begin
         S_target_char = 8'h20;
-        case (S_target_char_index)
+        if (MULTI_TARGET_ENABLE != 0) begin
+            case (S_target_char_index)
+                0: S_target_char = S_target_motion_mode ? "M" : "R";
+                1: S_target_char = S_target_motion_mode ? "O" : "E";
+                2: S_target_char = S_target_motion_mode ? "V" : "D";
+                4: S_target_char = "C";
+                5: S_target_char = "O";
+                6: S_target_char = "U";
+                7: S_target_char = "N";
+                8: S_target_char = "T";
+                9: S_target_char = ":";
+                10: S_target_char = 8'h30+{5'd0,S_multi_count};
+                12: S_target_char = S_multi_overflow ? "O" : " ";
+                13: S_target_char = S_multi_overflow ? "V" : " ";
+                14: S_target_char = S_multi_overflow ? "F" : " ";
+                default: S_target_char = " ";
+            endcase
+        end else case (S_target_char_index)
             0: S_target_char = S_target_motion_mode ? "M" : "R";
             1: S_target_char = S_target_motion_mode ? "O" : "E";
             2: S_target_char = S_target_motion_mode ? "V" : "D";
@@ -340,16 +642,20 @@ module hdmi_mixer #(
         else if (S_effect_char_index >= 3 && S_effect_char_index <= 14)
             S_effect_char = S_effect_name[95-8*(S_effect_char_index-3) -: 8];
     end
-    // The two panels occupy separate scan rows and share one font lookup.
+    // Fixed panels and all following labels share one character lookup.
     osd_char_lib u_target_char_lib (
-        .I_char(S_effect_panel_on ? S_effect_char : S_target_char),
-        .I_row(S_effect_panel_on ? S_effect_text_y : S_target_text_y),
+        .I_char(S_effect_panel_on ? S_effect_char :
+                S_target_panel_on ? S_target_char : S_follow_char),
+        .I_row(S_effect_panel_on ? S_effect_text_y :
+               S_target_panel_on ? S_target_text_y : S_follow_row),
         .O_row_bits(S_target_char_bits)
     );
     wire S_target_text_on = S_target_panel_on &&
         S_target_char_bits[15-S_target_text_x[3:0]];
     wire S_effect_text_on = S_effect_panel_on &&
         S_target_char_bits[15-S_effect_text_x[3:0]];
+    assign S_follow_text_on = S_follow_panel_on &&
+        S_target_char_bits[15-S_follow_col];
 
     wire S_raw_panel, S_raw_text, S_raw_alert;
     generate if (SHOW_RAW_STATS != 0) begin: raw_readout
@@ -882,250 +1188,111 @@ module hdmi_mixer #(
         end
     end
 
+    // Decode the original counter glyph during the existing first pixel
+    // stage. The character lookup then has a full cycle at stage two.
     always @(*) begin
-        S_osd_hit   = 1'b0;
-        S_osd_color = 24'd0;
-
-        S_logo_x = 12'd0;
-        S_logo_y = 12'd0;
-        S_char_idx = 4'd0;
-        S_char_row = 3'd0;
-        S_char_col = 3'd0;
-        S_char_bits = 5'd0;
-        S_char_on = 1'b0;
-        S_logo_blue_on = 1'b0;
-        S_logo_red_on = 1'b0;
-        S_logo_tmp_y = 12'd0;
-        S_logo_red_band = 4'd0;
-        S_logo_red_x_start = 12'd0;
-        S_logo_red_x_end = 12'd0;
         S_dyn_x = 12'd0;
         S_dyn_y = 12'd0;
-        S_dyn_char = 4'd0;
-        S_dyn_col = 3'd0;
-        S_dyn_row = 3'd0;
-        S_dyn_bits = 5'd0;
-        S_dyn_on = 1'b0;
         S_dyn_digit_idx = 4'd0;
         S_dyn_digit_x = 12'd0;
-        S_dyn_seg = 7'd0;
-        S_lbl_row = 3'd0;
-        S_lbl_col = 3'd0;
-        S_lbl_idx = 2'd0;
-        S_lbl_bits = 5'd0;
-        S_lbl_local_x = 7'd0;
         S_dyn_dec_digit = 4'd0;
-        S_cn_local_x = 5'd0;
-        S_cn_local_y = 5'd0;
-        S_cn_col = 4'd0;
-        S_cn_row = 4'd0;
-        S_cn_row_bits = 16'd0;
-        S_cn_on = 1'b0;
-        S_cn_scale_x = 10'd0;
-        S_cn_scale_y = 10'd0;
-        S_pf_char = 8'd0;
         S_pf_local_x = 5'd0;
         S_pf_local_y = 5'd0;
-        S_pf_col = 4'd0;
-        S_pf_row = 4'd0;
-        S_pf_on = 1'b0;
-
-        if(S_video_de_2d) begin
-            if((S_x_2d >= LOGO_X) && (S_x_2d < (LOGO_X + LOGO_W)) &&
-               (S_y_2d >= LOGO_Y) && (S_y_2d < (LOGO_Y + LOGO_H))) begin
-                S_logo_x = S_x_2d - LOGO_X;
-                S_logo_y = S_y_2d - LOGO_Y;
-                if(S_logo_pixel[24]) begin
-                    S_osd_hit   = 1'b1;
-                    S_osd_color = S_logo_pixel[23:0];
+        S_pf_next_char = 8'd0;
+        S_pf_next_col = 4'd0;
+        S_pf_next_row = 4'd0;
+        S_pf_next_valid = 1'b0;
+        if (S_video_de_1d &&
+            S_x_1d >= DYN_OSD_X && S_x_1d < DYN_OSD_X+DYN_OSD_W &&
+            S_y_1d >= DYN_OSD_Y && S_y_1d < DYN_OSD_Y+DYN_OSD_H) begin
+            S_dyn_x = S_x_1d-DYN_OSD_X;
+            S_dyn_y = S_y_1d-DYN_OSD_Y;
+            if (S_dyn_x < 48 && S_dyn_y >= CN_Y_OFFSET) begin
+                S_pf_next_char = S_dyn_x < 24 ? CHAR_AN : CHAR_LU;
+                S_pf_local_x = S_dyn_x < 24 ? S_dyn_x : S_dyn_x-12'd24;
+                S_pf_local_y = S_dyn_y-CN_Y_OFFSET;
+                S_pf_next_col = F_scale24_to16(S_pf_local_x);
+                S_pf_next_row = F_scale24_to16(S_pf_local_y);
+                S_pf_next_valid = 1'b1;
+            end else if (S_dyn_x >= 52 && S_dyn_x < 100 &&
+                         S_dyn_y >= 4 && S_dyn_y < 20) begin
+                if (S_dyn_x < 68) begin
+                    S_pf_next_char = CHAR_C;
+                    S_pf_local_x = S_dyn_x-12'd52;
+                end else if (S_dyn_x < 84) begin
+                    S_pf_next_char = CHAR_N;
+                    S_pf_local_x = S_dyn_x-12'd68;
+                end else begin
+                    S_pf_next_char = CHAR_T;
+                    S_pf_local_x = S_dyn_x-12'd84;
                 end
+                S_pf_local_y = S_dyn_y-12'd4;
+                S_pf_next_col = S_pf_local_x[3:0];
+                S_pf_next_row = S_pf_local_y[3:0];
+                S_pf_next_valid = 1'b1;
+            end else if (S_dyn_x >= 100 && S_dyn_x < 108 &&
+                         S_dyn_y >= 4 && S_dyn_y < 20) begin
+                S_pf_next_char = CHAR_COLON;
+                S_pf_local_x = S_dyn_x-12'd100;
+                S_pf_local_y = S_dyn_y-12'd4;
+                S_pf_next_col = {S_pf_local_x[2:0],1'b0};
+                S_pf_next_row = S_pf_local_y[3:0];
+                S_pf_next_valid = 1'b1;
+            end else if (S_dyn_x >= 110) begin
+                if (S_dyn_x < 125) begin
+                    S_dyn_digit_x = S_dyn_x-12'd110;
+                    S_dyn_dec_digit = S_cnt_d5;
+                end else if (S_dyn_x < 140) begin
+                    S_dyn_digit_x = S_dyn_x-12'd125;
+                    S_dyn_dec_digit = S_cnt_d4;
+                end else if (S_dyn_x < 155) begin
+                    S_dyn_digit_x = S_dyn_x-12'd140;
+                    S_dyn_dec_digit = S_cnt_d3;
+                end else if (S_dyn_x < 170) begin
+                    S_dyn_digit_x = S_dyn_x-12'd155;
+                    S_dyn_dec_digit = S_cnt_d2;
+                end else if (S_dyn_x < 185) begin
+                    S_dyn_digit_x = S_dyn_x-12'd170;
+                    S_dyn_dec_digit = S_cnt_d1;
+                end else begin
+                    S_dyn_digit_x = S_dyn_x-12'd185;
+                    S_dyn_dec_digit = S_cnt_d0;
+                end
+                S_pf_next_char = CHAR_0+{4'd0,S_dyn_dec_digit};
+                S_pf_next_col = S_dyn_digit_x[3:0];
+                S_pf_next_row = F_scale24_to16(S_dyn_y[4:0]);
+                S_pf_next_valid = 1'b1;
             end
+        end
+    end
 
-            if((!S_osd_hit) &&
-               (S_x_2d >= DYN_OSD_X) && (S_x_2d < (DYN_OSD_X + DYN_OSD_W)) &&
-               (S_y_2d >= DYN_OSD_Y) && (S_y_2d < (DYN_OSD_Y + DYN_OSD_H))) begin
-                S_dyn_x = S_x_2d - DYN_OSD_X;
-                S_dyn_y = S_y_2d - DYN_OSD_Y;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_pf_char <= 8'd0;
+            S_pf_col <= 4'd0;
+            S_pf_row <= 4'd0;
+            S_pf_valid <= 1'b0;
+        end else begin
+            S_pf_char <= S_pf_next_char;
+            S_pf_col <= S_pf_next_col;
+            S_pf_row <= S_pf_next_row;
+            S_pf_valid <= S_pf_next_valid;
+        end
+    end
 
-                // Unified prefix render using one character library.
-                // an:[0..23], lu:[24..47], C:[52..67], N:[68..83], T:[84..99], :[100..107]
-                if((S_dyn_x < 12'd108) && (S_dyn_y < 12'd24)) begin
-                    if((S_dyn_x < 12'd24) || ((S_dyn_x >= 12'd24) && (S_dyn_x < 12'd48))) begin
-                        if(S_dyn_y >= CN_Y_OFFSET)
-                            S_pf_local_y = S_dyn_y - CN_Y_OFFSET;
-                        else
-                            S_pf_local_y = 5'd31;
-
-                        if(S_dyn_x < 12'd24) begin
-                            S_pf_char = CHAR_AN;
-                            S_pf_local_x = S_dyn_x;
-                        end
-                        else begin
-                            S_pf_char = CHAR_LU;
-                            S_pf_local_x = S_dyn_x - 12'd24;
-                        end
-
-                        if((S_pf_local_x < 5'd24) && (S_pf_local_y < 5'd24)) begin
-                            S_pf_col = F_scale24_to16(S_pf_local_x);
-                            S_pf_row = F_scale24_to16(S_pf_local_y);
-                            case(S_pf_col)
-                                4'd0:  S_pf_on = S_pf_row_bits[15];
-                                4'd1:  S_pf_on = S_pf_row_bits[14];
-                                4'd2:  S_pf_on = S_pf_row_bits[13];
-                                4'd3:  S_pf_on = S_pf_row_bits[12];
-                                4'd4:  S_pf_on = S_pf_row_bits[11];
-                                4'd5:  S_pf_on = S_pf_row_bits[10];
-                                4'd6:  S_pf_on = S_pf_row_bits[9];
-                                4'd7:  S_pf_on = S_pf_row_bits[8];
-                                4'd8:  S_pf_on = S_pf_row_bits[7];
-                                4'd9:  S_pf_on = S_pf_row_bits[6];
-                                4'd10: S_pf_on = S_pf_row_bits[5];
-                                4'd11: S_pf_on = S_pf_row_bits[4];
-                                4'd12: S_pf_on = S_pf_row_bits[3];
-                                4'd13: S_pf_on = S_pf_row_bits[2];
-                                4'd14: S_pf_on = S_pf_row_bits[1];
-                                4'd15: S_pf_on = S_pf_row_bits[0];
-                                default: S_pf_on = 1'b0;
-                            endcase
-                        end
-                    end
-                    else if((S_dyn_x >= 12'd52) && (S_dyn_x < 12'd100) && (S_dyn_y >= 12'd4) && (S_dyn_y < 12'd20)) begin
-                        if(S_dyn_x < 12'd68) begin
-                            S_pf_char = CHAR_C;
-                            S_pf_local_x = S_dyn_x - 12'd52;
-                        end
-                        else if(S_dyn_x < 12'd84) begin
-                            S_pf_char = CHAR_N;
-                            S_pf_local_x = S_dyn_x - 12'd68;
-                        end
-                        else begin
-                            S_pf_char = CHAR_T;
-                            S_pf_local_x = S_dyn_x - 12'd84;
-                        end
-                        S_pf_local_y = S_dyn_y - 12'd4;
-                        S_pf_col = S_pf_local_x[3:0];
-                        S_pf_row = S_pf_local_y[3:0];
-                        case(S_pf_col)
-                            4'd0:  S_pf_on = S_pf_row_bits[15];
-                            4'd1:  S_pf_on = S_pf_row_bits[14];
-                            4'd2:  S_pf_on = S_pf_row_bits[13];
-                            4'd3:  S_pf_on = S_pf_row_bits[12];
-                            4'd4:  S_pf_on = S_pf_row_bits[11];
-                            4'd5:  S_pf_on = S_pf_row_bits[10];
-                            4'd6:  S_pf_on = S_pf_row_bits[9];
-                            4'd7:  S_pf_on = S_pf_row_bits[8];
-                            4'd8:  S_pf_on = S_pf_row_bits[7];
-                            4'd9:  S_pf_on = S_pf_row_bits[6];
-                            4'd10: S_pf_on = S_pf_row_bits[5];
-                            4'd11: S_pf_on = S_pf_row_bits[4];
-                            4'd12: S_pf_on = S_pf_row_bits[3];
-                            4'd13: S_pf_on = S_pf_row_bits[2];
-                            4'd14: S_pf_on = S_pf_row_bits[1];
-                            4'd15: S_pf_on = S_pf_row_bits[0];
-                            default: S_pf_on = 1'b0;
-                        endcase
-                    end
-                    else if((S_dyn_x >= 12'd100) && (S_dyn_x < 12'd108) && (S_dyn_y >= 12'd4) && (S_dyn_y < 12'd20)) begin
-                        S_pf_char = CHAR_COLON;
-                        S_pf_local_x = S_dyn_x - 12'd100;
-                        S_pf_local_y = S_dyn_y - 12'd4;
-                        S_pf_col = {S_pf_local_x[2:0], 1'b0};
-                        S_pf_row = S_pf_local_y[3:0];
-                        case(S_pf_col)
-                            4'd0:  S_pf_on = S_pf_row_bits[15];
-                            4'd1:  S_pf_on = S_pf_row_bits[14];
-                            4'd2:  S_pf_on = S_pf_row_bits[13];
-                            4'd3:  S_pf_on = S_pf_row_bits[12];
-                            4'd4:  S_pf_on = S_pf_row_bits[11];
-                            4'd5:  S_pf_on = S_pf_row_bits[10];
-                            4'd6:  S_pf_on = S_pf_row_bits[9];
-                            4'd7:  S_pf_on = S_pf_row_bits[8];
-                            4'd8:  S_pf_on = S_pf_row_bits[7];
-                            4'd9:  S_pf_on = S_pf_row_bits[6];
-                            4'd10: S_pf_on = S_pf_row_bits[5];
-                            4'd11: S_pf_on = S_pf_row_bits[4];
-                            4'd12: S_pf_on = S_pf_row_bits[3];
-                            4'd13: S_pf_on = S_pf_row_bits[2];
-                            4'd14: S_pf_on = S_pf_row_bits[1];
-                            4'd15: S_pf_on = S_pf_row_bits[0];
-                            default: S_pf_on = 1'b0;
-                        endcase
-                    end
-
-                    if(S_pf_on)
-                        S_dyn_on = 1'b1;
-                end
-
-                // Decimal 6 digits starts at x=110. Each digit is 15x24.
-                if((S_dyn_x >= 12'd110) && (S_dyn_x < 12'd200)) begin
-                    if(S_dyn_x < 12'd125) begin
-                        S_dyn_digit_idx = 4'd0;
-                        S_dyn_digit_x = S_dyn_x - 12'd110;
-                        S_dyn_dec_digit = S_cnt_d5;
-                    end
-                    else if(S_dyn_x < 12'd140) begin
-                        S_dyn_digit_idx = 4'd1;
-                        S_dyn_digit_x = S_dyn_x - 12'd125;
-                        S_dyn_dec_digit = S_cnt_d4;
-                    end
-                    else if(S_dyn_x < 12'd155) begin
-                        S_dyn_digit_idx = 4'd2;
-                        S_dyn_digit_x = S_dyn_x - 12'd140;
-                        S_dyn_dec_digit = S_cnt_d3;
-                    end
-                    else if(S_dyn_x < 12'd170) begin
-                        S_dyn_digit_idx = 4'd3;
-                        S_dyn_digit_x = S_dyn_x - 12'd155;
-                        S_dyn_dec_digit = S_cnt_d2;
-                    end
-                    else if(S_dyn_x < 12'd185) begin
-                        S_dyn_digit_idx = 4'd4;
-                        S_dyn_digit_x = S_dyn_x - 12'd170;
-                        S_dyn_dec_digit = S_cnt_d1;
-                    end
-                    else begin
-                        S_dyn_digit_idx = 4'd5;
-                        S_dyn_digit_x = S_dyn_x - 12'd185;
-                        S_dyn_dec_digit = S_cnt_d0;
-                    end
-
-                    // Render decimal digits through unified 16x16 character library.
-                    // Keep enlarged 15x24 box for readability.
-                    if((S_dyn_digit_x < 12'd15) && (S_dyn_y < 12'd24)) begin
-                        S_pf_char = CHAR_0 + {4'd0, S_dyn_dec_digit};
-                        S_pf_local_x = S_dyn_digit_x[4:0];
-                        S_pf_local_y = S_dyn_y[4:0];
-                        // floor(16*x/15) equals x throughout the 0..14 box.
-                        S_pf_col = S_pf_local_x[3:0];
-                        S_pf_row = F_scale24_to16(S_pf_local_y);
-                        case(S_pf_col)
-                            4'd0:  S_pf_on = S_pf_row_bits[15];
-                            4'd1:  S_pf_on = S_pf_row_bits[14];
-                            4'd2:  S_pf_on = S_pf_row_bits[13];
-                            4'd3:  S_pf_on = S_pf_row_bits[12];
-                            4'd4:  S_pf_on = S_pf_row_bits[11];
-                            4'd5:  S_pf_on = S_pf_row_bits[10];
-                            4'd6:  S_pf_on = S_pf_row_bits[9];
-                            4'd7:  S_pf_on = S_pf_row_bits[8];
-                            4'd8:  S_pf_on = S_pf_row_bits[7];
-                            4'd9:  S_pf_on = S_pf_row_bits[6];
-                            4'd10: S_pf_on = S_pf_row_bits[5];
-                            4'd11: S_pf_on = S_pf_row_bits[4];
-                            4'd12: S_pf_on = S_pf_row_bits[3];
-                            4'd13: S_pf_on = S_pf_row_bits[2];
-                            4'd14: S_pf_on = S_pf_row_bits[1];
-                            4'd15: S_pf_on = S_pf_row_bits[0];
-                            default: S_pf_on = 1'b0;
-                        endcase
-                        if(S_pf_on)
-                            S_dyn_on = 1'b1;
-                    end
-                end
-
-                if(S_dyn_on) begin
-                    S_osd_hit = 1'b1;
-                    S_osd_color = COLOR_DYN_TEXT;
-                end
+    always @(*) begin
+        S_pf_on = S_pf_valid && S_pf_row_bits[15-S_pf_col];
+        S_osd_hit = 1'b0;
+        S_osd_color = 24'd0;
+        if (S_video_de_2d) begin
+            if (S_x_2d >= LOGO_X && S_x_2d < LOGO_X+LOGO_W &&
+                S_y_2d >= LOGO_Y && S_y_2d < LOGO_Y+LOGO_H &&
+                S_logo_pixel[24]) begin
+                S_osd_hit = 1'b1;
+                S_osd_color = S_logo_pixel[23:0];
+            end else if (S_pf_on) begin
+                S_osd_hit = 1'b1;
+                S_osd_color = COLOR_DYN_TEXT;
             end
         end
     end
@@ -1253,9 +1420,16 @@ module hdmi_mixer #(
                     O_hdmi_data <= S_osd_color;
                 else if(S_target_panel_on)
                     O_hdmi_data <= S_target_text_on ? 24'hfff200 : 24'h101010;
-                else if(SHOW_COLOR_TARGET && S_video_de_2d && S_target_box_on)
+                else if(SHOW_COLOR_TARGET && S_follow_panel_on)
+                    O_hdmi_data <= S_follow_text_on ? S_follow_color : 24'h101010;
+                else if(SHOW_COLOR_TARGET && S_multi_box_on)
+                    O_hdmi_data <= S_multi_box_color;
+                else if((MULTI_TARGET_ENABLE == 0) &&
+                        SHOW_COLOR_TARGET && S_video_de_2d && S_target_box_on)
                     O_hdmi_data <= 24'hff3030;
-                else if(SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
+                else if(((MULTI_TARGET_ENABLE == 0) ||
+                        (S_target_motion_mode && S_multi_count != 0)) &&
+                        SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
                     O_hdmi_data <= 24'hfff200;
                 else
                     O_hdmi_data <= S_video_data_2d;

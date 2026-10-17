@@ -2,6 +2,7 @@
 
 module design_top_wrapper #(
     parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
+    parameter integer RED_MULTI_ENABLE = 1,
     parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
     parameter integer SHOW_RAW_STATS = 0 // RAW diagnostics.
 ) (
@@ -115,6 +116,10 @@ module design_top_wrapper #(
     wire [23:0] S_ISP_target_pixels;
     wire        S_ISP_target_frame_toggle;
     wire        S_ISP_target_motion_mode;
+    wire [9:0]  S_ISP_target_result_frame_id;
+    wire [3:0]  S_ISP_target_multi_valid, S_ISP_target_multi_hold;
+    wire [191:0] S_ISP_target_multi_boxes;
+    wire        S_ISP_target_multi_overflow;
     wire        S_ISP_motion_mode_active;
     wire        S_ISP_edge_mode_active;
     wire [11:0] S_ISP_effect_config;
@@ -179,17 +184,34 @@ module design_top_wrapper #(
     reg [85:0] S_target_slots [0:3];
     reg [3:0] S_target_slots_valid;
     integer S_target_slot_index;
-    wire S_target_result_valid_hdmi = S_target_slots_valid[S_read_slot_sync];
+    wire S_bridge_ready, S_bridge_motion, S_bridge_found;
+    wire [11:0] S_bridge_effect_config;
+    wire [11:0] S_bridge_xmin, S_bridge_xmax, S_bridge_ymin, S_bridge_ymax;
+    wire [11:0] S_bridge_center_x, S_bridge_center_y;
+    wire [3:0] S_bridge_multi_valid, S_bridge_multi_hold;
+    wire [191:0] S_bridge_multi_boxes;
+    wire S_bridge_multi_overflow;
+    wire S_target_result_valid_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_ready : S_target_slots_valid[S_read_slot_sync];
     wire [85:0] S_target_display_result = S_target_slots[S_read_slot_sync];
-    wire [11:0] S_effect_config_hdmi = S_target_display_result[85:74];
-    wire S_target_motion_mode_hdmi = S_target_display_result[73];
-    wire S_target_found_hdmi = S_target_display_result[72];
-    wire [11:0] S_target_xmin_hdmi = S_target_display_result[71:60];
-    wire [11:0] S_target_xmax_hdmi = S_target_display_result[59:48];
-    wire [11:0] S_target_ymin_hdmi = S_target_display_result[47:36];
-    wire [11:0] S_target_ymax_hdmi = S_target_display_result[35:24];
-    wire [11:0] S_target_center_x_hdmi = S_target_display_result[23:12];
-    wire [11:0] S_target_center_y_hdmi = S_target_display_result[11:0];
+    wire [11:0] S_effect_config_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_effect_config : S_target_display_result[85:74];
+    wire S_target_motion_mode_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_motion : S_target_display_result[73];
+    wire S_target_found_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_found : S_target_display_result[72];
+    wire [11:0] S_target_xmin_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_xmin : S_target_display_result[71:60];
+    wire [11:0] S_target_xmax_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_xmax : S_target_display_result[59:48];
+    wire [11:0] S_target_ymin_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_ymin : S_target_display_result[47:36];
+    wire [11:0] S_target_ymax_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_ymax : S_target_display_result[35:24];
+    wire [11:0] S_target_center_x_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_center_x : S_target_display_result[23:12];
+    wire [11:0] S_target_center_y_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_center_y : S_target_display_result[11:0];
 	
 
     wire        S_ddr_clk;
@@ -501,8 +523,8 @@ module design_top_wrapper #(
         end
     end
 
-    // The write slot is consumed after the frame-start crossing settles:
-    // at SOF+32 for invalidation and at the frame's final detector result.
+    // Legacy test configuration only; production uses target_frame_bridge.
+    // Keep the original register hierarchy for the single-target regression.
     always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
         if(!S_rst_n) begin
             S_write_slot_meta <= 2'd0;
@@ -515,7 +537,7 @@ module design_top_wrapper #(
             S_target_frame_wait <= 6'd0;
             S_target_ack_meta <= 1'b0;
             S_target_ack_sync <= 1'b0;
-        end else begin
+        end else if (!RED_MULTI_ENABLE) begin
             S_write_slot_meta <= S_write_frame_slot;
             S_write_slot_sync <= S_write_slot_meta;
             S_target_ack_meta <= S_target_ack;
@@ -568,7 +590,7 @@ module design_top_wrapper #(
             S_target_slots_valid <= 4'd0;
             for(S_target_slot_index=0; S_target_slot_index<4; S_target_slot_index=S_target_slot_index+1)
                 S_target_slots[S_target_slot_index] <= {DEFAULT_EFFECT_CONFIG,74'd0};
-        end else begin
+        end else if (!RED_MULTI_ENABLE) begin
             S_target_toggle_meta <= S_target_request;
             S_target_toggle_sync <= S_target_toggle_meta;
             S_read_slot_meta <= S_read_frame_slot;
@@ -960,9 +982,37 @@ end endgenerate
         .O_isp_us(S_latency_isp_us), .O_buffer_us(S_latency_buffer_us)
     );
 
+    target_frame_bridge #(
+        .DEFAULT_EFFECT_CONFIG(DEFAULT_EFFECT_CONFIG)
+    ) u_target_frame_bridge (
+        .I_csi_clk(S_csi_rx_clk), .I_ddr_clk(S_ddr_clk),
+        .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
+        .I_frame_start(S_ISP_O_tuser), .I_frame_id(S_isp_frame_id),
+        .I_effect_config(S_ISP_effect_config), .I_motion_mode(S_ISP_motion_mode_active),
+        .I_result_ready(S_ISP_target_result_ready),
+        .I_result_frame_id(S_ISP_target_result_frame_id),
+        .I_result_found(S_ISP_target_found), .I_result_motion_mode(S_ISP_target_motion_mode),
+        .I_result_xmin(S_ISP_target_xmin), .I_result_xmax(S_ISP_target_xmax),
+        .I_result_ymin(S_ISP_target_ymin), .I_result_ymax(S_ISP_target_ymax),
+        .I_result_center_x(S_ISP_target_center_x), .I_result_center_y(S_ISP_target_center_y),
+        .I_multi_valid(S_ISP_target_multi_valid), .I_multi_hold(S_ISP_target_multi_hold),
+        .I_multi_boxes(S_ISP_target_multi_boxes), .I_multi_overflow(S_ISP_target_multi_overflow),
+        .I_write_start(S_write_frame_start), .I_write_slot(S_write_start_slot),
+        .I_write_word(S_vi_ddr_wr_en),
+        .I_read_start(S_read_frame_start), .I_read_slot(S_video_out_rp),
+        .O_ready(S_bridge_ready), .O_effect_config(S_bridge_effect_config),
+        .O_motion_mode(S_bridge_motion), .O_found(S_bridge_found),
+        .O_xmin(S_bridge_xmin), .O_xmax(S_bridge_xmax),
+        .O_ymin(S_bridge_ymin), .O_ymax(S_bridge_ymax),
+        .O_center_x(S_bridge_center_x), .O_center_y(S_bridge_center_y),
+        .O_multi_valid(S_bridge_multi_valid), .O_multi_hold(S_bridge_multi_hold),
+        .O_multi_boxes(S_bridge_multi_boxes), .O_multi_overflow(S_bridge_multi_overflow)
+    );
+
 //ISP算法顶层模块
 isp_top #(
-        .ENABLE_EDGE(ENABLE_EDGE)
+        .ENABLE_EDGE(ENABLE_EDGE),
+        .RED_MULTI_ENABLE(RED_MULTI_ENABLE)
     ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
@@ -990,6 +1040,11 @@ isp_top #(
 .O_target_frame_toggle (S_ISP_target_frame_toggle),
 .O_target_motion_mode  (S_ISP_target_motion_mode),
 .O_motion_mode_active  (S_ISP_motion_mode_active),
+.O_target_result_frame_id(S_ISP_target_result_frame_id),
+.O_target_multi_valid  (S_ISP_target_multi_valid),
+.O_target_multi_hold   (S_ISP_target_multi_hold),
+.O_target_multi_boxes  (S_ISP_target_multi_boxes),
+.O_target_multi_overflow(S_ISP_target_multi_overflow),
 .O_edge_mode_active    (S_ISP_edge_mode_active),
 .O_effect_config       (S_ISP_effect_config),
 .O_ae_stats_valid      (S_ISP_ae_stats_valid),
@@ -1155,6 +1210,7 @@ isp_top #(
         .DEBUG_MODE ( 0    ),
         .SHOW_CAMERA_STATUS ( 1 ),
         .SHOW_COLOR_TARGET  ( 1 ),
+        .MULTI_TARGET_ENABLE( RED_MULTI_ENABLE ),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
         .SHOW_LATENCY       ( 1 ),
         .SHOW_EFFECT_LABEL  ( 1 ),
@@ -1192,6 +1248,10 @@ isp_top #(
         .I_target_ymax         ( S_target_ymax_hdmi ),
         .I_target_center_x     ( S_target_center_x_hdmi ),
         .I_target_center_y     ( S_target_center_y_hdmi ),
+        .I_target_multi_valid  ( S_bridge_multi_valid ),
+        .I_target_multi_hold   ( S_bridge_multi_hold ),
+        .I_target_multi_boxes  ( S_bridge_multi_boxes ),
+        .I_target_multi_overflow( S_bridge_multi_overflow ),
         .O_hdmi_vsync    ( S_hdmi_out_vsync   ),
         .O_hdmi_hsync    ( S_hdmi_out_hsync   ),
         .O_hdmi_de       ( S_hdmi_out_de      ),

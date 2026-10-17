@@ -1,5 +1,6 @@
 module isp_top #(
     parameter integer ENABLE_EDGE = 1, // Reset default, not a generate-time bypass.
+    parameter integer RED_MULTI_ENABLE = 0,
     // LSC_PROFILE_RGB_20261015: small residual fit from 15 PRE-WB RGB regions.
     // Preserve global channel ratios; fit the six intermediate regions too.
     // Nodes 1..9 are row-major; Gr/Gb share each fitted scale.
@@ -37,6 +38,11 @@ module isp_top #(
     output          O_target_frame_toggle,
     output          O_target_motion_mode,
     output          O_motion_mode_active,
+    output [9:0]    O_target_result_frame_id,
+    output [3:0]    O_target_multi_valid,
+    output [3:0]    O_target_multi_hold,
+    output [191:0]  O_target_multi_boxes,
+    output          O_target_multi_overflow,
     output          O_edge_mode_active,
     output [11:0]   O_effect_config,
     output          O_ae_stats_valid,
@@ -225,7 +231,8 @@ target_detect_switch_96 #(
     .RED_MIN_PIXELS(128),
     .DIFF_THRESHOLD(10),
     .MIN_BLOCKS(12),
-    .GLOBAL_CHANGE_PERCENT(40)
+    .GLOBAL_CHANGE_PERCENT(40),
+    .RED_MULTI_ENABLE(RED_MULTI_ENABLE)
 ) u_target_detect_switch (
     .I_clk(axi4s_video_aclk),
     .I_rst_n(I_rst_n),
@@ -234,6 +241,7 @@ target_detect_switch_96 #(
     .I_tlast(awb_O_tlast),
     .I_tvalid(awb_O_tvalid),
     .I_tdata(awb_O_tdata),
+    .I_frame_id(demosaic_frame_id),
     .O_result_ready(target_result_ready),
     .O_found(target_found),
     .O_xmin(target_xmin),
@@ -245,7 +253,12 @@ target_detect_switch_96 #(
     .O_pixels(target_pixels),
     .O_frame_toggle(target_frame_toggle),
     .O_target_motion_mode(O_target_motion_mode),
-    .O_motion_mode_active(O_motion_mode_active)
+    .O_motion_mode_active(O_motion_mode_active),
+    .O_result_frame_id(O_target_result_frame_id),
+    .O_multi_valid(O_target_multi_valid),
+    .O_multi_hold(O_target_multi_hold),
+    .O_multi_boxes(O_target_multi_boxes),
+    .O_multi_overflow(O_target_multi_overflow)
 );
 
 

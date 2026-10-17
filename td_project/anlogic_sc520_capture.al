@@ -11,6 +11,14 @@
     </HardWare>
     <Source_Files>
         <Verilog>
+            <File Path="../user_source/hdl_source/target_frame_bridge.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="75"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/display_effects_rgb888.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

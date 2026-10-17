@@ -8,7 +8,8 @@ module target_detect_switch_96 #(
     parameter integer DIFF_THRESHOLD = 10,
     parameter integer MIN_BLOCKS = 12,
     parameter integer GLOBAL_CHANGE_PERCENT = 40,
-    parameter integer MOTION_STABLE_ENABLE = 1
+    parameter integer MOTION_STABLE_ENABLE = 1,
+    parameter integer RED_MULTI_ENABLE = 0
 ) (
     input wire I_clk,
     input wire I_rst_n,
@@ -17,6 +18,7 @@ module target_detect_switch_96 #(
     input wire I_tlast,
     input wire I_tvalid,
     input wire [95:0] I_tdata,
+    input wire [9:0] I_frame_id,
     output wire O_result_ready,
     output wire O_found,
     output wire [11:0] O_xmin,
@@ -28,7 +30,12 @@ module target_detect_switch_96 #(
     output wire [23:0] O_pixels,
     output wire O_frame_toggle,
     output wire O_target_motion_mode,
-    output wire O_motion_mode_active
+    output wire O_motion_mode_active,
+    output wire [9:0] O_result_frame_id,
+    output wire [3:0] O_multi_valid,
+    output wire [3:0] O_multi_hold,
+    output wire [191:0] O_multi_boxes,
+    output wire O_multi_overflow
 );
     localparam integer FRAME_BEATS = IMG_WIDTH * IMG_HEIGHT / 4;
     localparam integer COUNT_BITS = $clog2(FRAME_BEATS);
@@ -68,16 +75,26 @@ module target_detect_switch_96 #(
     wire red_ready, red_found, red_toggle;
     wire [11:0] red_xmin, red_xmax, red_ymin, red_ymax, red_cx, red_cy;
     wire [23:0] red_pixels;
+    wire multi_ready, multi_overflow;
+    wire [3:0] multi_valid, multi_hold;
+    wire [191:0] multi_boxes;
+    wire [9:0] multi_frame_id;
     red_target_detect_96 #(
         .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
-        .RED_MIN(24), .RED_DELTA(6), .MIN_PIXELS(RED_MIN_PIXELS)
+        .RED_MIN(24), .RED_DELTA(6), .MIN_PIXELS(RED_MIN_PIXELS),
+        .MULTI_ENABLE(RED_MULTI_ENABLE)
     ) u_red (
         .I_clk(I_clk), .I_rst_n(I_rst_n),
         .I_tuser(I_tuser), .I_tvalid(I_tvalid), .I_tdata(I_tdata),
         .O_result_ready(red_ready), .O_found(red_found),
         .O_xmin(red_xmin), .O_xmax(red_xmax), .O_ymin(red_ymin), .O_ymax(red_ymax),
         .O_center_x(red_cx), .O_center_y(red_cy), .O_pixels(red_pixels),
-        .O_frame_toggle(red_toggle)
+        .O_frame_toggle(red_toggle),
+        .I_frame_id(I_frame_id),
+        .I_multi_clear(frame_marker && mode_sync != active_motion),
+        .O_multi_ready(multi_ready), .O_multi_valid(multi_valid),
+        .O_multi_hold(multi_hold), .O_multi_boxes(multi_boxes),
+        .O_multi_frame_id(multi_frame_id), .O_multi_overflow(multi_overflow)
     );
     wire raw_motion_ready, raw_motion_found, raw_motion_toggle, motion_scene_change;
     wire [11:0] raw_motion_xmin, raw_motion_xmax, raw_motion_ymin, raw_motion_ymax;
@@ -132,17 +149,120 @@ module target_detect_switch_96 #(
     endgenerate
 
     assign O_motion_mode_active = active_motion;
-    assign O_target_motion_mode = completion_motion;
-    assign O_result_ready = completion_motion ? motion_ready : red_ready;
-    assign O_found = completion_motion ? motion_found : red_found;
-    assign O_xmin = completion_motion ? motion_xmin : red_xmin;
-    assign O_xmax = completion_motion ? motion_xmax : red_xmax;
-    assign O_ymin = completion_motion ? motion_ymin : red_ymin;
-    assign O_ymax = completion_motion ? motion_ymax : red_ymax;
-    assign O_center_x = completion_motion ? motion_cx : red_cx;
-    assign O_center_y = completion_motion ? motion_cy : red_cy;
-    assign O_pixels = completion_motion ? motion_pixels : red_pixels;
-    assign O_frame_toggle = completion_motion ? motion_toggle : red_toggle;
+    generate
+        if (!RED_MULTI_ENABLE) begin : gen_legacy_result
+            assign O_target_motion_mode = completion_motion;
+            assign O_result_ready = completion_motion ? motion_ready : red_ready;
+            assign O_found = completion_motion ? motion_found : red_found;
+            assign O_xmin = completion_motion ? motion_xmin : red_xmin;
+            assign O_xmax = completion_motion ? motion_xmax : red_xmax;
+            assign O_ymin = completion_motion ? motion_ymin : red_ymin;
+            assign O_ymax = completion_motion ? motion_ymax : red_ymax;
+            assign O_center_x = completion_motion ? motion_cx : red_cx;
+            assign O_center_y = completion_motion ? motion_cy : red_cy;
+            assign O_pixels = completion_motion ? motion_pixels : red_pixels;
+            assign O_frame_toggle = completion_motion ? motion_toggle : red_toggle;
+            assign O_result_frame_id = 10'd0;
+            assign O_multi_valid = 4'd0;
+            assign O_multi_hold = 4'd0;
+            assign O_multi_boxes = 192'd0;
+            assign O_multi_overflow = 1'b0;
+        end else begin : gen_multi_result
+            reg [9:0] active_id, completion_id, motion_id_1d, motion_id_2d;
+            reg [9:0] context_id [0:3];
+            reg [3:0] context_valid, context_motion;
+            integer ci;
+            // Motion's stabilizer publishes two clocks after its raw result.
+            // Red carries its own ID through its variable-length run queue.
+            always @(posedge I_clk or negedge I_rst_n) begin
+                if (!I_rst_n) begin
+                    active_id<=0; completion_id<=0;
+                    motion_id_1d<=0; motion_id_2d<=0;
+                    context_valid<=0; context_motion<=0;
+                    for (ci=0; ci<4; ci=ci+1) context_id[ci]<=0;
+                end else begin
+                    if (frame_marker) begin
+                        active_id<=I_frame_id;
+                        context_id[I_frame_id[1:0]]<=I_frame_id;
+                        context_valid[I_frame_id[1:0]]<=1'b1;
+                        context_motion[I_frame_id[1:0]]<=mode_sync;
+                    end
+                    if (accept_beat && final_beat) completion_id<=active_id;
+                    if (raw_motion_ready) motion_id_1d<=completion_id;
+                    motion_id_2d<=motion_id_1d;
+                end
+            end
+            wire [9:0] motion_id = MOTION_STABLE_ENABLE ?
+                motion_id_2d : completion_id;
+            wire red_selected = multi_ready &&
+                context_valid[multi_frame_id[1:0]] &&
+                context_id[multi_frame_id[1:0]] == multi_frame_id &&
+                !context_motion[multi_frame_id[1:0]] &&
+                !(frame_marker && I_frame_id[1:0] == multi_frame_id[1:0]);
+            wire motion_selected = motion_ready &&
+                context_valid[motion_id[1:0]] &&
+                context_id[motion_id[1:0]] == motion_id &&
+                context_motion[motion_id[1:0]] &&
+                !(frame_marker && I_frame_id[1:0] == motion_id[1:0]);
+            wire [47:0] first_box = multi_valid[0] ? multi_boxes[0 +: 48] :
+                multi_valid[1] ? multi_boxes[48 +: 48] :
+                multi_valid[2] ? multi_boxes[96 +: 48] : multi_boxes[144 +: 48];
+            wire [12:0] red_center_x = {1'b0,first_box[11:0]}+
+                {1'b0,first_box[23:12]};
+            wire [12:0] red_center_y = {1'b0,first_box[35:24]}+
+                {1'b0,first_box[47:36]};
+            wire [106:0] new_motion = {motion_id,motion_found,motion_xmin,
+                motion_xmax,motion_ymin,motion_ymax,motion_cx,motion_cy,motion_pixels};
+            reg [106:0] pending_motion;
+            reg pending_valid;
+            reg ready, found, result_motion, result_toggle, overflow;
+            reg [9:0] result_id;
+            reg [11:0] xmin,xmax,ymin,ymax,cx,cy;
+            reg [23:0] pixels;
+            reg [3:0] valid, hold;
+            reg [191:0] boxes;
+            always @(posedge I_clk or negedge I_rst_n) begin
+                if (!I_rst_n) begin
+                    pending_motion<=0; pending_valid<=0;
+                    ready<=0; found<=0; result_motion<=0; result_toggle<=0;
+                    result_id<=0; xmin<=0; xmax<=0; ymin<=0; ymax<=0;
+                    cx<=0; cy<=0; pixels<=0; valid<=0; hold<=0; boxes<=0; overflow<=0;
+                end else begin
+                    ready<=0;
+                    if (red_selected) begin
+                        ready<=1; result_motion<=0; result_id<=multi_frame_id;
+                        found<=|multi_valid; valid<=multi_valid; hold<=multi_hold;
+                        boxes<=multi_boxes; overflow<=multi_overflow; pixels<=0;
+                        xmin<=first_box[11:0]; xmax<=first_box[23:12];
+                        ymin<=first_box[35:24]; ymax<=first_box[47:36];
+                        cx<=red_center_x[12:1]; cy<=red_center_y[12:1];
+                        result_toggle<=!result_toggle;
+                        if (motion_selected) begin
+                            pending_motion<=new_motion; pending_valid<=1;
+                        end
+                    end else if (pending_valid || motion_selected) begin
+                        ready<=1; result_motion<=1;
+                        {result_id,found,xmin,xmax,ymin,ymax,cx,cy,pixels}<=
+                            pending_valid ? pending_motion : new_motion;
+                        valid<=0; hold<=0; boxes<=0; overflow<=0;
+                        result_toggle<=!result_toggle;
+                        pending_valid<=pending_valid && motion_selected;
+                        if (pending_valid && motion_selected) pending_motion<=new_motion;
+                    end
+                end
+            end
+            assign O_result_ready=ready;
+            assign O_found=found;
+            assign O_target_motion_mode=result_motion;
+            assign O_frame_toggle=result_toggle;
+            assign O_result_frame_id=result_id;
+            assign O_xmin=xmin; assign O_xmax=xmax;
+            assign O_ymin=ymin; assign O_ymax=ymax;
+            assign O_center_x=cx; assign O_center_y=cy; assign O_pixels=pixels;
+            assign O_multi_valid=valid; assign O_multi_hold=hold;
+            assign O_multi_boxes=boxes; assign O_multi_overflow=overflow;
+        end
+    endgenerate
 endmodule
 
 // Advance only on completed camera frames. Every result still publishes a

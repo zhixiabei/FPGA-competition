@@ -1,9 +1,10 @@
 # 安路 PH1P35 图像处理工程
 
 **烧录文件固定为 [td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit](td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit)。**
-当前源码为 2026-10-17 九模式扩展版，包含原画（含 Gamma）、灰度、Scharr 边缘、
+当前源码为 2026-10-17 红色多目标版，包含原画（含 Gamma）、灰度、Scharr 边缘、
 反色、灰度浮雕、红绿保色、彩色漫画、Scharr 反色和形态学边缘，
-以及原有运动检测和延迟可视化。九模式回归、综合、布局布线和 bit 生成均已通过，
+以及最多四个独立红色框、原有单框运动检测和延迟可视化。
+本版回归、综合、布局布线和 bit 生成均已通过，
 可在下载器中重新加载上述固定文件烧录。
 脚本构建的副本保存于 [firmware/anlogic_edge_osd.bit](firmware/anlogic_edge_osd.bit)，
 其文件校验值、构建时间及最终时序见 [脚本构建记录](build/release/release_manifest.json)。
@@ -17,6 +18,9 @@
    模式在摄像头帧首生效，配置随实际 DDR 帧槽传到显示端。
 4. 固定摄像头，等待曝光稳定后持续移动物体。运动框连续 3 帧确认，
    停止后保持 2 帧，第 3 帧清除；位置平滑会带来少量跟随延迟。
+   红色检测最多显示四个框，新目标连续两帧匹配后显示，漏检保持两帧；
+   标签显示编号及 `RED OK` / `RED H`，左下显示 `RED COUNT:0..4`。
+   算法容量溢出时显示 `OVF` 并清框；详见[多目标说明](docs/RED_MULTI_TARGET.md)。
 5. 右上角显示同帧 `TOTAL`、`ISP`、`BUF` 延迟、累计 `MIN/MAX`
    和最近 64 个显示帧的曲线，单位为 ms。无有效记录时显示 `N/A`。
    该读数测量 RAW 输入到 HDMI 输出的板内数字通路，不含传感器曝光及显示器响应。
@@ -61,8 +65,11 @@ Scharr 反色在 CSI 端选取原 Scharr 正边缘图，在 HDMI 端按通道取
 与模式 02 共用原阈值和 NMS。形态学边缘使用
 `M=clip(4*(max(3×3灰度)-min(3×3灰度)),0,255)`，不做二值化，
 前两行、前两列填黑；它共享浮雕所用的第一层灰度窗口。
-这些模式属于图像显示，不会把现有单个检测总框变成多个目标框。
-后续多目标分离的[低资源连通区域方案](docs/CONNECTED_COMPONENTS_PLAN.md)仅为设计规划，尚未实现。
+这些模式属于图像显示；独立的红色检测分支已增加最多四框及跟随编号，
+运动分支仍是一个总框。本版采用有限容量的扫描线区域连接，
+U 形、环形等复杂区域的空隙内目标仍可能合框，不等于完整 CCL。
+实际能力、溢出规则和验证见[多目标说明](docs/RED_MULTI_TARGET.md)；
+[完整连通域方案](docs/CONNECTED_COMPONENTS_PLAN.md)保留为后续设计规划。
 
 合成测试图的[输入图](build/verification/emboss_synthetic_input.png)和
 [RTL 浮雕输出](build/verification/emboss_synthetic_rtl.png)可直接对照。
@@ -83,11 +90,15 @@ Gamma 保留在模式 00 的彩色画面，使用 [gamma_lut_rgb888.v](user_sour
 已经剪白的纹理不能通过此表恢复。其他模式分别处理其输入，不与默认 Gamma 叠加。
 后续修改源码或仿真不会自动更新 bit；需要上板验证的新源码按下方流程重新生成。
 
-九模式版 `src-0917069cbe5c` 于 2026-10-17 20:11:21（北京时间）完成综合、布局布线和 bit 生成。
-最终 Slice 16,035/21,216（75.58%）、LUT6 14,773、寄存器 13,573、ERAM 69/108、DSP 13/40；
-建立余量 +0.128 ns，保持余量 +0.020 ns。相对七模式版增加 789 Slice、796 LUT6、
-387 个寄存器，ERAM 和 DSP 不变。221 个生产构建输入与当前文件 SHA256 一致，两处 bit 内容一致；
-显示配置跨时钟的 13 ns 约束覆盖全部 4 条有效路径。此构建不含连通区域或多目标框。
+当前多目标版 `src-9e019affb36a` 于 2026-10-17 21:44:57（北京时间）完成综合、布局布线和 bit 生成。
+最终 Slice 17,483/21,216（82.40%）、LUT6 16,707、寄存器 17,555、ERAM 80/108、DSP 13/40；
+建立余量 +0.108 ns，保持余量 +0.020 ns。相对九模式单框历史版增加
+1,448 Slice、1,934 LUT6、3,982 个寄存器和 11 个 ERAM，DSP 不变。
+两处 bit 内容一致；显示配置 13 ns 和目标元数据 20/20/13 ns 约束均通过全路径覆盖检查。
+多目标回归含两种 RAM 模型、720p 四段无行消隐、去马赛克后 ISP、生产 DDR 字数和 HDMI 像素，
+其中 ISP 在惰性 demosaic 边界注入 RGB/帧号，生产顶层使用外设 stub 与受控接口激励；
+两项均不等于物理摄像头或 DDR/HDMI 器件验证。
+日志及测试源码身份见[多目标证据包](build/verification/red_multi_target_regression.zip)。
 资源与最终时序见
 [资源报告](build/release/system_phy.area)、[最终时序](build/release/system_pr.timing)
 及[构建清单](build/release/release_manifest.json)。
@@ -101,7 +112,7 @@ TD 的 `phy_1` 报告仅对应 TD 界面中最近一次编译。Slice、LUT6 和
 新增延迟功能需要 `video_latency_timebase.v`、`video_latency_monitor.v` 和
 `video_latency_osd.v` 三项都登记在工程中。
 显示算法需要 `display_effects_rgb888.v`、`display_effect_control.v` 和
-`gamma_lut_rgb888.v`，两份 `.al` 已登记。
+`gamma_lut_rgb888.v`，多目标帧对应需要 `target_frame_bridge.v`，两份 `.al` 已登记。
 
 也可以双击根目录的 [build_firmware.cmd](build_firmware.cmd)，或在 PowerShell 执行：
 
@@ -110,7 +121,8 @@ TD 的 `phy_1` 报告仅对应 TD 界面中最近一次编译。Slice、LUT6 和
 ```
 
 脚本在独立临时目录完成综合、布局布线和 bit 生成，
-仅在最终建立/保持时序均通过，且显示配置跨时钟的 13 ns 约束覆盖全部有效路径后更新
+仅在最终建立/保持时序均通过，且显示配置 13 ns、目标元数据 20/20/13 ns
+约束覆盖全部有效路径后更新
 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`，
 并将同一文件同步到 `firmware/anlogic_edge_osd.bit`，校验 SHA256 一致；
 失败时保留上一份成功的 bit。
@@ -138,7 +150,8 @@ TD 界面编译会在这里生成 `*_Runs` 和 `best_result`。
 
 - [按键使用与上板检查](docs/VIDEO_MODE_SWITCH.md)
 - [代码与配置导航](docs/CODE_MAP.md)
-- [低资源多目标连通区域方案（未实现）](docs/CONNECTED_COMPONENTS_PLAN.md)
+- [红色多目标、跟随标签与验证](docs/RED_MULTI_TARGET.md)
+- [完整连通域后续方案](docs/CONNECTED_COMPONENTS_PLAN.md)
 - [运动检测规则和验证结果](docs/MOTION_DETECTION.md)
 - [延迟读数、曲线和验证边界](docs/LATENCY_VISUALIZATION.md)
 - [摄像头诊断](docs/SC520CS_TEST.md)、[RAW10 测量](docs/RAW_STATS_GUIDE.md)
