@@ -1,8 +1,9 @@
 create_clock -name {sys_clk_50m} -period 20.000 -waveform {0.000 10.000} [get_ports {I_sys_clk}]
-# K1/K2 are asynchronous; only the button synchronizers sample these ports.
+# K1-K3 are asynchronous; only the button synchronizers sample these ports.
 # The following synchronizer stage and debounce logic remain normally timed.
 set_false_path -from [get_ports {I_mode_key_n}]
 set_false_path -from [get_ports {I_detect_key_n}]
+set_false_path -from [get_ports {I_effect_key_n}]
 create_clock -name {mipi_rx_ck_pad} -period 2.415 -waveform {0.000 1.208} [get_nets {IO_rx_clk_pad_p}]
 
 derive_clocks
@@ -50,6 +51,14 @@ set_max_delay -datapath_only -from [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/
 set_max_delay -datapath_only -from [get_clocks {HDMI_PIXEL_CLK}] -to [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] 100.000
 set_max_delay -datapath_only -from [get_clocks {u_ph1p35_324_ddr_wrapper/u_ddr2/ddr_clk u_ph1p35_324_ddr_wrapper/u_ddr2/usr_clk}] -to [get_clocks {HDMI_PIXEL_CLK}] 100.000
 
+# Keep this bound after the broad limits: TD gives later max-delay rules priority.
+# Display mode crosses sys_clk_50m -> CSI in one held-payload mailbox.
+# The CSI frame commits that snapshot; its DDR-slot record then crosses to
+# HDMI through S_target_mailbox, including the twelve configuration bits.
+set_false_path -from [get_regs {u_display_effect_cdc/req_toggle}] -to [get_regs {u_display_effect_cdc/req_meta}]
+set_false_path -from [get_regs {u_display_effect_cdc/ack_toggle}] -to [get_regs {u_display_effect_cdc/ack_meta}]
+set_max_delay -datapath_only -from [get_regs {u_display_effect_cdc/payload_hold[*]}] -to [get_regs {u_display_effect_cdc/O_dst_data[*]}] 13.000
+
 set_false_path -from [get_regs {u_video_latency/S_isp_request}] -to [get_regs {u_video_latency/S_isp_req_meta}]
 set_false_path -from [get_regs {u_video_latency/S_isp_ack}] -to [get_regs {u_video_latency/S_isp_ack_meta}]
 set_false_path -from [get_regs {u_video_latency/S_read_request}] -to [get_regs {u_video_latency/S_read_req_meta}]
@@ -62,7 +71,5 @@ set_max_delay -datapath_only -from [get_regs {u_video_latency/S_start_id[*] u_vi
 set_max_delay -datapath_only -from [get_regs {u_video_latency/S_isp_payload[*]}] -to [get_regs {u_video_latency/S_slot* u_video_latency/S_last_isp_payload[*]}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_video_latency/S_read_payload[*]}] -to [get_regs {u_video_latency/S_pending_payload[*] u_video_latency/S_pending_valid}] 13.000
 
-# The mode key crosses into the camera clock domain through the mode synchronizer.
-set_false_path -from [get_regs {u_video_mode_control/O_edge_mode}] -to [get_regs {u_isp_top/u_rgb_edge_switch/mode_meta}]
 # K2 selects detection only at a camera frame boundary.
 set_false_path -from [get_regs {u_detection_mode_control/O_edge_mode}] -to [get_regs {u_isp_top/u_target_detect_switch/mode_meta}]

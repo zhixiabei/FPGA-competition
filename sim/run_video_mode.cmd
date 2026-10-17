@@ -9,10 +9,16 @@ if not exist "%SIM_BIN%\xvlog.bat" (
 )
 set "SIM_SRC=%~dp0"
 for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
-set "SIM_OUT=%TEMP%\anlogic_video_mode_%RANDOM%_%RANDOM%"
+for /f %%G in ('powershell.exe -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "SIM_OUT=%TEMP%\anlogic_video_mode_%%G"
 set "SIZE_PARAMS="
 if /I "%~2"=="720" (
     set "SIZE_PARAMS=-generic_top "WIDTH=1280" -generic_top "HEIGHT=720" -generic_top "FAST=1""
+)
+if /I "%~2"=="odd" (
+    set "SIZE_PARAMS=-generic_top "HEIGHT=49""
+)
+if /I "%~2"=="no-gaussian" (
+    set "SIZE_PARAMS=-generic_top "GAUSSIAN_ENABLE=0""
 )
 mkdir "%SIM_OUT%"
 if errorlevel 1 exit /b 1
@@ -33,10 +39,12 @@ call "%SIM_BIN%\xsim.bat" color_video_mode -runall -log video_sim.log >video_con
 if errorlevel 1 goto failed
 findstr /c:"SCHARR_EDGE_TEST_PASS" video_console.log >nul
 if errorlevel 1 goto failed
+findstr /c:"EMBOSS_TEST_PASS" video_console.log >nul
+if errorlevel 1 goto failed
 >result.txt echo PASS
 type result.txt
 findstr /c:"VIDEO_MODE_BUTTON_TEST_PASS" button_console.log
-findstr /c:"SCHARR_EDGE_TEST_PASS" /c:"SCHARR_CONTOURS" video_console.log
+findstr /c:"SCHARR_EDGE_TEST_PASS" /c:"SCHARR_CONTOURS" /c:"EMBOSS_TEST_PASS" /c:"EMBOSS_SYNTHETIC_PREVIEW" video_console.log
 echo Simulation output: %SIM_OUT%
 popd
 if /I not "%~1"=="--no-pause" pause

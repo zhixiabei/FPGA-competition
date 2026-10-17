@@ -24,6 +24,7 @@ module tb_target_frame_alignment;
     reg hdmi_user = 0, hdmi_last = 0;
     reg camera_error = 0, camera_pause = 0;
     reg edge_mode = 0;
+    reg [11:0] effect_config = 12'h000, effect_request = 12'h000;
     reg motion_mode = 0, result_motion_mode = 0, detection_request = 0;
     reg [3:0] diagnostic_status = 0;
     reg [7:0] diagnostic_fail = 0;
@@ -34,7 +35,7 @@ module tb_target_frame_alignment;
     integer ref_frame [0:3];
     bit ref_valid [0:3];
     bit ref_found [0:3];
-    bit ref_edge [0:3];
+    reg [11:0] ref_config [0:3];
     bit ref_motion [0:3];
     integer active_frame = -1;
     integer write_events = 0, read_events = 0, display_checks = 0;
@@ -43,6 +44,10 @@ module tb_target_frame_alignment;
     integer actual_status_checks = 0;
     integer red_display_checks = 0, motion_display_checks = 0;
     integer buffered_mode_checks = 0;
+    integer effect_config_checks = 0, buffered_effect_checks = 0;
+    integer invalid_effect_checks = 0, no_target_effect_checks = 0;
+    integer spatial_checks [0:4];
+    integer emboss_clip_checks = 0, scharr_clip_checks = 0;
     integer actual_write_slot = -1, actual_read_slot = -1;
     integer request_count = 0;
     reg request_seen = 0;
@@ -50,7 +55,8 @@ module tb_target_frame_alignment;
     // RAW readout is verified separately with the real tap/CDC/HDMI chain.
     design_top_wrapper #(.SHOW_RAW_STATS(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
-        .I_mode_key_n(1'b1), .I_detect_key_n(1'b1)
+        .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
+        .I_effect_key_n(1'b1), .I_param_key_n(1'b1)
     );
 
     function automatic integer slot_of_base(input [24:0] address);
@@ -64,28 +70,49 @@ module tb_target_frame_alignment;
     endfunction
 
     function automatic bit frame_has_target(input integer id);
-        frame_has_target = ((id % 5) != 1);
+        frame_has_target = ((id % 7) != 1);
     endfunction
     function automatic bit frame_motion_mode(input integer id);
         frame_motion_mode = ((id % 6) >= 3);
     endfunction
+    function automatic [11:0] frame_effect_config(input integer id);
+        reg [3:0] mode;
+        begin
+            if (id < 0) mode = 0;
+            else if (id == 27) mode = 4;
+            else if (id == 28) mode = 2;
+            else mode = id % 5;
+            frame_effect_config = {mode, 8'd0};
+        end
+    endfunction
     function automatic integer frame_xmin(input integer id);
-        frame_xmin = id == 28 ? 1268 : 300 + id * 7;
+        frame_xmin = (id == 27 || id == 28) ? 1268 : 300 + id * 7;
     endfunction
     function automatic integer frame_xmax(input integer id);
-        frame_xmax = id == 28 ? 1278 : frame_xmin(id)+40;
+        frame_xmax = (id == 27 || id == 28) ? 1279 : frame_xmin(id)+40;
     endfunction
     function automatic integer frame_ymin(input integer id);
-        frame_ymin = id == 28 ? 710 : 180 + (id % 7) * 4;
+        frame_ymin = (id == 27 || id == 28) ? 710 : 180 + (id % 7) * 4;
     endfunction
     function automatic integer frame_ymax(input integer id);
-        frame_ymax = id == 28 ? 719 : frame_ymin(id)+30;
+        frame_ymax = (id == 27 || id == 28) ? 719 : frame_ymin(id)+30;
     endfunction
-    function automatic integer display_x(input integer value, input bit edge_on);
-        display_x = edge_on ? (value+3 > 1279 ? 1279 : value+3) : value;
+    function automatic integer spatial_offset(input [3:0] mode);
+        spatial_offset = mode == 2 ? 3 : mode == 4 ? 1 : 0;
     endfunction
-    function automatic integer display_y(input integer value, input bit edge_on);
-        display_y = edge_on ? (value+3 > 719 ? 719 : value+3) : value;
+    function automatic integer display_x(input integer value, input [3:0] mode);
+        integer shifted;
+        begin
+            shifted = value + spatial_offset(mode);
+            display_x = shifted > 1279 ? 1279 : shifted;
+        end
+    endfunction
+    function automatic integer display_y(input integer value, input [3:0] mode);
+        integer shifted;
+        begin
+            shifted = value + spatial_offset(mode);
+            display_y = shifted > 719 ? 719 : shifted;
+        end
     endfunction
 
     // The addresses below are the existing DDR control path. Metadata output
@@ -101,7 +128,7 @@ module tb_target_frame_alignment;
             ref_frame[actual_write_slot] = active_frame;
             ref_valid[actual_write_slot] = 0;
             ref_found[actual_write_slot] = 0;
-            ref_edge[actual_write_slot] = edge_mode;
+            ref_config[actual_write_slot] = frame_effect_config(active_frame);
             ref_motion[actual_write_slot] = motion_mode;
             write_events = write_events + 1;
         end
@@ -147,14 +174,20 @@ module tb_target_frame_alignment;
         integer id, x0, x1, y0, y1;
         begin
             id = ref_frame[slot];
-            x0 = display_x(frame_xmin(id), ref_edge[slot]);
-            x1 = display_x(frame_xmax(id), ref_edge[slot]);
-            y0 = display_y(frame_ymin(id), ref_edge[slot]);
-            y1 = display_y(frame_ymax(id), ref_edge[slot]);
+            x0 = display_x(frame_xmin(id), ref_config[slot][11:8]);
+            x1 = display_x(frame_xmax(id), ref_config[slot][11:8]);
+            y0 = display_y(frame_ymin(id), ref_config[slot][11:8]);
+            y1 = display_y(frame_ymax(id), ref_config[slot][11:8]);
             if (dut.S_target_slots_valid[slot] !== ref_valid[slot])
                 $fatal(1, "Slot valid mismatch slot=%0d frame=%0d", slot, id);
             if (dut.S_target_slots[slot][73] !== ref_motion[slot])
                 $fatal(1, "Slot detection mode mismatch slot=%0d frame=%0d", slot, id);
+            if (dut.S_target_slots[slot][85:74] !== ref_config[slot])
+                $fatal(1, "Slot effect configuration mismatch slot=%0d frame=%0d got=%h expected=%h",
+                    slot, id, dut.S_target_slots[slot][85:74], ref_config[slot]);
+            effect_config_checks = effect_config_checks+1;
+            if (!ref_valid[slot]) invalid_effect_checks = invalid_effect_checks+1;
+            else if (!ref_found[slot]) no_target_effect_checks = no_target_effect_checks+1;
             if (ref_valid[slot] && ref_found[slot]) begin
                 if (dut.S_target_slots[slot][72] !== 1'b1 ||
                     dut.S_target_slots[slot][71:60] != x0 ||
@@ -164,6 +197,12 @@ module tb_target_frame_alignment;
                     dut.S_target_slots[slot][23:12] != (x0+x1)/2 ||
                     dut.S_target_slots[slot][11:0] != (y0+y1)/2)
                     $fatal(1, "Result payload mismatch slot=%0d frame=%0d", slot, id);
+                spatial_checks[ref_config[slot][11:8]] =
+                    spatial_checks[ref_config[slot][11:8]]+1;
+                if (id == 27 && x1 == 1279 && y1 == 719)
+                    emboss_clip_checks = emboss_clip_checks+1;
+                if (id == 28 && x1 == 1279 && y1 == 719)
+                    scharr_clip_checks = scharr_clip_checks+1;
             end else if ((!ref_valid[slot] && dut.S_target_slots[slot][72:0] !== 73'd0) ||
                          (ref_valid[slot] && dut.S_target_slots[slot][72] !== 1'b0))
                 $fatal(1, "No-target or invalid slot retains old target slot=%0d frame=%0d",
@@ -178,12 +217,14 @@ module tb_target_frame_alignment;
             hdmi_de = 0; hdmi_user = 0; hdmi_last = 0; hdmi_vs = 1;
             camera_error = 0; camera_pause = 0;
             motion_mode = 0; result_motion_mode = 0; detection_request = 0;
+            effect_config = 12'h000; effect_request = 12'h000;
+            edge_mode = 0;
             active_frame = -1;
             for (integer slot = 0; slot < 4; slot = slot+1) begin
                 ref_frame[slot] = -1;
                 ref_valid[slot] = 0;
                 ref_found[slot] = 0;
-                ref_edge[slot] = 0;
+                ref_config[slot] = 12'h000;
                 ref_motion[slot] = 0;
             end
             repeat (10) @(negedge csi_clk);
@@ -203,7 +244,9 @@ module tb_target_frame_alignment;
         begin
             mailbox_idle();
             active_frame = id;
-            edge_mode = ((id >= 8 && id < 18) || id >= 24);
+            effect_config = frame_effect_config(id);
+            effect_request = effect_config;
+            edge_mode = effect_config[11:8] == 2;
             motion_mode = frame_motion_mode(id);
             detection_request = motion_mode;
             before_count = write_events;
@@ -221,6 +264,11 @@ module tb_target_frame_alignment;
             // A request during the frame belongs to a later camera frame.
             // Published results and slot invalidation must retain this frame.
             detection_request = ~motion_mode;
+            effect_request = frame_effect_config(id);
+            effect_request[11:8] = effect_request[11:8] == 4'd4 ?
+                4'd0 : effect_request[11:8] + 4'd1;
+            effect_config = effect_request;
+            edge_mode = effect_config[11:8] == 2;
         end
     endtask
 
@@ -279,13 +327,17 @@ module tb_target_frame_alignment;
                 $fatal(1, "Display sync did not select exactly one DDR read base");
             slot = actual_read_slot;
             id = ref_frame[slot];
-            x0 = display_x(frame_xmin(id), ref_edge[slot]);
-            x1 = display_x(frame_xmax(id), ref_edge[slot]);
-            y0 = display_y(frame_ymin(id), ref_edge[slot]);
-            y1 = display_y(frame_ymax(id), ref_edge[slot]);
+            x0 = display_x(frame_xmin(id), ref_config[slot][11:8]);
+            x1 = display_x(frame_xmax(id), ref_config[slot][11:8]);
+            y0 = display_y(frame_ymin(id), ref_config[slot][11:8]);
+            y1 = display_y(frame_ymax(id), ref_config[slot][11:8]);
             if (dut.S_read_slot_sync !== slot[1:0])
                 $fatal(1, "Read-slot CDC has not settled before active pixels");
             check_slot(slot);
+            if (dut.S_effect_config_hdmi !== ref_config[slot] ||
+                {dut.u_hdmi_mixer.I_effect_mode, dut.u_hdmi_mixer.I_effect_param}
+                    !== ref_config[slot])
+                $fatal(1, "Selected DDR slot did not supply its saved effect configuration");
             expected_found = ref_valid[slot] && ref_found[slot];
             // A short first line is enough to exercise the real mixer's
             // pixel(0,0) latch; full-frame pixel processing is outside scope.
@@ -297,6 +349,10 @@ module tb_target_frame_alignment;
                 $fatal(1, "Mixer latched wrong frame target slot=%0d frame=%0d", slot, id);
             if (dut.u_hdmi_mixer.S_target_motion_mode !== ref_motion[slot])
                 $fatal(1, "Mixer latched wrong frame detection mode slot=%0d frame=%0d", slot, id);
+            if (dut.u_hdmi_mixer.S_effect_mode !== ref_config[slot][11:8])
+                $fatal(1, "Mixer effect/label followed a newer request slot=%0d frame=%0d got=%h expected=%h",
+                    slot, id, dut.u_hdmi_mixer.S_effect_mode,
+                    ref_config[slot][11:8]);
             if (expected_found &&
                 (dut.u_hdmi_mixer.S_target_xmin != x0 ||
                  dut.u_hdmi_mixer.S_target_xmax != x1 ||
@@ -316,6 +372,8 @@ module tb_target_frame_alignment;
                 red_display_checks = red_display_checks+1;
             if (id >= 0 && ref_motion[slot] != motion_mode)
                 buffered_mode_checks = buffered_mode_checks+1;
+            if (id >= 0 && ref_config[slot] != effect_request)
+                buffered_effect_checks = buffered_effect_checks+1;
         end
     endtask
 
@@ -460,6 +518,9 @@ module tb_target_frame_alignment;
         force dut.S_ISP_motion_mode_active = motion_mode;
         force dut.S_motion_mode_requested = detection_request;
         force dut.S_ISP_edge_mode_active = edge_mode;
+        force dut.S_ISP_effect_config = effect_config;
+        force dut.S_effect_mode_requested = effect_request[11:8];
+        force dut.S_effect_param_requested = effect_request[7:0];
         force dut.S_hdmi_vsync = hdmi_vs;
         force dut.S_hdmi_hsync = hdmi_hs;
         force dut.S_hdmi_de = hdmi_de;
@@ -473,6 +534,8 @@ module tb_target_frame_alignment;
         force dut.u_video_in.I_mipi_rx_error = camera_error;
         force dut.u_video_in.I_display_pause = camera_pause;
 
+        for (integer mode_index = 0; mode_index < 5; mode_index = mode_index+1)
+            spatial_checks[mode_index] = 0;
         reset_test();
         for (integer id = 0; id < 18; id = id+1) begin
             start_camera(id, id % 6);
@@ -525,12 +588,20 @@ module tb_target_frame_alignment;
             result_checks < 28 || invalidate_checks < 29 ||
             diagnostic_checks != 14 || actual_status_checks != 19 ||
             red_display_checks == 0 || motion_display_checks == 0 ||
-            buffered_mode_checks == 0)
+            buffered_mode_checks == 0 || effect_config_checks < 59 ||
+            buffered_effect_checks == 0 || invalid_effect_checks == 0 ||
+            no_target_effect_checks == 0 || emboss_clip_checks == 0 ||
+            scharr_clip_checks == 0)
             $fatal(1, "Coverage counters did not reach required scenarios");
-        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d",
+        for (integer mode_index = 0; mode_index < 5; mode_index=mode_index+1)
+            if (spatial_checks[mode_index] == 0)
+                $fatal(1, "Spatial compensation was not exercised mode=%0d", mode_index);
+        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d effect_config=%0d buffered_effect=%0d invalid_effect=%0d no_target_effect=%0d display_modes=0..4 emboss_clip=%0d scharr_clip=%0d",
             write_events, read_events, display_checks, result_checks,
             invalidate_checks, request_count, diagnostic_checks, actual_status_checks,
-            red_display_checks, motion_display_checks, buffered_mode_checks);
+            red_display_checks, motion_display_checks, buffered_mode_checks,
+            effect_config_checks, buffered_effect_checks, invalid_effect_checks,
+            no_target_effect_checks, emboss_clip_checks, scharr_clip_checks);
         $finish;
     end
 
@@ -589,13 +660,13 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
     I_data_start, I_data_end, axis_tvalid, axis_tdata, axis_tuser, axis_tlast);
 endmodule
 module isp_top #(parameter ENABLE_EDGE=0)
-    (input wire [127:0] axi4s_video_aclk, I_rst_n, I_edge_mode_async, I_motion_mode_async,
+    (input wire [127:0] axi4s_video_aclk, I_rst_n, I_effect_config, I_motion_mode_async,
     I_tlast, I_tuser, I_tdata, I_tvalid, I_tdest, O_tready, O_tdata,
     O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
     O_target_center_x, O_target_center_y, O_target_pixels,
     O_target_frame_toggle, O_target_motion_mode, O_motion_mode_active,
-    O_edge_mode_active, I_tready,
+    O_edge_mode_active, O_effect_config, I_tready,
     O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count,
     O_latency_frame_id);
 endmodule

@@ -7,13 +7,15 @@ New-Item -ItemType Directory -Path $work | Out-Null
 $sources=@('user_source/hdl_source/isp/raw_region_stats.v',
     'user_source/hdl_source/raw_stats_osd.v','user_source/hdl_source/ae_stats_cdc.v',
     'user_source/hdl_source/hdmi_mixer.v','user_source/hdl_source/osd_char_lib.v',
+    'user_source/hdl_source/gamma_lut_rgb888.v',
+    'user_source/hdl_source/display_effects_rgb888.v',
     'sim/tb_raw_region_stats.sv','sim/tb_raw_stats_hdmi.sv')
 foreach($relative in $sources) { Copy-Item -LiteralPath (Join-Path $root $relative) -Destination $work }
 $script=@'
 onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
-vlog -sv raw_region_stats.v raw_stats_osd.v ae_stats_cdc.v hdmi_mixer.v osd_char_lib.v tb_raw_region_stats.sv tb_raw_stats_hdmi.sv
+vlog -sv raw_region_stats.v raw_stats_osd.v ae_stats_cdc.v hdmi_mixer.v osd_char_lib.v gamma_lut_rgb888.v display_effects_rgb888.v tb_raw_region_stats.sv tb_raw_stats_hdmi.sv
 foreach geometry {RAW_GEOMETRIES} {
     lassign $geometry width height patch
     vsim -t ps -gW=$width -gH=$height -gL=$patch work.tb_raw_region_stats

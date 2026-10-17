@@ -1,38 +1,37 @@
-// Frame-boundary RGB/Scharr-edge selector for the non-stallable camera
-// stream. Both data paths, markers AND mode have eleven registered clocks of
-// latency. A request is synchronized then committed on input SOF (including
-// a SOF before the first valid beat); its delayed token selects output data.
+// Frame-boundary RGB/Scharr/emboss selector for the camera stream.
+// The synchronized mode/parameter snapshot commits on input SOF, including
+// SOF before the first valid beat. Data, markers and configuration all have
+// eleven registered clocks of latency, and bubbles advance all paths.
 module rgb_edge_switch_96 #(
     parameter integer IMG_WIDTH=1280,
     parameter integer IMG_HEIGHT=720,
     parameter integer EDGE_TH=20,
     parameter integer DEFAULT_EDGE_MODE=1
 )(
-    input wire I_clk,input wire I_rst_n,input wire I_edge_mode_async,
+    input wire I_clk,input wire I_rst_n,input wire [11:0] I_effect_config,
     input wire I_tlast,input wire I_tuser,input wire [95:0] I_tdata,
     input wire I_tvalid,
     output wire O_tlast,output wire O_tuser,output wire [95:0] O_tdata,
-    output wire O_tvalid,output wire O_edge_mode
+    output wire O_tvalid,output wire O_edge_mode,
+    output wire [11:0] O_effect_config
 );
     localparam integer LATENCY=11;
-    (* keep="true" *) reg mode_meta;
-    (* keep="true" *) reg mode_sync;
-    reg active_edge;
+    localparam [11:0] DEFAULT_CONFIG =
+        {(DEFAULT_EDGE_MODE!=0) ? 4'd2 : 4'd0, 8'd0};
+    reg [11:0] active_config;
+    wire [11:0] frame_config = I_tuser ? I_effect_config : active_config;
     wire [95:0] rgb_delayed;
-    reg [LATENCY-1:0] mode_delay;
-    wire [95:0] edge_data;
+    reg [11:0] config_delay [0:LATENCY-1];
+    wire [95:0] edge_data,emboss_data;
     integer i;
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
-            mode_meta<=(DEFAULT_EDGE_MODE!=0);
-            mode_sync<=(DEFAULT_EDGE_MODE!=0);
-            active_edge<=(DEFAULT_EDGE_MODE!=0);
-            mode_delay<={LATENCY{(DEFAULT_EDGE_MODE!=0)}};
+            active_config<=DEFAULT_CONFIG;
+            for(i=0;i<LATENCY;i=i+1) config_delay[i]<=DEFAULT_CONFIG;
         end else begin
-            mode_meta<=I_edge_mode_async; mode_sync<=mode_meta;
-            if(I_tuser) active_edge<=mode_sync;
-            mode_delay[0]<=I_tuser ? mode_sync : active_edge;
-            for(i=1;i<LATENCY;i=i+1) mode_delay[i]<=mode_delay[i-1];
+            if(I_tuser) active_config<=I_effect_config;
+            config_delay[0]<=frame_config;
+            for(i=1;i<LATENCY;i=i+1) config_delay[i]<=config_delay[i-1];
         end
     end
     // No reset is needed for pixel storage: O_tvalid remains low until all
@@ -81,9 +80,12 @@ module rgb_edge_switch_96 #(
         .I_clk(I_clk),.I_rst_n(I_rst_n),.I_tlast(I_tlast),.I_tuser(I_tuser),
         .I_tdata(I_tdata),.I_tvalid(I_tvalid),.I_tready(1'b1),
         .O_tlast(O_tlast),.O_tuser(O_tuser),.O_tdata(edge_data),
+        .O_emboss_data(emboss_data),
         .O_tvalid(O_tvalid),.O_tready()
     );
     assign O_tdata=!O_tvalid ? 96'd0 :
-                  mode_delay[LATENCY-1] ? edge_data : rgb_delayed;
-    assign O_edge_mode=mode_delay[LATENCY-1];
+                  O_effect_config[11:8]==4'd2 ? edge_data :
+                  O_effect_config[11:8]==4'd4 ? emboss_data : rgb_delayed;
+    assign O_effect_config=config_delay[LATENCY-1];
+    assign O_edge_mode=O_effect_config[11:8]==4'd2;
 endmodule

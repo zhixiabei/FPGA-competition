@@ -1,7 +1,8 @@
 param(
     [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p',
-    [switch] $Motion
+    [switch] $Motion,
+    [switch] $Emboss
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,7 +49,8 @@ try {
         -log xvlog.log *> compile_console.log
     if ($LASTEXITCODE -ne 0) { throw 'ISP integration compile failed; see compile_console.log' }
     $modeArgs=@()
-    if ($Motion) { $modeArgs=@('-generic_top','"MOTION_MODE=1"') }
+    if ($Motion) { $modeArgs+=@('-generic_top','"MOTION_MODE=1"') }
+    if ($Emboss) { $modeArgs+=@('-generic_top','"EMBOSS_MODE=1"') }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
         @modeArgs work.tb_isp_lighting_integration -s isp_lighting -log xelab.log *> elaborate_console.log
     if ($LASTEXITCODE -ne 0) { throw 'ISP integration elaboration failed; see elaborate_console.log' }
@@ -58,6 +60,11 @@ try {
     $pass=Select-String -LiteralPath simulate_console.log -Pattern $passPattern
     if (-not $pass) { throw 'ISP integration did not pass; see simulate_console.log' }
     $pass.Line
+    if ($Emboss) {
+        $embossPass=Select-String -LiteralPath simulate_console.log -Pattern '^ISP_EMBOSS_INTEGRATION_PASS'
+        if (-not $embossPass) { throw 'ISP emboss integration did not pass; see simulate_console.log' }
+        $embossPass.Line
+    }
 } finally {
     Pop-Location
 }

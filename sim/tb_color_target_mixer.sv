@@ -23,6 +23,7 @@ module tb_color_target_mixer;
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),
         .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_RED_MASK(MASK_VIEW)) dut (
         .I_clk(clk),.I_rst_n(rst_n),.I_video_de(de),
+        .I_effect_mode(4'd0),.I_effect_param(8'd0),
         .I_video_user(user),.I_video_last(last),
         .I_video_hsync(hs),.I_video_vsync(vs),
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0),
@@ -45,6 +46,27 @@ module tb_color_target_mixer;
             if (f==6) camera_pixel=24'hfafafa;
             if (f==7) camera_pixel=(xx[4]^yy[4]) ? 24'hffffff : 24'h000000;
         end
+    endfunction
+
+    function automatic [7:0] tone_channel(input integer value);
+        integer x0,x1,y0,y1;
+        begin
+            if(value<16) begin x0=0;x1=16;y0=0;y1=23;end
+            else if(value<32) begin x0=16;x1=32;y0=23;y1=44;end
+            else if(value<64) begin x0=32;x1=64;y0=44;y1=80;end
+            else if(value<96) begin x0=64;x1=96;y0=80;y1=104;end
+            else if(value<128) begin x0=96;x1=128;y0=104;y1=128;end
+            else if(value<160) begin x0=128;x1=160;y0=128;y1=152;end
+            else if(value<192) begin x0=160;x1=192;y0=152;y1=180;end
+            else if(value<224) begin x0=192;x1=224;y0=180;y1=210;end
+            else if(value<240) begin x0=224;x1=240;y0=210;y1=232;end
+            else begin x0=240;x1=255;y0=232;y1=255;end
+            tone_channel=y0+((value-x0)*(y1-y0)+(x1-x0)/2)/(x1-x0);
+        end
+    endfunction
+    function automatic [23:0] tone_pixel(input [23:0] source_rgb);
+        tone_pixel={tone_channel(source_rgb[23:16]),tone_channel(source_rgb[15:8]),
+            tone_channel(source_rgb[7:0])};
     endfunction
 
     function automatic bit expected_found(input integer f);
@@ -74,7 +96,7 @@ module tb_color_target_mixer;
     always @(posedge clk) begin: check_output
         integer x0,x1,y0,y1,cx,cy;
         bit box_on,cross_on,panel_on;
-        reg [23:0] expected_rgb;
+        reg [23:0] expected_rgb,expected_native;
         sample_de=dut.S_video_de_2d;
         sample_hs=dut.S_video_hsync_2d;
         sample_vs=dut.S_video_vsync_2d;
@@ -89,8 +111,9 @@ module tb_color_target_mixer;
                 if (sample_x != output_x || sample_y != output_y)
                     $fatal(1,"Coordinate mismatch frame=%0d expected=%0d,%0d got=%0d,%0d",
                         output_frame,output_x,output_y,sample_x,sample_y);
-                if (sample_native !== camera_pixel(output_frame,output_x,output_y))
-                    $fatal(1,"Native pixel misalignment");
+                expected_native=tone_pixel(camera_pixel(output_frame,output_x,output_y));
+                if (sample_native !== expected_native)
+                    $fatal(1,"Native pixel/gamma mismatch");
                 if (dut.S_target_found !== expected_found(output_frame))
                     $fatal(1,"Frame-latched target status mismatch frame=%0d",output_frame);
                 x0=expected_x0(output_frame); x1=expected_x1(output_frame);
@@ -128,7 +151,7 @@ module tb_color_target_mixer;
                         $fatal(1,"Text panel has an invalid color");
                     if (out_rgb == 24'hfff200) label_pixels=label_pixels+1;
                 end else begin
-                    expected_rgb=box_on ? 24'hff3030 : cross_on ? 24'hfff200 : sample_native;
+                    expected_rgb=box_on ? 24'hff3030 : cross_on ? 24'hfff200 : expected_native;
                     if (out_rgb !== expected_rgb) $fatal(1,"Overlay mismatch %0d,%0d",output_x,output_y);
                     if (box_on) boxes=boxes+1;
                     if (cross_on) crosses=crosses+1;

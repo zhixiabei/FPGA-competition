@@ -12,7 +12,7 @@ module isp_top #(
 ) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
-    input           I_edge_mode_async,
+    input [11:0]    I_effect_config,
     input           I_motion_mode_async,
     input 			I_tlast			,
     input 			I_tuser			,
@@ -38,6 +38,7 @@ module isp_top #(
     output          O_target_motion_mode,
     output          O_motion_mode_active,
     output          O_edge_mode_active,
+    output [11:0]   O_effect_config,
     output          O_ae_stats_valid,
     output [31:0]   O_ae_sum_y,
     output [15:0]   O_ae_sample_count,
@@ -205,7 +206,7 @@ rgb_edge_switch_96 #(
 ) u_rgb_edge_switch (
     .I_clk   (axi4s_video_aclk),
     .I_rst_n (I_rst_n),
-    .I_edge_mode_async(I_edge_mode_async),
+    .I_effect_config(I_effect_config),
     .I_tlast (awb_O_tlast),
     .I_tuser (awb_O_tuser),
     .I_tdata (awb_O_tdata),
@@ -214,7 +215,8 @@ rgb_edge_switch_96 #(
     .O_tuser (edge_O_tuser),
     .O_tdata (edge_O_tdata),
     .O_tvalid(edge_O_tvalid),
-    .O_edge_mode(O_edge_mode_active)
+    .O_edge_mode(O_edge_mode_active),
+    .O_effect_config(O_effect_config)
 );
 
 target_detect_switch_96 #(

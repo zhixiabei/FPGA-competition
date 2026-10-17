@@ -30,6 +30,7 @@ module tb_raw_stats_hdmi;
     ae_stats_cdc #(.WIDTH(28)) ae_mailbox(.I_src_clk(control),.I_dst_clk(hdmi),.I_rst_n(rst),
         .I_src_valid(ae_valid),.I_src_data(ae_data),.O_dst_valid(ae_dst_valid),.O_dst_data(ae_dst_data));
     hdmi_mixer #(.SHOW_RAW_STATS(1)) dut(.I_clk(hdmi),.I_rst_n(rst),
+        .I_effect_mode(4'd0),.I_effect_param(8'd0),
         .I_video_de(de),.I_video_user(user),.I_video_last(last),.I_video_hsync(hs),.I_video_vsync(vs),
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0),.I_raw_stats_valid(dv),.I_raw_stats_data(dd),
         .I_ae_readout_valid(ae_dst_valid),.I_ae_readout_data(ae_dst_data),
@@ -127,10 +128,10 @@ module tb_raw_stats_hdmi;
     always @(posedge hdmi) begin: check
         integer x,y,px,py;
         bit sde,shs,svs,panel,alert,osd;
-        reg [23:0] want,osd_rgb,native;
+        reg [23:0] want,osd_rgb;
         sde=dut.S_video_de_2d; shs=dut.S_video_hsync_2d; svs=dut.S_video_vsync_2d;
         x=dut.S_x_2d; y=dut.S_y_2d;
-        osd=dut.S_osd_hit; osd_rgb=dut.S_osd_color; native=dut.S_video_data_2d;
+        osd=dut.S_osd_hit; osd_rgb=dut.S_osd_color;
         panel=sde && x>=496 && x<1264 && y>=176 && y<528;
         px=x-496;py=y-176;
         expected_char=panel ? table_char(py/32,px/32) : 8'h20;
@@ -140,7 +141,8 @@ module tb_raw_stats_hdmi;
             if(ode!==sde || ohs!==shs || ovs!==svs || rd!==de) $fatal(1,"HDMI timing/read-enable changed");
             if(sde) begin
                 alert=expected_frame>=0 && (expected_stale || (expected_frame==1 && py/32==10));
-                want=osd?osd_rgb:native;
+                // Source 0x406080 lies at the 64, 96 and 128 curve knots.
+                want=osd?osd_rgb:24'h506880;
                 if(panel) begin
                     want=expected_glyph[15-(px%32)/2] ? (alert?24'hffb040:24'hffffff) : 24'h101010;
                     if(expected_glyph[15-(px%32)/2]) glyph_pixels++;

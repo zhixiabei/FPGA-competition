@@ -11,7 +11,8 @@ module hdmi_mixer #(
     parameter integer TARGET_RED_DELTA = 30,
     parameter integer TARGET_MIN_PIXELS = 128,
     parameter integer SHOW_RAW_STATS = 0,
-    parameter integer SHOW_LATENCY = 0
+    parameter integer SHOW_LATENCY = 0,
+    parameter integer SHOW_EFFECT_LABEL = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -21,6 +22,8 @@ module hdmi_mixer #(
     input wire        I_video_de,
     input wire        I_video_user,
     input wire        I_video_last,
+    input wire [3:0]  I_effect_mode,
+    input wire [7:0]  I_effect_param,
 
     input wire[3:0]   I_debug_status,
     input wire[7:0]   I_cam_fail_index,
@@ -62,14 +65,34 @@ module hdmi_mixer #(
     reg        S_video_hsync_2d;
     reg        S_video_de_1d;
     reg        S_video_de_2d;
-    reg [23:0] S_video_data_1d;
-    reg [23:0] S_video_data_2d;
+    wire [23:0] S_video_data_2d;
     reg [11:0] S_x;
     reg [11:0] S_y;
     reg [11:0] S_x_1d;
     reg [11:0] S_x_2d;
     reg [11:0] S_y_1d;
     reg [11:0] S_y_2d;
+
+    reg [3:0] S_effect_mode;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_effect_mode <= 4'd0;
+        end else if (I_video_user) begin
+            S_effect_mode <= I_effect_mode;
+        end
+    end
+
+    // USER accompanies the first pixel: bypass the active registers on that
+    // edge so the whole frame uses one coherent configuration, including SOF.
+    // Two pixel stages preserve the existing coordinates and overlay timing.
+    display_effects_rgb888 u_display_effects (
+        .I_clk(I_clk),
+        .I_rst_n(I_rst_n),
+        .I_rgb(I_video_rd_data),
+        .I_mode(I_video_user ? I_effect_mode : S_effect_mode),
+        .I_param(8'd0),
+        .O_rgb(S_video_data_2d)
+    );
 
     reg        S_osd_hit;
     reg [23:0] S_osd_color;
@@ -286,11 +309,43 @@ module hdmi_mixer #(
             default: S_target_char = 8'h20;
         endcase
     end
+    localparam EFFECT_TEXT_X = 192;
+    localparam EFFECT_TEXT_Y = 80;
+    wire S_effect_panel_on = (SHOW_EFFECT_LABEL != 0) && S_video_de_2d &&
+        (S_x_2d >= EFFECT_TEXT_X) && (S_x_2d < EFFECT_TEXT_X+240) &&
+        (S_y_2d >= EFFECT_TEXT_Y) && (S_y_2d < EFFECT_TEXT_Y+16);
+    wire [11:0] S_effect_text_x = S_x_2d - EFFECT_TEXT_X;
+    wire [3:0] S_effect_text_y = S_y_2d - EFFECT_TEXT_Y;
+    wire [4:0] S_effect_char_index = S_effect_text_x[8:4];
+    reg [95:0] S_effect_name;
+    reg [7:0] S_effect_char;
+    always @(*) begin
+        case (S_effect_mode)
+            0: S_effect_name = "COLOR GAMMA ";
+            1: S_effect_name = "GRAYSCALE   ";
+            2: S_effect_name = "SCHARR EDGE ";
+            3: S_effect_name = "NEGATIVE    ";
+            4: S_effect_name = "EMBOSS      ";
+            default: S_effect_name = "COLOR GAMMA ";
+        endcase
+        S_effect_char = " ";
+        if (S_effect_char_index == 0)
+            S_effect_char = "0";
+        else if (S_effect_char_index == 1)
+            S_effect_char = 8'h30 + {4'd0,S_effect_mode};
+        else if (S_effect_char_index >= 3 && S_effect_char_index <= 14)
+            S_effect_char = S_effect_name[95-8*(S_effect_char_index-3) -: 8];
+    end
+    // The two panels occupy separate scan rows and share one font lookup.
     osd_char_lib u_target_char_lib (
-        .I_char(S_target_char), .I_row(S_target_text_y), .O_row_bits(S_target_char_bits)
+        .I_char(S_effect_panel_on ? S_effect_char : S_target_char),
+        .I_row(S_effect_panel_on ? S_effect_text_y : S_target_text_y),
+        .O_row_bits(S_target_char_bits)
     );
     wire S_target_text_on = S_target_panel_on &&
         S_target_char_bits[15-S_target_text_x[3:0]];
+    wire S_effect_text_on = S_effect_panel_on &&
+        S_target_char_bits[15-S_effect_text_x[3:0]];
 
     wire S_raw_panel, S_raw_text, S_raw_alert;
     generate if (SHOW_RAW_STATS != 0) begin: raw_readout
@@ -1096,8 +1151,6 @@ module hdmi_mixer #(
             S_video_de_1d    <= I_video_de;
             S_video_de_2d    <= S_video_de_1d;
             O_hdmi_de        <= S_video_de_2d;
-            S_video_data_1d  <= I_video_rd_data;
-            S_video_data_2d  <= S_video_data_1d;
 
             if(DEBUG_MODE == 1) begin
                 if(S_video_de_2d) begin
@@ -1184,6 +1237,8 @@ module hdmi_mixer #(
                         (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
                     O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[3:0],
                         S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
+                else if(S_effect_panel_on)
+                    O_hdmi_data <= S_effect_text_on ? 24'h00e6ff : 24'h101010;
                 else if(S_latency_panel)
                     O_hdmi_data <= S_latency_text ?
                         (S_latency_alert ? 24'hffb040 : 24'hffffff) :

@@ -21,6 +21,7 @@ module tb_video_latency_osd;
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(1),
         .SHOW_CAMERA_STATUS(1),.SHOW_COLOR_TARGET(1)) mixer(
         .I_clk(clk),.I_rst_n(mix_rst),.I_video_de(de),.I_video_user(user),
+        .I_effect_mode(4'd0),.I_effect_param(8'd0),
         .I_video_last(last),.I_video_hsync(hs),.I_video_vsync(vs),
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0),
         .I_raw_stats_valid(1'b0),.I_raw_stats_data(45'd0),
@@ -66,6 +67,24 @@ module tb_video_latency_osd;
             for(integer i=0;i<64;i=i+1) begin reference_history[i]=0; reference_valid[i]=0; end
         end
     endtask
+
+    // Evaluate the proposed knots independently of the hardware's ROM table.
+    function automatic [7:0] tone_channel(input integer value);
+        integer x0,x1,y0,y1;
+        begin
+            if(value<16) begin x0=0;x1=16;y0=0;y1=23;end
+            else if(value<32) begin x0=16;x1=32;y0=23;y1=44;end
+            else if(value<64) begin x0=32;x1=64;y0=44;y1=80;end
+            else if(value<96) begin x0=64;x1=96;y0=80;y1=104;end
+            else if(value<128) begin x0=96;x1=128;y0=104;y1=128;end
+            else if(value<160) begin x0=128;x1=160;y0=128;y1=152;end
+            else if(value<192) begin x0=160;x1=192;y0=152;y1=180;end
+            else if(value<224) begin x0=192;x1=224;y0=180;y1=210;end
+            else if(value<240) begin x0=224;x1=240;y0=210;y1=232;end
+            else begin x0=240;x1=255;y0=232;y1=255;end
+            tone_channel=y0+((value-x0)*(y1-y0)+(x1-x0)/2)/(x1-x0);
+        end
+    endfunction
 
     task automatic accept_reference(input bit valid_sample, input integer total_us,isp_us,buffer_us);
         begin
@@ -249,7 +268,8 @@ module tb_video_latency_osd;
         if(mix_rst) begin
             sample_de=mixer.S_video_de_2d; sample_hs=mixer.S_video_hsync_2d;
             sample_vs=mixer.S_video_vsync_2d; sample_start=frame_start;
-            x=mixer.S_x_2d; y=mixer.S_y_2d; native_rgb=mixer.S_video_data_2d;
+            x=mixer.S_x_2d; y=mixer.S_y_2d;
+            native_rgb={tone_channel(mixer_x/5),tone_channel(mixer_y/3),tone_channel(96)};
             sample_osd=mixer.S_osd_hit; osd_rgb=mixer.S_osd_color;
             target_panel=mixer.S_target_panel_on; target_text=mixer.S_target_text_on;
             box_on=mixer.S_target_box_on; cross_on=mixer.S_target_cross_on;

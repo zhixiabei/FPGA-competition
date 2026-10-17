@@ -103,7 +103,37 @@ function Publish-ReleaseFiles([object[]] $Files,[string] $BackupDirectory) {
     }
 }
 
+function Assert-DisplayEffectConstraintHealth([string] $Path) {
+    $health=[IO.File]::ReadAllText($Path)
+    if($health -notmatch 'There are 0 invalid constraints\.' -or
+       $health -notmatch 'There are 0 constraints that have no timing paths\.') {
+        throw "Invalid or missing-path timing constraints: $Path"
+    }
+    $rows=@($health -split '\r?\n' | Where-Object {
+        $_.Contains('u_display_effect_cdc/payload_hold[*]') -and
+        $_.Contains('u_display_effect_cdc/O_dst_data[*]')
+    })
+    $pattern='^\s*(?<total>\d+)\s+(?<dominated>\d+)\s+(?<shadowed>\d+)\s+(?<ignored>\d+)\s+set_max_delay\s+-datapath_only\b.*\s(?<limit>\d+(?:\.\d+)?)\s*$'
+    if($rows.Count -ne 1) {
+        throw "Expected one display-effect CDC payload constraint: $Path"
+    }
+    $row=[regex]::Match($rows[0],$pattern)
+    if(-not $row.Success) {
+        throw "Unrecognized display-effect CDC constraint health: $Path"
+    }
+    $total=[int]$row.Groups['total'].Value
+    $limit=[double]::Parse($row.Groups['limit'].Value,
+        [Globalization.CultureInfo]::InvariantCulture)
+    if($total -le 0 -or [int]$row.Groups['dominated'].Value -ne $total -or
+       [int]$row.Groups['shadowed'].Value -ne 0 -or
+       [int]$row.Groups['ignored'].Value -ne 0 -or $limit -ne 13.0) {
+        throw "The 13 ns display-effect CDC bound must cover every payload path: $Path"
+    }
+    return [pscustomobject]@{payload_paths=$total; max_delay_ns=$limit; status='passed'}
+}
+
 $firmwareDirectory=Get-WorkspaceDestination 'firmware'
+$bestResultDirectory=Get-WorkspaceDestination 'td_project\anlogic_edge_osd_Runs\best_result'
 $reportDirectory=$null
 if($GenerateBit) {
     $reportDirectory=Get-WorkspaceDestination $(if($OutputDirectory) {$OutputDirectory} else {'build\release'})
@@ -251,6 +281,7 @@ try {
         throw "TD build is incomplete: $work\console.log"
     }
     $slacks=@{}
+    $displayEffectConstraint=$null
     if(-not $SkipRoute) {
         $timing=[IO.File]::ReadAllText((Join-Path $work 'system_pr.timing'))
         foreach($kind in @('SWNS','HWNS')) {
@@ -263,15 +294,23 @@ try {
                 [Globalization.CultureInfo]::InvariantCulture)
             Write-Output $slack.Value
         }
+        $displayEffectConstraint=Assert-DisplayEffectConstraintHealth (Join-Path $work 'constraint_health.timing')
+        Write-Output "DISPLAY_EFFECT_CDC_CONSTRAINT_PASS paths=$($displayEffectConstraint.payload_paths) max_delay_ns=$($displayEffectConstraint.max_delay_ns)"
     }
     Select-String -LiteralPath console.log -Pattern '^IMAGE_QUALITY_.*PASS' |
         ForEach-Object { $_.Line }
     if($GenerateBit) {
         $generatedBit=Join-Path $work 'image_quality.bit'
+        $generatedCompressedBit=Join-Path $work 'image_quality_compress.bit'
         if($text -notmatch 'IMAGE_QUALITY_BITGEN_PASS' -or
            -not (Test-Path -LiteralPath $generatedBit -PathType Leaf) -or
            (Get-Item -LiteralPath $generatedBit).Length -eq 0) {
             throw "Programming file was not generated: $work"
+        }
+        if(-not (Test-Path -LiteralPath $generatedCompressedBit -PathType Leaf) -or
+           (Get-Item -LiteralPath $generatedCompressedBit).Length -eq 0 -or
+           -not (Test-Path -LiteralPath (Join-Path $work 'project_inst.bid') -PathType Leaf)) {
+            throw "Compressed bitstream or instance report is missing: $work"
         }
         $reportNames=@('system_rtl.area','system_gate.area','system_gate.timing',
             'system_place.timing','system_pr.timing','system_phy.area','system_phy.ts',
@@ -283,8 +322,10 @@ try {
         }
         # Stage and back up every deliverable before replacing the previous release.
         $firmwareDirectory=Get-WorkspaceDestination $firmwareDirectory
+        $bestResultDirectory=Get-WorkspaceDestination $bestResultDirectory
         $reportDirectory=Get-WorkspaceDestination $reportDirectory
         New-Item -ItemType Directory -Path $firmwareDirectory -Force | Out-Null
+        New-Item -ItemType Directory -Path $bestResultDirectory -Force | Out-Null
         New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
         $fixedBit=Join-Path $firmwareDirectory 'anlogic_edge_osd.bit'
         $stagedBit=Join-Path $firmwareDirectory ('.anlogic_edge_osd.'+$buildId+'.tmp')
@@ -303,6 +344,24 @@ try {
             StagedPath=$stagedBit
             DestinationPath=$fixedBit
         }
+        $bestResultReadme=Join-Path $work 'best_result_readme.txt'
+        [IO.File]::WriteAllText($bestResultReadme,
+            "Verified build $version. Reports: build/release/release_manifest.json`r`n"+
+            "Program anlogic_edge_osd.bit. firmware/anlogic_edge_osd.bit is an identical copy.`r`n",
+            [Text.UTF8Encoding]::new($false))
+        foreach($artifact in @(
+            @{Source=$generatedBit; Name='anlogic_edge_osd.bit'},
+            @{Source=$generatedCompressedBit; Name='anlogic_edge_osd_compress.bit'},
+            @{Source=(Join-Path $work 'project_inst.bid'); Name='anlogic_edge_osd_inst.bid'},
+            @{Source=(Join-Path $work 'system_phy.ts'); Name='anlogic_edge_osd_phy.ts'},
+            @{Source=$bestResultReadme; Name='readMe.txt'}
+        )) {
+            $releaseFiles+=[pscustomobject]@{
+                SourcePath=$artifact.Source
+                StagedPath=(Join-Path $bestResultDirectory ('.'+$artifact.Name+'.'+$buildId+'.tmp'))
+                DestinationPath=(Join-Path $bestResultDirectory $artifact.Name)
+            }
+        }
         $manifest=[ordered]@{
             schema_version=1
             project='anlogic_edge_osd'
@@ -313,7 +372,8 @@ try {
             toolchain_fingerprint_sha256=$driverHash
             source_manifest='source_sha256.csv'
             bitstream=[ordered]@{
-                path='firmware/anlogic_edge_osd.bit'
+                path='td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit'
+                mirror='firmware/anlogic_edge_osd.bit'
                 sha256=$bitHash
                 bytes=(Get-Item -LiteralPath $generatedBit).Length
             }
@@ -322,6 +382,7 @@ try {
                 mode='final_routed'
                 setup_slack_ns=$slacks['SWNS']
                 hold_slack_ns=$slacks['HWNS']
+                display_effect_cdc=$displayEffectConstraint
             }
             build=[ordered]@{
                 started_at_utc=$startedAtUtc
@@ -342,7 +403,8 @@ try {
         }
         Publish-ReleaseFiles $releaseFiles (Join-Path $work 'release_backup')
         Write-Output "FIRMWARE_RELEASE_PASS version=$version"
-        Write-Output "Programming file (fixed path): $fixedBit"
+        Write-Output "Programming file (fixed path): $(Join-Path $bestResultDirectory 'anlogic_edge_osd.bit')"
+        Write-Output "Identical firmware copy: $fixedBit"
         Write-Output "Programming file SHA256: $bitHash"
         Write-Output "Release reports: $reportDirectory"
         Write-Output "Release manifest: $(Join-Path $reportDirectory 'release_manifest.json')"

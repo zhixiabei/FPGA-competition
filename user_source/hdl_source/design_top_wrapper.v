@@ -14,8 +14,10 @@ module design_top_wrapper #(
     output wire       O_cam_rst,
       
     inout wire [1:0]  I_button,
-    input wire        I_mode_key_n, // Board K1 (D5), active low.
+    input wire        I_mode_key_n, // Board K1 (D5), previous algorithm.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
+    input wire        I_effect_key_n, // Board K3 (B9), next algorithm.
+    input wire        I_param_key_n, // Board K4 (C7), reserved.
 
     output wire       O_screen_pwm,
     output wire       O_tmds_ch0_p,
@@ -44,7 +46,8 @@ module design_top_wrapper #(
     inout wire[1:0]   ddr_dqs_n   
 );
 
-
+    localparam [3:0] DEFAULT_EFFECT_MODE = ENABLE_EDGE != 0 ? 4'd2 : 4'd0;
+    localparam [11:0] DEFAULT_EFFECT_CONFIG = {DEFAULT_EFFECT_MODE,8'd0};
     wire        	S_100m_clk;
     wire        	S_24m_clk;
     wire        	S_aux_50m_clk;
@@ -52,7 +55,6 @@ module design_top_wrapper #(
 		
 	wire        	S_pll_lock;
     wire        	S_rst_n;
-    wire        S_edge_mode_requested;
     wire        S_motion_mode_requested;
 	reg  [17:0] 	S_cam_power_cnt;
 	reg         	S_cam_pwdnb;
@@ -115,6 +117,8 @@ module design_top_wrapper #(
     wire        S_ISP_target_motion_mode;
     wire        S_ISP_motion_mode_active;
     wire        S_ISP_edge_mode_active;
+    wire [11:0] S_ISP_effect_config;
+    reg [11:0]  S_target_frame_effect_config;
     wire        S_ISP_ae_stats_valid;
     wire [31:0] S_ISP_ae_sum_y;
     wire [15:0] S_ISP_ae_sample_count;
@@ -122,20 +126,21 @@ module design_top_wrapper #(
     wire        S_ae_stats_valid;
     wire [63:0] S_ae_stats_data;
 
-    // Three full-resolution 3x3 stages shift the visible contour
-    // by three pixels and three rows. Store compensated
-    // geometry for an edge frame; RGB frame coordinates are unchanged.
-    wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + 13'd3;
-    wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + 13'd3;
-    wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + 13'd3;
-    wire [12:0] S_target_shift_ymax = {1'b0,S_ISP_target_ymax} + 13'd3;
-    wire [11:0] S_target_display_xmin = !S_ISP_edge_mode_active ? S_ISP_target_xmin :
+    // Tag the box with that frame's causal window offset: Scharr 3, emboss 1.
+    wire [1:0] S_target_spatial_shift =
+        S_target_frame_effect_config[11:8] == 4'd2 ? 2'd3 :
+        S_target_frame_effect_config[11:8] == 4'd4 ? 2'd1 : 2'd0;
+    wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + {11'd0,S_target_spatial_shift};
+    wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + {11'd0,S_target_spatial_shift};
+    wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + {11'd0,S_target_spatial_shift};
+    wire [12:0] S_target_shift_ymax = {1'b0,S_ISP_target_ymax} + {11'd0,S_target_spatial_shift};
+    wire [11:0] S_target_display_xmin =
         (S_target_shift_xmin > 13'd1279 ? 12'd1279 : S_target_shift_xmin[11:0]);
-    wire [11:0] S_target_display_xmax = !S_ISP_edge_mode_active ? S_ISP_target_xmax :
+    wire [11:0] S_target_display_xmax =
         (S_target_shift_xmax > 13'd1279 ? 12'd1279 : S_target_shift_xmax[11:0]);
-    wire [11:0] S_target_display_ymin = !S_ISP_edge_mode_active ? S_ISP_target_ymin :
+    wire [11:0] S_target_display_ymin =
         (S_target_shift_ymin > 13'd719 ? 12'd719 : S_target_shift_ymin[11:0]);
-    wire [11:0] S_target_display_ymax = !S_ISP_edge_mode_active ? S_ISP_target_ymax :
+    wire [11:0] S_target_display_ymax =
         (S_target_shift_ymax > 13'd719 ? 12'd719 : S_target_shift_ymax[11:0]);
     wire [12:0] S_target_display_center_x_sum =
         {1'b0,S_target_display_xmin} + {1'b0,S_target_display_xmax};
@@ -156,9 +161,9 @@ module design_top_wrapper #(
     (* async_reg = "true" *) reg [1:0] S_read_slot_meta;
     (* async_reg = "true" *) reg [1:0] S_read_slot_sync;
 
-    // Bundled-data mailbox.  The camera domain holds all coordinates and
-    // the slot tag and detection mode until HDMI acknowledges their capture.
-    reg [76:0] S_target_mailbox;
+    // The frame's effect configuration travels with its target coordinates
+    // and DDR slot, held stable until HDMI acknowledges the full snapshot.
+    reg [88:0] S_target_mailbox;
     reg S_target_request;
     reg S_target_ack;
     reg S_target_frame_pending;
@@ -168,11 +173,12 @@ module design_top_wrapper #(
     (* async_reg = "true" *) reg S_target_ack_sync;
     (* async_reg = "true" *) reg S_target_toggle_meta;
     (* async_reg = "true" *) reg S_target_toggle_sync;
-    reg [73:0] S_target_slots [0:3];
+    reg [85:0] S_target_slots [0:3];
     reg [3:0] S_target_slots_valid;
     integer S_target_slot_index;
     wire S_target_result_valid_hdmi = S_target_slots_valid[S_read_slot_sync];
-    wire [73:0] S_target_display_result = S_target_slots[S_read_slot_sync];
+    wire [85:0] S_target_display_result = S_target_slots[S_read_slot_sync];
+    wire [11:0] S_effect_config_hdmi = S_target_display_result[85:74];
     wire S_target_motion_mode_hdmi = S_target_display_result[73];
     wire S_target_found_hdmi = S_target_display_result[72];
     wire [11:0] S_target_xmin_hdmi = S_target_display_result[71:60];
@@ -492,16 +498,17 @@ module design_top_wrapper #(
         end
     end
 
-    // The write-slot status is only consumed at the end of the camera frame,
-    // long after its two-bit value changes at frame start.
+    // The write slot is consumed after the frame-start crossing settles:
+    // at SOF+32 for invalidation and at the frame's final detector result.
     always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
         if(!S_rst_n) begin
             S_write_slot_meta <= 2'd0;
             S_write_slot_sync <= 2'd0;
-            S_target_mailbox <= 77'd0;
+            S_target_mailbox <= 89'd0;
             S_target_request <= 1'b0;
             S_target_frame_pending <= 1'b0;
             S_target_frame_motion_mode <= 1'b0;
+            S_target_frame_effect_config <= DEFAULT_EFFECT_CONFIG;
             S_target_frame_wait <= 6'd0;
             S_target_ack_meta <= 1'b0;
             S_target_ack_sync <= 1'b0;
@@ -513,13 +520,15 @@ module design_top_wrapper #(
             if(S_ISP_O_tuser) begin
                 S_target_frame_pending <= 1'b1;
                 S_target_frame_motion_mode <= S_ISP_motion_mode_active;
+                S_target_frame_effect_config <= S_ISP_effect_config;
                 S_target_frame_wait <= 6'd0;
             end else if(S_target_frame_pending && S_target_frame_wait != 6'd31)
                 S_target_frame_wait <= S_target_frame_wait + 1'b1;
 
             if(S_ISP_target_result_ready &&
                (S_target_request == S_target_ack_sync)) begin
-                S_target_mailbox <= {S_ISP_target_motion_mode,
+                S_target_mailbox <= {S_target_frame_effect_config,
+                    S_ISP_target_motion_mode,
                     1'b1, S_write_slot_sync, S_ISP_target_found,
                     S_target_display_xmin, S_target_display_xmax,
                     S_target_display_ymin, S_target_display_ymax,
@@ -533,7 +542,8 @@ module design_top_wrapper #(
                 // synchronizer has assigned the write slot.  A truncated
                 // frame must not retain the box from four frames earlier.
                 // 32 CSI clocks covers the existing DDR/CSI sync latency.
-                S_target_mailbox <= {S_target_frame_motion_mode,
+                S_target_mailbox <= {S_target_frame_effect_config,
+                    S_target_frame_motion_mode,
                     1'b0, S_write_slot_sync, 73'd0};
                 S_target_request <= ~S_target_request;
                 S_target_frame_pending <= 1'b0;
@@ -554,7 +564,7 @@ module design_top_wrapper #(
             S_read_slot_sync <= 2'd0;
             S_target_slots_valid <= 4'd0;
             for(S_target_slot_index=0; S_target_slot_index<4; S_target_slot_index=S_target_slot_index+1)
-                S_target_slots[S_target_slot_index] <= 74'd0;
+                S_target_slots[S_target_slot_index] <= {DEFAULT_EFFECT_CONFIG,74'd0};
         end else begin
             S_target_toggle_meta <= S_target_request;
             S_target_toggle_sync <= S_target_toggle_meta;
@@ -562,7 +572,7 @@ module design_top_wrapper #(
             S_read_slot_sync <= S_read_slot_meta;
             if(S_target_toggle_sync != S_target_ack) begin
                 S_target_slots[S_target_mailbox[74:73]] <=
-                    {S_target_mailbox[76], S_target_mailbox[72:0]};
+                    {S_target_mailbox[88:77], S_target_mailbox[76], S_target_mailbox[72:0]};
                 S_target_slots_valid[S_target_mailbox[74:73]] <= S_target_mailbox[75];
                 S_target_ack <= S_target_toggle_sync;
             end
@@ -656,18 +666,6 @@ module design_top_wrapper #(
 	
 
   
-    wire S_button_mode;
-    assign S_edge_mode_requested=S_button_mode;
-    video_mode_control #(
-        .DEBOUNCE_CYCLES(1000000), // 20 ms at I_sys_clk = 50 MHz
-        .DEFAULT_EDGE_MODE(ENABLE_EDGE)
-    ) u_video_mode_control (
-        .I_clk(I_sys_clk),
-        .I_rst_n(S_rst_n),
-        .I_key_n(I_mode_key_n), // K1: one toggle per debounced press.
-        .O_edge_mode(S_button_mode)
-    );
-
     video_mode_control #(
         .DEBOUNCE_CYCLES(1000000),
         .DEFAULT_EDGE_MODE(0)
@@ -676,6 +674,32 @@ module design_top_wrapper #(
         .I_rst_n(S_rst_n),
         .I_key_n(I_detect_key_n),
         .O_edge_mode(S_motion_mode_requested)
+    );
+
+    wire [3:0] S_effect_mode_requested;
+    wire [7:0] S_effect_param_requested;
+    wire [11:0] S_effect_config_csi;
+    display_effect_control #(
+        .DEBOUNCE_CYCLES(1000000),
+        .DEFAULT_MODE(DEFAULT_EFFECT_MODE)
+    ) u_display_effect_control (
+        .I_clk(I_sys_clk),
+        .I_rst_n(S_rst_n),
+        .I_prev_key_n(I_mode_key_n),
+        .I_effect_key_n(I_effect_key_n),
+        .I_param_key_n(I_param_key_n),
+        .O_effect_mode(S_effect_mode_requested),
+        .O_effect_param(S_effect_param_requested)
+    );
+
+    // Transfer the full request to CSI; the ISP commits it only at SOF.
+    // HDMI later uses the committed configuration stored with its DDR slot.
+    camera_diag_cdc #(.WIDTH(12), .RESET_DATA(DEFAULT_EFFECT_CONFIG)) u_display_effect_cdc (
+        .I_src_clk(I_sys_clk),
+        .I_dst_clk(S_csi_rx_clk),
+        .I_rst_n(S_rst_n),
+        .I_src_data({S_effect_mode_requested, S_effect_param_requested}),
+        .O_dst_data(S_effect_config_csi)
     );
 
   ae_stats_cdc u_ae_stats_cdc (
@@ -939,7 +963,7 @@ isp_top #(
     ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
-.I_edge_mode_async(S_edge_mode_requested),
+.I_effect_config (S_effect_config_csi),
 .I_motion_mode_async(S_motion_mode_requested),
 .I_tlast         (S_raw_tlast	),
 .I_tuser         (S_raw_tuser	),
@@ -964,6 +988,7 @@ isp_top #(
 .O_target_motion_mode  (S_ISP_target_motion_mode),
 .O_motion_mode_active  (S_ISP_motion_mode_active),
 .O_edge_mode_active    (S_ISP_edge_mode_active),
+.O_effect_config       (S_ISP_effect_config),
 .O_ae_stats_valid      (S_ISP_ae_stats_valid),
 .O_ae_sum_y            (S_ISP_ae_sum_y),
 .O_ae_sample_count     (S_ISP_ae_sample_count),
@@ -1129,6 +1154,7 @@ isp_top #(
         .SHOW_COLOR_TARGET  ( 1 ),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
         .SHOW_LATENCY       ( 1 ),
+        .SHOW_EFFECT_LABEL  ( 1 ),
         .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
@@ -1138,6 +1164,8 @@ isp_top #(
         .I_video_de      ( S_hdmi_de          ),
         .I_video_user    ( S_hdmi_user        ),
         .I_video_last    ( S_hdmi_last        ),
+        .I_effect_mode   ( S_effect_config_hdmi[11:8] ),
+        .I_effect_param  ( S_effect_config_hdmi[7:0] ),
         .I_debug_status  ( S_hdmi_debug_status),
         .I_cam_fail_index( S_cam_fail_sync    ),
         .I_raw_stats_valid(S_raw_stats_valid),

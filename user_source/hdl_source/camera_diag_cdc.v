@@ -1,5 +1,6 @@
 module camera_diag_cdc #(
-    parameter WIDTH = 12
+    parameter WIDTH = 12,
+    parameter [WIDTH-1:0] RESET_DATA = {WIDTH{1'b0}}
 ) (
     input                  I_src_clk,
     input                  I_dst_clk,
@@ -35,12 +36,12 @@ module camera_diag_cdc #(
     // Intermediate diagnostic changes may coalesce into the latest state.
     always @(posedge I_src_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
-            payload_hold <= {WIDTH{1'b0}};
+            payload_hold <= RESET_DATA;
             req_toggle <= 1'b0;
             ack_meta <= 1'b0;
             ack_sync <= 1'b0;
         end else if (!src_reset_pipe[1]) begin
-            payload_hold <= {WIDTH{1'b0}};
+            payload_hold <= RESET_DATA;
             req_toggle <= 1'b0;
             ack_meta <= 1'b0;
             ack_sync <= 1'b0;
@@ -61,12 +62,12 @@ module camera_diag_cdc #(
             req_meta <= 1'b0;
             req_sync <= 1'b0;
             ack_toggle <= 1'b0;
-            O_dst_data <= {WIDTH{1'b0}};
+            O_dst_data <= RESET_DATA;
         end else if (!dst_reset_pipe[1]) begin
             req_meta <= 1'b0;
             req_sync <= 1'b0;
             ack_toggle <= 1'b0;
-            O_dst_data <= {WIDTH{1'b0}};
+            O_dst_data <= RESET_DATA;
         end else begin
             req_meta <= req_toggle;
             req_sync <= req_meta;

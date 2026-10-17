@@ -20,7 +20,8 @@ module tb_video_latency_frame_tag;
 
     isp_top #(.ENABLE_EDGE(0)) dut (
         .axi4s_video_aclk(clk), .I_rst_n(rst_n),
-        .I_edge_mode_async(edge_request), .I_motion_mode_async(motion_request),
+        .I_effect_config({edge_request ? 4'd2 : 4'd0,8'd0}),
+        .I_motion_mode_async(motion_request),
         .I_tlast(raw_last), .I_tuser(raw_user), .I_tdata(raw_data),
         .I_tvalid(raw_valid), .I_tdest(raw_id), .O_tready(1'b1),
         .O_tdata(packed_data), .O_tlast(), .O_tuser(packed_user),

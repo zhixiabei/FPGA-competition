@@ -1,5 +1,6 @@
 // Four independent pixels/clock. Y -> Gaussian -> Scharr -> NMS -> threshold.
-// LATENCY=11 clocks including bubbles; spatial shift=(3,3) pixels.
+// LATENCY=11 clocks including bubbles; Scharr spatial shift=(3,3) pixels.
+// The shared first window also produces emboss with spatial shift=(1,1).
 // No adaptive threshold, chroma gradient or Canny hysteresis in this version.
 module scharr_edge_detect_96 #(
     parameter integer IMG_WIDTH=1280,
@@ -10,6 +11,7 @@ module scharr_edge_detect_96 #(
     input I_clk,I_rst_n,I_tlast,I_tuser,
     input [95:0] I_tdata,input I_tvalid,I_tready,
     output reg O_tlast,O_tuser,output reg [95:0] O_tdata,
+    output reg [95:0] O_emboss_data,
     output reg O_tvalid,output O_tready
 );
     assign O_tready=I_tready; // The camera path does not support backpressure.
@@ -60,6 +62,29 @@ module scharr_edge_detect_96 #(
         if(!I_rst_n) filtered<=0;
         else for(lane=0;lane<4;lane=lane+1)
             filtered[31-lane*8 -:8]<=gaussian(gw[287-lane*72 -:72]);
+    end
+    function [7:0] emboss;
+        input [71:0] w;
+        reg signed [8:0] difference;
+        reg signed [10:0] level;
+        begin
+            difference=$signed({1'b0,w[39:32]})-$signed({1'b0,w[71:64]});
+            level=11'sd128+($signed({{2{difference[8]}},difference})<<<1);
+            if(level<11'sd0) emboss=8'd0;
+            else if(level>11'sd255) emboss=8'd255;
+            else emboss=level[7:0];
+        end
+    endfunction
+    // Compute at clock three, then share the final Scharr coordinate mask at
+    // clock eleven. Store only four grayscale bytes until the RGB output.
+    reg [31:0] emboss_pipe[0:7];
+    integer emboss_stage;
+    always @(posedge I_clk) begin
+        for(emboss_stage=0;emboss_stage<4;emboss_stage=emboss_stage+1)
+            emboss_pipe[0][31-emboss_stage*8 -:8]<=
+                emboss(gw[287-emboss_stage*72 -:72]);
+        for(emboss_stage=1;emboss_stage<8;emboss_stage=emboss_stage+1)
+            emboss_pipe[emboss_stage]<=emboss_pipe[emboss_stage-1];
     end
 
     wire sv,su,sl;
@@ -169,13 +194,19 @@ module scharr_edge_detect_96 #(
         end
     endfunction
     always @(posedge I_clk or negedge I_rst_n) begin
-        if(!I_rst_n) begin O_tvalid<=0;O_tuser<=0;O_tlast<=0;O_tdata<=0;end
+        if(!I_rst_n) begin
+            O_tvalid<=0;O_tuser<=0;O_tlast<=0;O_tdata<=0;O_emboss_data<=0;
+        end
         else begin
             O_tvalid<=nv;O_tuser<=nu;O_tlast<=nl;
-            for(lane=0;lane<4;lane=lane+1)
+            for(lane=0;lane<4;lane=lane+1) begin
                 O_tdata[95-lane*24 -:24]<=nv&&nok[3-lane]&&
                     ny>=6&&((nx<<2)+lane>=6)&&
                     nms(nw[539-lane*135 -:135]) ? 24'hffffff : 24'd0;
+                O_emboss_data[95-lane*24 -:24]<=!nv ? 24'd0 :
+                    ny>=2&&((nx<<2)+lane>=2) ?
+                    {3{emboss_pipe[7][31-lane*8 -:8]}} : 24'h808080;
+            end
         end
     end
 endmodule

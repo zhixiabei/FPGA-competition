@@ -49,7 +49,8 @@ awb #(.IMG_WIDTH(W),.IMG_HEIGHT(H)) u_awb(
 wire selected_user,selected_valid,selected_last,selected_mode;
 wire [95:0] selected_data;
 rgb_edge_switch_96 #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.DEFAULT_EDGE_MODE(0)) u_selector(
-.I_clk(camera_clk),.I_rst_n(rst_n),.I_edge_mode_async(edge_mode),
+.I_clk(camera_clk),.I_rst_n(rst_n),
+.I_effect_config({edge_mode ? 4'd2 : 4'd0,8'd0}),
 .I_tlast(awb_last),.I_tuser(awb_user),.I_tdata(awb_data),.I_tvalid(awb_valid),
 .O_tlast(selected_last),.O_tuser(selected_user),.O_tdata(selected_data),
 .O_tvalid(selected_valid),.O_edge_mode(selected_mode));

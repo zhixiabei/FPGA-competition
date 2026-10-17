@@ -1,9 +1,10 @@
 `timescale 1ns/1ps
-// Real RAW AE tap plus the post-demosaic RGB path through AWB, mode/Scharr,
+// Real RAW AE tap plus the post-demosaic RGB path through AWB, mode/Scharr/emboss,
 // selected target detection and the byte packer. Camera MIPI and demosaic
 // arithmetic are deliberately outside this integration test.
 module tb_isp_lighting_integration #(
-    parameter integer MOTION_MODE=0
+    parameter integer MOTION_MODE=0,
+    parameter integer EMBOSS_MODE=0
 );
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
@@ -11,13 +12,15 @@ module tb_isp_lighting_integration #(
     localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 6;
     reg clk=0;
     always #5 clk=~clk;
-    reg rst_n=0, request_edge=0;
+    reg rst_n=0;
+    reg [3:0] request_mode=0;
     reg raw_valid=0, raw_user=0, raw_last=0;
     reg [39:0] raw_data=0;
     reg injected_valid=0, injected_user=0, injected_last=0;
     reg [95:0] injected_data=0;
     wire [127:0] output_data;
     wire output_valid, output_user, output_last, mode;
+    wire [11:0] effect_config;
     wire target_ready, target_found, target_toggle;
     wire target_motion_mode, motion_mode;
     wire [11:0] xmin,xmax,ymin,ymax,cx,cy;
@@ -26,7 +29,8 @@ module tb_isp_lighting_integration #(
     wire [31:0] sum_y;
     wire [15:0] sample_count, bright_count;
     isp_top #(.ENABLE_EDGE(0)) dut (
-        .axi4s_video_aclk(clk),.I_rst_n(rst_n),.I_edge_mode_async(request_edge),
+        .axi4s_video_aclk(clk),.I_rst_n(rst_n),
+        .I_effect_config({request_mode,8'd0}),
         .I_motion_mode_async(MOTION_MODE!=0),
         .I_tlast(raw_last),.I_tuser(raw_user),.I_tdata(raw_data),.I_tvalid(raw_valid),
         .I_tdest(10'd0),.O_tready(1'b1),.O_tdata(output_data),
@@ -36,7 +40,8 @@ module tb_isp_lighting_integration #(
         .O_target_ymax(ymax),.O_target_center_x(cx),.O_target_center_y(cy),
         .O_target_pixels(target_pixels),.O_target_frame_toggle(target_toggle),
         .O_target_motion_mode(target_motion_mode),.O_motion_mode_active(motion_mode),
-        .O_edge_mode_active(mode),.O_ae_stats_valid(stats_valid),
+        .O_edge_mode_active(mode),.O_effect_config(effect_config),
+        .O_ae_stats_valid(stats_valid),
         .O_ae_sum_y(sum_y),.O_ae_sample_count(sample_count),
         .O_ae_bright_count(bright_count)
     );
@@ -46,6 +51,8 @@ module tb_isp_lighting_integration #(
     integer expected_sum[0:2], expected_count[0:2], expected_bright[0:2];
     integer ae_results=0, target_results=0, raw_motion_results=0, bytes_checked=0;
     integer cycle_number=0, awb_last_cycle[0:2], white_pixels=0;
+    integer emboss_pixels=0,emboss_bright=0,emboss_dark=0,emboss_neutral=0;
+    integer emboss_white=0,emboss_black=0;
     reg [7:0] byte_queue[0:127];
     integer byte_tag[0:127];
     integer byte_write=0, byte_read=0;
@@ -53,7 +60,10 @@ module tb_isp_lighting_integration #(
     reg [95:0] reference_data[0:AWB_LATENCY-1];
     reg [95:0] sampled_edge_data;
     reg sampled_edge_valid,sampled_edge_user,sampled_edge_mode;
+    reg [11:0] sampled_effect_config;
     integer sampled_frame,byte_index,lane;
+    integer emboss_x,emboss_y,emboss_level;
+    reg [23:0] expected_emboss;
     integer reference_stage;
     bit previous_toggle=0;
 
@@ -70,8 +80,40 @@ module tb_isp_lighting_integration #(
                            24'hc8231e : 24'h8c6e64;
                 1: scene = x>=700 && x<=859 && y>=400 && y<=519 ?
                            24'h320f0c : 24'hffaaBE;
-                default: scene = x<128 && y<80 ? 24'hffffff : 24'h646e8c;
+                default: scene = (x<128 && y<80) ||
+                    (EMBOSS_MODE && x>=256 && x<384 && y>=160 && y<240) ?
+                    24'hffffff : 24'h646e8c;
             endcase
+    endfunction
+    function automatic integer scene_luminance(
+        input integer frame_id,input integer x,input integer y
+    );
+        reg [23:0] original;
+        integer r,g,b,rg,bg;
+        begin
+            original=scene(frame_id,x,y);
+            rg=!MOTION_MODE && frame_id==2 ? 249 : 256;
+            bg=!MOTION_MODE && frame_id==2 ? 260 : 256;
+            r=original[23:16]*rg/256;
+            g=original[15:8];
+            b=original[7:0]*bg/256;
+            if(r>255) r=255;
+            if(b>255) b=255;
+            scene_luminance=(r+2*g+b)/4;
+        end
+    endfunction
+    function automatic integer emboss_reference(
+        input integer x,input integer y
+    );
+        integer level;
+        begin
+            // The causal 3x3 window's center is one pixel up and left.
+            level=128;
+            if(x>=2 && y>=2)
+                level=128+2*(scene_luminance(2,x-1,y-1)-
+                              scene_luminance(2,x-2,y-2));
+            emboss_reference=level<0 ? 0 : level>255 ? 255 : level;
+        end
     endfunction
     function automatic [95:0] scene_group(
         input integer frame_id,input integer group_id,input integer row_id
@@ -118,6 +160,7 @@ module tb_isp_lighting_integration #(
         sampled_edge_user=dut.edge_O_tuser;
         sampled_edge_data=dut.edge_O_tdata;
         sampled_edge_mode=mode;
+        sampled_effect_config=effect_config;
         if(!rst_n) begin
             reference_valid=0;
             for(reference_stage=0;reference_stage<AWB_LATENCY;
@@ -145,6 +188,28 @@ module tb_isp_lighting_integration #(
                 if(edge_frame<0 || edge_frame>2 ||
                     sampled_edge_mode !== (edge_frame==1))
                     $fatal(1,"Mode token did not follow its frame");
+                if(sampled_effect_config !==
+                    {edge_frame==1 ? 4'd2 :
+                     (EMBOSS_MODE && edge_frame==2 ? 4'd4 : 4'd0),8'd0})
+                    $fatal(1,"Effect config did not follow frame%0d: %h",
+                        edge_frame,sampled_effect_config);
+                if(EMBOSS_MODE && edge_frame==2)
+                    for(lane=0;lane<4;lane=lane+1) begin
+                        emboss_x=((edge_count[edge_frame]%GROUPS)*4)+lane;
+                        emboss_y=edge_count[edge_frame]/GROUPS;
+                        emboss_level=emboss_reference(emboss_x,emboss_y);
+                        expected_emboss={3{8'(emboss_level)}};
+                        if(sampled_edge_data[95-lane*24 -:24]!==expected_emboss)
+                            $fatal(1,"Emboss ISP pixel mismatch at %0d,%0d got=%h expected=%h",
+                                emboss_x,emboss_y,
+                                sampled_edge_data[95-lane*24 -:24],expected_emboss);
+                        emboss_pixels=emboss_pixels+1;
+                        if(emboss_level>128) emboss_bright=emboss_bright+1;
+                        else if(emboss_level<128) emboss_dark=emboss_dark+1;
+                        else emboss_neutral=emboss_neutral+1;
+                        if(emboss_level==255) emboss_white=emboss_white+1;
+                        if(emboss_level==0) emboss_black=emboss_black+1;
+                    end
                 edge_count[edge_frame]=edge_count[edge_frame]+1;
                 for(byte_index=0;byte_index<12;byte_index=byte_index+1) begin
                     byte_queue[byte_write%128]=sampled_edge_data[95-byte_index*8 -:8];
@@ -310,7 +375,8 @@ module tb_isp_lighting_integration #(
             for(y=0;y<H;y=y+1) begin
                 for(g=0;g<GROUPS;g=g+1) begin
                     if(y==H/2 && g==0)
-                        request_edge=(f==0); // Request changes mid-frame.
+                        request_mode=f==0 ? 4'd2 :
+                            (EMBOSS_MODE && f==1 ? 4'd4 : 4'd0);
                     tick(1,f!=2 && y==0 && g==0,g==GROUPS-1,scene_group(f,g,y));
                 end
                 repeat(4) tick(0,0,0,0); // Complete pack groups at every line.
@@ -329,6 +395,12 @@ module tb_isp_lighting_integration #(
                 packed_count[f]!=FRAME_WORDS)
                 $fatal(1,"ISP frame%0d groups AWB=%0d edge=%0d packed=%0d",
                     f,awb_count[f],edge_count[f],packed_count[f]);
+        if(EMBOSS_MODE && (emboss_pixels!=W*H ||
+            emboss_bright==0 || emboss_dark==0 || emboss_neutral==0 ||
+            (!MOTION_MODE && (emboss_white==0 || emboss_black==0))))
+            $fatal(1,"Emboss ISP coverage incomplete pixels=%0d bright=%0d dark=%0d neutral=%0d white=%0d black=%0d",
+                emboss_pixels,emboss_bright,emboss_dark,emboss_neutral,
+                emboss_white,emboss_black);
         if(MOTION_MODE)
             $display("ISP_MOTION_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d target_latency=%0d raw_results=%0d confirmed=0",
                 3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
@@ -337,6 +409,10 @@ module tb_isp_lighting_integration #(
             $display("ISP_LIGHTING_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d",
                 3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
                 ae_results,target_results,white_pixels);
+        if(EMBOSS_MODE)
+            $display("ISP_EMBOSS_INTEGRATION_PASS frames=3 emboss_pixels=%0d bright=%0d dark=%0d neutral=%0d saturated_white=%0d saturated_black=%0d bytes=%0d ae=%0d targets=%0d motion=%0d",
+                emboss_pixels,emboss_bright,emboss_dark,emboss_neutral,
+                emboss_white,emboss_black,bytes_checked,ae_results,target_results,MOTION_MODE);
         $finish;
     end
     initial begin
@@ -356,10 +432,12 @@ module demosaic #(
     input wire [9:0] axi4s_video_tdest,
     input wire axi4s_video_tlast,axi4s_video_tvalid,axi4s_video_tuser,
     output wire axi4s_video_tready,
+    output wire [9:0] O_frame_id,
     output wire O_tlast,O_tuser,O_tvalid,
     output wire [127:0] O_tdata,
     input wire O_tready
 );
     assign axi4s_video_tready=O_tready;
+    assign O_frame_id=axi4s_video_tdest;
     assign O_tlast=0;assign O_tuser=0;assign O_tvalid=0;assign O_tdata=0;
 endmodule

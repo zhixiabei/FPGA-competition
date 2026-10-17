@@ -1,6 +1,8 @@
 `timescale 1ns/1ps
 
-module tb_camera_diag_cdc;
+module tb_camera_diag_cdc #(
+    parameter [11:0] RESET_DATA = 12'd0
+);
     localparam integer WIDTH = 12;
     localparam integer MAX_TRANSFERS = 16384;
 
@@ -24,7 +26,7 @@ module tb_camera_diag_cdc;
     integer convergence_checks = 0;
     integer reset_checks = 0;
 
-    camera_diag_cdc #(.WIDTH(WIDTH)) dut (
+    camera_diag_cdc #(.WIDTH(WIDTH), .RESET_DATA(RESET_DATA)) dut (
         .I_src_clk(src_clk),
         .I_dst_clk(dst_clk),
         .I_rst_n(rst_n),
@@ -71,7 +73,7 @@ module tb_camera_diag_cdc;
         if (rst_n) begin
             if (!active_before) begin
                 if (dut.req_toggle !== 1'b0 ||
-                    dut.payload_hold !== {WIDTH{1'b0}} ||
+                    dut.payload_hold !== RESET_DATA ||
                     dut.ack_meta !== 1'b0 || dut.ack_sync !== 1'b0)
                     $fatal(1, "Source acted before reset release");
             end else begin
@@ -119,7 +121,7 @@ module tb_camera_diag_cdc;
         #0.001;
         if (rst_n) begin
             if (!active_before) begin
-                if (dst_data !== {WIDTH{1'b0}} ||
+                if (dst_data !== RESET_DATA ||
                     dut.ack_toggle !== 1'b0 ||
                     dut.req_meta !== 1'b0 || dut.req_sync !== 1'b0)
                     $fatal(1, "Destination acted before reset release");
@@ -158,8 +160,8 @@ module tb_camera_diag_cdc;
         write_index = 0;
         read_index = 0;
         #0.001;
-        if (dst_data !== {WIDTH{1'b0}} ||
-            dut.payload_hold !== {WIDTH{1'b0}} ||
+        if (dst_data !== RESET_DATA ||
+            dut.payload_hold !== RESET_DATA ||
             dut.req_toggle !== 1'b0 || dut.ack_toggle !== 1'b0 ||
             dut.req_meta !== 1'b0 || dut.req_sync !== 1'b0 ||
             dut.ack_meta !== 1'b0 || dut.ack_sync !== 1'b0 ||
@@ -236,9 +238,12 @@ module tb_camera_diag_cdc;
         // Make reset assertion an actual edge, including at startup.
         #0.019 rst_n = 1;
         #0.021 rst_n = 0;
-        src_data = 12'hA35;
+        src_data = RESET_DATA;
         #19.417 rst_n = 1;
-        wait_converged(12'hA35);
+        repeat (5) @(negedge src_clk);
+        if (dst_data !== RESET_DATA || total_launches != 0)
+            $fatal(1, "Matching reset payload launched a spurious transfer");
+        send_and_check(12'hA35);
 
         for (value = 0; value < (1 << WIDTH); value = value + 1)
             send_and_check(value[WIDTH-1:0]);
@@ -307,7 +312,7 @@ module tb_camera_diag_cdc;
         src_data = 12'h46F;
         #17.319 rst_n = 1;
         repeat (12) @(negedge src_clk);
-        if (dst_data !== {WIDTH{1'b0}} ||
+        if (dst_data !== RESET_DATA ||
             dut.dst_reset_pipe !== 2'b00)
             $fatal(1, "Stopped destination released reset without clocks");
         dst_run = 1;
@@ -342,7 +347,8 @@ module tb_camera_diag_cdc;
             $fatal(1, "Unconsumed source snapshot at test completion");
         if (total_launches != total_captures + cancelled_transfers)
             $fatal(1, "Transfer accounting mismatch across reset");
-        $display("PASS tb_camera_diag_cdc: launches=%0d captures=%0d cancelled=%0d checks=%0d resets=%0d",
+        $display("PASS tb_camera_diag_cdc: reset_data=%h launches=%0d captures=%0d cancelled=%0d checks=%0d resets=%0d",
+                 RESET_DATA,
                  total_launches, total_captures, cancelled_transfers,
                  convergence_checks, reset_checks);
         $finish;
