@@ -1,4 +1,4 @@
-// Original Gamma, grayscale, ISP Scharr/emboss and negative; two-clock latency.
+// Nine display modes, with ISP-precomputed spatial effects; two clocks.
 module display_effects_rgb888 (
     input  wire        I_clk,
     input  wire        I_rst_n,
@@ -12,10 +12,15 @@ module display_effects_rgb888 (
     localparam [3:0] MODE_EDGE      = 4'd2;
     localparam [3:0] MODE_NEGATIVE  = 4'd3;
     localparam [3:0] MODE_EMBOSS    = 4'd4;
+    localparam [3:0] MODE_COLOR_KEEP = 4'd5;
+    localparam [3:0] MODE_CARTOON    = 4'd6;
+    localparam [3:0] MODE_EDGE_INVERSE = 4'd7;
+    localparam [3:0] MODE_MORPH_EDGE   = 4'd8;
 
     reg [23:0] rgb_d;
     reg [7:0] luma_d;
     reg [3:0] mode_d;
+    reg keep_color_d;
     reg pixel_ready;
     reg [23:0] effect_comb;
     wire [23:0] gamma_rgb;
@@ -45,11 +50,34 @@ module display_effects_rgb888 (
         end
     endfunction
 
+    function keep_red_green;
+        input [23:0] value;
+        reg [9:0] r, g, b;
+        reg [9:0] r2, g2, b2, r3, g3, b3;
+        reg red, green;
+        begin
+            r = {2'd0, value[23:16]};
+            g = {2'd0, value[15:8]};
+            b = {2'd0, value[7:0]};
+            r2 = r << 1; g2 = g << 1; b2 = b << 1;
+            r3 = r2 + r; g3 = g2 + g; b3 = b2 + b;
+            // Ratio and hue bounds use ten bits; 3*255 never wraps.
+            red = r >= 10'd24 && r >= g + 10'd6 && r >= b + 10'd6 &&
+                  r2 >= g3 && r2 >= b3 && g3 <= r + b2 && b3 <= r + g2;
+            green = g >= 10'd24 && g >= r + 10'd6 && g >= b + 10'd6 &&
+                    g2 >= r3 && g2 >= b3 && r3 <= g + b2 && b3 <= g + r2;
+            keep_red_green = red || green;
+        end
+    endfunction
+
     always @* begin
         case (mode_d)
             MODE_GRAYSCALE: effect_comb = {luma_d, luma_d, luma_d};
-            MODE_EDGE, MODE_EMBOSS: effect_comb = rgb_d;
-            MODE_NEGATIVE: effect_comb = ~rgb_d;
+            MODE_EDGE, MODE_EMBOSS, MODE_CARTOON,
+            MODE_MORPH_EDGE: effect_comb = rgb_d;
+            MODE_NEGATIVE, MODE_EDGE_INVERSE: effect_comb = ~rgb_d;
+            MODE_COLOR_KEEP: effect_comb = keep_color_d ? rgb_d :
+                                         {luma_d, luma_d, luma_d};
             default: effect_comb = gamma_rgb;
         endcase
     end
@@ -65,12 +93,14 @@ module display_effects_rgb888 (
             rgb_d <= 24'd0;
             luma_d <= 8'd0;
             mode_d <= MODE_ORIGINAL;
+            keep_color_d <= 1'b0;
             pixel_ready <= 1'b0;
             O_rgb <= 24'd0;
         end else begin
             rgb_d <= I_rgb;
             luma_d <= luma_rgb(I_rgb);
             mode_d <= I_mode;
+            keep_color_d <= keep_red_green(I_rgb);
             pixel_ready <= 1'b1;
             O_rgb <= pixel_ready ? effect_comb : 24'd0;
         end

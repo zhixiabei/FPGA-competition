@@ -46,8 +46,9 @@ module tb_target_frame_alignment;
     integer buffered_mode_checks = 0;
     integer effect_config_checks = 0, buffered_effect_checks = 0;
     integer invalid_effect_checks = 0, no_target_effect_checks = 0;
-    integer spatial_checks [0:4];
-    integer emboss_clip_checks = 0, scharr_clip_checks = 0;
+    integer spatial_checks [0:8];
+    integer emboss_clip_checks = 0, scharr_clip_checks = 0, cartoon_clip_checks = 0;
+    integer inverse_clip_checks = 0, morph_clip_checks = 0;
     integer actual_write_slot = -1, actual_read_slot = -1;
     integer request_count = 0;
     reg request_seen = 0;
@@ -79,26 +80,30 @@ module tb_target_frame_alignment;
         reg [3:0] mode;
         begin
             if (id < 0) mode = 0;
+            else if (id == 26) mode = 6;
             else if (id == 27) mode = 4;
             else if (id == 28) mode = 2;
-            else mode = id % 5;
+            else if (id == 30) mode = 7;
+            else if (id == 31) mode = 8;
+            else mode = (id + id/9) % 9;
             frame_effect_config = {mode, 8'd0};
         end
     endfunction
     function automatic integer frame_xmin(input integer id);
-        frame_xmin = (id == 27 || id == 28) ? 1268 : 300 + id * 7;
+        frame_xmin = (id >= 26 && id <= 31) ? 1268 : 300 + id * 7;
     endfunction
     function automatic integer frame_xmax(input integer id);
-        frame_xmax = (id == 27 || id == 28) ? 1279 : frame_xmin(id)+40;
+        frame_xmax = (id >= 26 && id <= 31) ? 1279 : frame_xmin(id)+40;
     endfunction
     function automatic integer frame_ymin(input integer id);
-        frame_ymin = (id == 27 || id == 28) ? 710 : 180 + (id % 7) * 4;
+        frame_ymin = (id >= 26 && id <= 31) ? 710 : 180 + (id % 7) * 4;
     endfunction
     function automatic integer frame_ymax(input integer id);
-        frame_ymax = (id == 27 || id == 28) ? 719 : frame_ymin(id)+30;
+        frame_ymax = (id >= 26 && id <= 31) ? 719 : frame_ymin(id)+30;
     endfunction
     function automatic integer spatial_offset(input [3:0] mode);
-        spatial_offset = mode == 2 ? 3 : mode == 4 ? 1 : 0;
+        spatial_offset = (mode == 2 || mode == 6 || mode == 7) ? 3 :
+                         (mode == 4 || mode == 8) ? 1 : 0;
     endfunction
     function automatic integer display_x(input integer value, input [3:0] mode);
         integer shifted;
@@ -203,6 +208,12 @@ module tb_target_frame_alignment;
                     emboss_clip_checks = emboss_clip_checks+1;
                 if (id == 28 && x1 == 1279 && y1 == 719)
                     scharr_clip_checks = scharr_clip_checks+1;
+                if (id == 26 && x1 == 1279 && y1 == 719)
+                    cartoon_clip_checks = cartoon_clip_checks+1;
+                if (id == 30 && x1 == 1279 && y1 == 719)
+                    inverse_clip_checks = inverse_clip_checks+1;
+                if (id == 31 && x1 == 1279 && y1 == 719)
+                    morph_clip_checks = morph_clip_checks+1;
             end else if ((!ref_valid[slot] && dut.S_target_slots[slot][72:0] !== 73'd0) ||
                          (ref_valid[slot] && dut.S_target_slots[slot][72] !== 1'b0))
                 $fatal(1, "No-target or invalid slot retains old target slot=%0d frame=%0d",
@@ -265,7 +276,7 @@ module tb_target_frame_alignment;
             // Published results and slot invalidation must retain this frame.
             detection_request = ~motion_mode;
             effect_request = frame_effect_config(id);
-            effect_request[11:8] = effect_request[11:8] == 4'd4 ?
+            effect_request[11:8] = effect_request[11:8] == 4'd8 ?
                 4'd0 : effect_request[11:8] + 4'd1;
             effect_config = effect_request;
             edge_mode = effect_config[11:8] == 2;
@@ -534,7 +545,7 @@ module tb_target_frame_alignment;
         force dut.u_video_in.I_mipi_rx_error = camera_error;
         force dut.u_video_in.I_display_pause = camera_pause;
 
-        for (integer mode_index = 0; mode_index < 5; mode_index = mode_index+1)
+        for (integer mode_index = 0; mode_index < 9; mode_index = mode_index+1)
             spatial_checks[mode_index] = 0;
         reset_test();
         for (integer id = 0; id < 18; id = id+1) begin
@@ -568,7 +579,7 @@ module tb_target_frame_alignment;
 
         // A reset after populated tables must erase every prior target.
         reset_test();
-        for (integer id = 20; id < 30; id = id+1) begin
+        for (integer id = 20; id < 32; id = id+1) begin
             start_camera(id, id % 6);
             check_invalidation();
             display_frame(id % 4);
@@ -584,24 +595,26 @@ module tb_target_frame_alignment;
         diagnostic_send(4'hF, 8'h00);
         diagnostic_send(4'h0, 8'h00);
         test_actual_status();
-        if (write_events < 30 || display_checks < 30 ||
-            result_checks < 28 || invalidate_checks < 29 ||
+        if (write_events < 32 || display_checks < 32 ||
+            result_checks < 30 || invalidate_checks < 31 ||
             diagnostic_checks != 14 || actual_status_checks != 19 ||
             red_display_checks == 0 || motion_display_checks == 0 ||
             buffered_mode_checks == 0 || effect_config_checks < 59 ||
             buffered_effect_checks == 0 || invalid_effect_checks == 0 ||
             no_target_effect_checks == 0 || emboss_clip_checks == 0 ||
-            scharr_clip_checks == 0)
+            scharr_clip_checks == 0 || cartoon_clip_checks == 0 ||
+            inverse_clip_checks == 0 || morph_clip_checks == 0)
             $fatal(1, "Coverage counters did not reach required scenarios");
-        for (integer mode_index = 0; mode_index < 5; mode_index=mode_index+1)
+        for (integer mode_index = 0; mode_index < 9; mode_index=mode_index+1)
             if (spatial_checks[mode_index] == 0)
                 $fatal(1, "Spatial compensation was not exercised mode=%0d", mode_index);
-        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d effect_config=%0d buffered_effect=%0d invalid_effect=%0d no_target_effect=%0d display_modes=0..4 emboss_clip=%0d scharr_clip=%0d",
+        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d effect_config=%0d buffered_effect=%0d invalid_effect=%0d no_target_effect=%0d display_modes=0..8 emboss_clip=%0d scharr_clip=%0d cartoon_clip=%0d inverse_clip=%0d morph_clip=%0d",
             write_events, read_events, display_checks, result_checks,
             invalidate_checks, request_count, diagnostic_checks, actual_status_checks,
             red_display_checks, motion_display_checks, buffered_mode_checks,
             effect_config_checks, buffered_effect_checks, invalid_effect_checks,
-            no_target_effect_checks, emboss_clip_checks, scharr_clip_checks);
+            no_target_effect_checks, emboss_clip_checks, scharr_clip_checks, cartoon_clip_checks,
+            inverse_clip_checks, morph_clip_checks);
         $finish;
     end
 

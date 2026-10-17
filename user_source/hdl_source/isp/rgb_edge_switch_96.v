@@ -1,4 +1,4 @@
-// Frame-boundary RGB/Scharr/emboss selector for the camera stream.
+// Frame-boundary RGB/Scharr/emboss/cartoon/morphology camera selector.
 // The synchronized mode/parameter snapshot commits on input SOF, including
 // SOF before the first valid beat. Data, markers and configuration all have
 // eleven registered clocks of latency, and bubbles advance all paths.
@@ -22,7 +22,7 @@ module rgb_edge_switch_96 #(
     wire [11:0] frame_config = I_tuser ? I_effect_config : active_config;
     wire [95:0] rgb_delayed;
     reg [11:0] config_delay [0:LATENCY-1];
-    wire [95:0] edge_data,emboss_data;
+    wire [95:0] edge_data,emboss_data,cartoon_data,morph_data;
     integer i;
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
@@ -80,12 +80,16 @@ module rgb_edge_switch_96 #(
         .I_clk(I_clk),.I_rst_n(I_rst_n),.I_tlast(I_tlast),.I_tuser(I_tuser),
         .I_tdata(I_tdata),.I_tvalid(I_tvalid),.I_tready(1'b1),
         .O_tlast(O_tlast),.O_tuser(O_tuser),.O_tdata(edge_data),
-        .O_emboss_data(emboss_data),
+        .O_emboss_data(emboss_data),.O_cartoon_data(cartoon_data),
+        .O_morph_data(morph_data),
         .O_tvalid(O_tvalid),.O_tready()
     );
     assign O_tdata=!O_tvalid ? 96'd0 :
-                  O_effect_config[11:8]==4'd2 ? edge_data :
-                  O_effect_config[11:8]==4'd4 ? emboss_data : rgb_delayed;
+                  (O_effect_config[11:8]==4'd2 ||
+                   O_effect_config[11:8]==4'd7) ? edge_data :
+                  O_effect_config[11:8]==4'd4 ? emboss_data :
+                  O_effect_config[11:8]==4'd6 ? cartoon_data :
+                  O_effect_config[11:8]==4'd8 ? morph_data : rgb_delayed;
     assign O_effect_config=config_delay[LATENCY-1];
     assign O_edge_mode=O_effect_config[11:8]==4'd2;
 endmodule

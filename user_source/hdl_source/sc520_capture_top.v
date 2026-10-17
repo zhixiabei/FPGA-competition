@@ -9,9 +9,9 @@ module sc520_capture_top (
     output wire       O_cam_rst,
       
     inout wire [1:0]  I_button,
-    input wire        I_mode_key_n, // Board K1 (D5), active low.
+    input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
-    input wire        I_effect_key_n, // Board K3 (B9), active low.
+    input wire        I_effect_key_n, // Board K3 (B9), reserved.
     input wire        I_param_key_n, // Board K4 (C7), reserved.
 
     output wire       O_screen_pwm,

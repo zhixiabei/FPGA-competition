@@ -2,24 +2,26 @@
 
 更新日期：2026-10-17。
 
-当前源码包含五项显示模式：原画加 Gamma、灰度、原 Scharr 边缘、反色和灰度浮雕。
+当前源码包含九项显示模式：原画加 Gamma、灰度、原 Scharr 边缘、反色、
+灰度浮雕、红绿保色、彩色漫画、Scharr 反色和形态学边缘。
 屏幕显示编号与名称，上电默认原画加 Gamma。
 **K2** 独立切换红色/帧差运动检测。
 
 ## 怎么用
 
-1. 本次浮雕版已完成编译。在下载器中重新加载 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit` 并烧录。
+1. 九模式版已完成回归和完整构建。在下载器中重新加载 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit` 并烧录。
 2. 使用原来的下载流程烧录。根目录 `build_firmware.cmd` 成功后同时更新上述路径和 `firmware/anlogic_edge_osd.bit`；文件身份见 `build/release/release_manifest.json`。
-3. 上电默认显示 `00 COLOR GAMMA`。**K3** 按 `00 原画+Gamma → 01 灰度 → 02 Scharr → 03 反色 → 04 浮雕` 切换，**K1** 反向切换，首尾循环；默认按一次 K1 到 `04 EMBOSS`。
+3. 上电默认显示 `00 COLOR GAMMA`。**K1** 按 `00 原画+Gamma → 01 灰度 → 02 Scharr → 03 反色 → 04 浮雕 → 05 红绿保色 → 06 漫画 → 07 Scharr反色 → 08 形态学边缘 → 00` 单向循环；默认按四次 K1 到 `04 EMBOSS`。
 4. 上电默认红色目标检测。按一下 **K2** 切换到帧差运动检测，再按一下切回红色检测。
-5. **K4** 保留引脚但不执行操作；五项显示模式均无按键调参。
-6. K1、K2、K3 按下和松开均需稳定至少 20 ms；正常按一下即可。长按只触发一次。
+5. **K3、K4** 保留引脚但不执行操作；九项显示模式均无按键调参。
+6. K1、K2 按下和松开均需稳定至少 20 ms；正常按一下即可。长按只触发一次。
 
 `td_project/anlogic_sc520_capture.al` 也支持同样的操作，两个工程默认彩色加 Gamma，并保留原来的 Logo、文字和计数叠加。切换不需要重新配置摄像头或复位 DDR。
 
 显示算法与 K2 独立：所有显示算法都可以叠加红色目标框或运动目标框。
-左上方 `(192,80)` 显示 `00..04` 和英文名称：`COLOR GAMMA`、`GRAYSCALE`、
-`SCHARR EDGE`、`NEGATIVE`、`EMBOSS`。不再显示参数。
+左上方 `(192,80)` 显示 `00..08` 和英文名称：`COLOR GAMMA`、`GRAYSCALE`、
+`SCHARR EDGE`、`NEGATIVE`、`EMBOSS`、`COLOR KEEP`、`CARTOON`、
+`SCHARR INV`、`MORPH EDGE`。不再显示参数。
 左下角 `RED` / `MOV` 表示当前显示帧的检测算法，`FOUND` / `NONE` 表示是否有目标。
 检测模式随 DDR 帧槽保存，因此响应会包含帧首切换和现有视频缓存延迟。
 固定摄像头后持续移动目标验证帧差；首帧建立参考，连续 3 帧相容候选才出框。
@@ -42,15 +44,16 @@ bit 生成，成功后更新 `best_result/anlogic_edge_osd.bit` 和 `firmware/an
 
 ## 当前构建状态
 
-本次五模式浮雕版 `src-b81e1a687c70` 于 2026-10-17 18:44:37（北京时间）生成 bit。
-最终 Slice 14,881/21,216（70.14%）、LUT6 13,612、寄存器 12,793、
-ERAM 62/108、DSP 13/40；建立余量 +0.117 ns，保持余量 +0.020 ns。
-配置跨时钟的 13 ns 约束覆盖全部 3 条有效路径。
-221 个构建输入文件与工作区逐项 SHA256 一致，两处 bit 内容一致。
-当前 bit 的 SHA256 为 `6315C6903906330B1556063D532224DA01068D0BED9C193562E2EE3FDF0C695B`。
-构建身份见 [发布清单](../build/release/release_manifest.json)，本次回归证据见
+九模式版 `src-0917069cbe5c` 于 2026-10-17 20:11:21（北京时间）完成综合、布局布线和 bit 生成。
+最终 Slice 16,035/21,216（75.58%）、LUT6 14,773、寄存器 13,573、
+ERAM 69/108、DSP 13/40；建立余量 +0.128 ns，保持余量 +0.020 ns。
+相对七模式版增加 789 Slice、796 LUT6、387 个寄存器，ERAM 和 DSP 不变。
+配置跨时钟的 13 ns 约束覆盖全部 4 条有效路径。
+221 个生产构建输入与当前文件 SHA256 一致。
+两处 bit 内容一致，SHA256 为 `5DD6B114E4CC051B4B7205003D7BA15005C4EDBD1B81F7AA2B77EB66B1BC9390`。
+构建身份见 [发布清单](../build/release/release_manifest.json)，本轮回归证据见
 [algorithm_regression.zip](../build/verification/algorithm_regression.zip)。
-新浮雕版真实摄像头画质和按键操作仍需重新烧录后验证。
+本轮仍需重新烧录验证真实摄像头画质和按键操作。
 
 ## 工程检查
 
@@ -86,9 +89,9 @@ ERAM 62/108、DSP 13/40；建立余量 +0.117 ns，保持余量 +0.020 ns。
 
 | 板上按键 | FPGA 引脚 | 本次功能 |
 |---|---|---|
-| K1 / KEY1 | D5 | 上一个显示算法 |
+| K1 / KEY1 | D5 | 单向循环下一个显示算法 |
 | K2 / KEY2 | A9 | 红色/帧差运动检测切换 |
-| K3 / KEY3 | B9 | 下一个显示算法 |
+| K3 / KEY3 | B9 | 保留引脚，无操作 |
 | K4 / KEY4 | C7 | 保留引脚，无操作 |
 
 顶层输入 `I_mode_key_n` 约束到 D5，`I_detect_key_n` 到 A9，
@@ -98,12 +101,12 @@ ERAM 62/108、DSP 13/40；建立余量 +0.117 ns，保持余量 +0.020 ns。
 
 ## 实现位置
 
-- `user_source/hdl_source/display_effect_control.v`：在 50 MHz 板载时钟下完成 K1/K3 的两级同步、20 ms 按下/释放消抖，生成 0..4 模式请求；同拍 K3 优先于 K1。兼容参数接口固定为 0，K4 不参与控制。
+- `user_source/hdl_source/display_effect_control.v`：在 50 MHz 板载时钟下完成 K1 的两级同步、20 ms 按下/释放消抖，生成 0..8 单向循环模式请求；K3/K4 不参与控制，兼容参数接口固定为 0。
 - `user_source/hdl_source/video_mode_control.v`：独立处理 K2，选择红色/运动检测。
-- `user_source/hdl_source/isp/rgb_edge_switch_96.v`：帧首锁存显示配置；原 RGB、Scharr 和浮雕的像素、标记和配置统一延迟 **11 拍**，模式 2 选择 Scharr、模式 4 选择浮雕，其余选择 RGB。
-- `user_source/hdl_source/isp/scharr_edge_detect_96.v`：保留原高斯、Scharr、NMS 和固定阈值通路；浮雕共享第一层灰度窗口。
-- `user_source/hdl_source/display_effects_rgb888.v`：DDR 读出后完成模式 0 原画 Gamma、1 灰度、2 Scharr 直通、3 反色、4 浮雕直通；固定两拍，与原 mixer 像素延迟相同。
-- `user_source/hdl_source/hdmi_mixer.v`：按当前显示帧锁存配置，共用原字库显示五项名称，再叠加原 OSD 和框。
+- `user_source/hdl_source/isp/rgb_edge_switch_96.v`：帧首锁存显示配置；RGB、Scharr、浮雕、漫画和形态学像素、标记、配置统一延迟 **11 拍**，模式 2/7 选择原 Scharr、4 选择浮雕、6 选择漫画、8 选择形态学，其余选择 RGB。兼容信号 `O_edge_mode` 仅在模式 2 置位。
+- `user_source/hdl_source/isp/scharr_edge_detect_96.v`：保留原高斯、Scharr、NMS 和固定阈值通路；浮雕与形态学共享第一层灰度窗口；漫画另建低位宽彩色行缓存，与原 NMS 轮廓对齐后合成。
+- `user_source/hdl_source/display_effects_rgb888.v`：DDR 读出后完成模式 0 原画 Gamma、1 灰度、3 反色、5 红绿保色、7 Scharr 取反，模式 2/4/6/8 直通；固定两拍，与原 mixer 像素延迟相同。
+- `user_source/hdl_source/hdmi_mixer.v`：按当前显示帧锁存配置，共用原字库显示九项名称，再叠加原 OSD 和框。
 - `user_source/hdl_source/isp/motion_target_detect_96.v`：使用片上历史灰度数据进行帧差运动检测，输出单个合并外接框。
 - `user_source/hdl_source/isp/target_detect_switch_96.v`：将 K2 请求同步到摄像头时钟域，在帧首锁存检测算法；同文件内的 `motion_result_stabilizer` 完成支持检查、3 帧确认、短暂保持及框平滑，再转发该帧结果和模式。
 - `user_source/hdl_source/isp/isp_top.v`：集成两个检测分支，保持原来的 96/128 位图像打包通路。
@@ -117,18 +120,36 @@ ERAM 62/108、DSP 13/40；建立余量 +0.117 ns，保持余量 +0.020 ns。
 Scharr 轮廓相对原图向右、向下各移 3 像素；两类目标框在模式 2 均作相同补偿。
 浮雕使用 `E=clip(128+2*(Y中心-Y左上),0,255)`，`Y=(R+2G+B)>>2`。
 平坦区域输出中灰 128，轮廓一侧亮、一侧暗；前两行、前两列输出中灰。
-共享 Scharr 第一层灰度 3×3 窗口，不增加 DDR 访问或行缓存；本次 DSP 总量仍为 13。
+共享 Scharr 第一层灰度 3×3 窗口，不增加 DDR 访问或行缓存。
 浮雕空间偏移向右、向下各 1 像素，两类目标框在模式 4 均作相同补偿。
 可对照[合成输入图](../build/verification/emboss_synthetic_input.png)与
 [RTL 浮雕输出](../build/verification/emboss_synthetic_rtl.png)；
 它们来自合成测试场景及 RTL 仿真，不是实物摄像头采集。
+模式 5 红绿保色使用通道差值、比例和色相范围判定：红色或绿色主通道至少 24，
+比其余通道至少高 6，并同时满足比例与色相条件。命中时保留 RGB，
+未命中使用现有 `(77R+150G+29B+128)>>8` 灰度；不叠加 Gamma。
+它与红色目标检测分支分开工作，不把绿色当作红色检测目标。
+模式 6 漫画使用 RGB 各高 5 位做 `1 2 1; 2 4 2; 1 2 1` 高斯平滑，
+每通道压到 3 位八级色阶，再扩展回 RGB888，并将原 Scharr/NMS 轮廓置黑。
+彩色与轮廓统一向右、向下各偏移 3 像素，两类目标框均作相同补偿。
+漫画前六行、前六列填黑；新增片上行缓存，不增加 DDR 图像读写次数。
+模式 7 `SCHARR INV` 共用模式 2 的正 Scharr 像素，在 HDMI 端取反形成白底黑边，
+其阈值、NMS 和向右下各 3 像素的框补偿均与模式 2 相同。
+模式 8 `MORPH EDGE` 使用第一层 3×3 灰度窗口，
+`M=clip(4*(max-min),0,255)`，分别对应灰度膨胀减腐蚀及四倍增强。
+它输出灰度 RGB，前两行、前两列填黑，目标框向右下各补偿 1 像素。
+新增模式 7/8 不增加行缓存、DSP 或 DDR 图像读写；具体逻辑增量以最终构建为准。
+可对照[红绿保色 RTL 预览](../build/verification/color_keep_rtl_preview.png)、
+[漫画合成输入](../build/verification/cartoon_synthetic_input.png)和
+[漫画 RTL 输出](../build/verification/cartoon_synthetic_rtl.png)，以及
+[形态学 RTL 输出](../build/verification/morph_synthetic_rtl.png)；均不是实拍图。
 红色和运动检测独立读取 AWB RGB，在所有显示模式中叠加所选检测结果。
 模式 1 灰度使用 `(77R+150G+29B+128)>>8`；
 Scharr 内部沿用 `(R+2G+B)>>2`。
 
 当前 AWB 可能在有效像素之前给出帧首脉冲，因此模式更新不能要求 `tuser` 与 `tvalid` 同时为 1。请求恰好到达帧首、尚未通过同步器时，会推迟到后续帧生效。新画面还需要经过已有 DDR 缓冲，按键响应不是零延迟。
 
-## 本次仿真与验证边界
+## 本轮仿真与验证边界
 
 显示模式检查入口：
 
@@ -139,42 +160,49 @@ Scharr 内部沿用 `(R+2G+B)>>2`。
 & './sim/run_target_frame_alignment.ps1'
 ```
 
-本次控制器通过 238 项检查，覆盖五项循环、K1/K3 消抖、K4 无操作和参数固定为零。
-像素模块通过 337,251 次独立参考对照和 674,502 次时钟边沿外保持检查，
-覆盖五种模式和 11 种非法编码。五项名称/mixer 检查通过 16 帧、2,064,384 个像素，
-原目标框 mixer 另通过 7,372,800 个像素。
-DDR 槽对齐通过 30 次写入、读取和显示事件，覆盖全部五模式；
-包含 2 次浮雕边界裁剪和 1 次 Scharr 边界裁剪。完整结果
+九模式控制器通过 468 项检查，覆盖 K1 三轮九项循环、消抖、长按、全部复位编码，
+K3/K4 忽略和参数固定为零。
+像素模块通过 709,647 次独立参考对照与 1,419,294 次时钟边沿外保持检查，
+覆盖九种模式、7 种非法编码、全部 256 个兼容参数值及 109,228 个保色边界向量。
+九项名称/mixer 检查通过 28 帧、3,612,672 个像素。
+DDR 槽对齐通过 32 次写入、读取和显示事件，核对 93 次配置，覆盖全部九模式；
+包含浮雕 2 次、Scharr 2 次、漫画 2 次、Scharr 反色 1 次和形态学 1 次边界裁剪。完整结果
 见 [仿真说明](../sim/README.md#当前结果与边界)。
 
-双击 `sim/run_video_mode.cmd` 运行当前 Scharr 的 64×48 测试。它先运行按键测试，
-再运行 `tb_scharr_edge_detect_96.sv` 的独立图像参考，同时核对边缘模块和选择器。
+双击 `sim/run_video_mode.cmd` 运行当前核心算法的 64×48 测试。它先运行按键测试，
+再运行 `tb_scharr_edge_detect_96.sv` 的独立图像参考，同时核对 Scharr、浮雕、漫画、形态学和选择器。
 720p 命令保持不变：
 
 ```bat
 sim\run_video_mode.cmd --no-pause 720
 ```
 
-本次 Scharr/浮雕 XSim 回归通过 64×48 的 19 帧（含截断帧）、55,488 像素，
-64×49 的 19 帧、56,640 像素，以及
-720p 的 13 帧、11,980,800 像素；最终 720p 脚本退出码为 0。
+九模式核心 XSim 回归通过 64×48 的 28 帧（含截断帧）、77,376 像素，
+64×49 的 28 帧、78,976 像素，以及
+720p 的 22 帧、18,439,680 像素；最终 720p 脚本退出码为 0。
 覆盖暗灰度边界、两种斜边、奇偶位置的一像素线、等亮度颜色、均匀图、噪声、
-五模式切换、提前帧首、连续帧、空拍、复位与 11 拍对齐。
+九模式切换、提前帧首、连续帧、空拍、复位与 11 拍对齐。
 720p 浮雕核对全部 65,536 组中心/左上灰度组合，
-含 132,410 个饱和暗像素、132,201 个饱和亮像素和 11,383,044 个中灰像素。
-成功标志为 `VIDEO_MODE_BUTTON_TEST_PASS`、`SCHARR_EDGE_TEST_PASS`、`EMBOSS_TEST_PASS`，
+漫画核对 376,150 个黑轮廓像素和 3,372,009 个彩色像素。
+形态学核对 1,333,973 个未饱和灰度像素、1,715,746 个饱和像素，
+九个位置分别取得极值，并覆盖小灰度差；Scharr 反色选择器核对 921,600 个像素。
+成功标志为 `VIDEO_MODE_BUTTON_TEST_PASS`、`SCHARR_EDGE_TEST_PASS`、`EMBOSS_TEST_PASS`、
+`CARTOON_TEST_PASS`、`INVERSE_SCHARR_SELECTOR_TEST_PASS`、`MORPHOLOGY_TEST_PASS`，
 `result.txt` 为 `PASS`。所有产物写入打印出的 `%TEMP%\anlogic_video_mode_<随机编号>/`。
 这些是合成图功能结果，不证明真实暗光画质。
 
-浮雕 ISP 集成检查分别运行红色检测和运动检测配置：
+新增 Scharr 反色、形态学 ISP 集成检查分别运行红色检测和运动检测配置：
 
 ```powershell
-& './sim/run_isp_lighting_integration.ps1' -Emboss
-& './sim/run_isp_lighting_integration.ps1' -Motion -Emboss
+& './sim/run_isp_lighting_integration.ps1' -ScharrInverse
+& './sim/run_isp_lighting_integration.ps1' -Motion -ScharrInverse
+& './sim/run_isp_lighting_integration.ps1' -Morph
+& './sim/run_isp_lighting_integration.ps1' -Motion -Morph
 ```
 
-两项均以 RGB 注入已知场景，各检查 3 帧、691,200 组 AWB/选择器数据、
-518,400 个打包字和 8,294,400 字节；各核对 921,600 个浮雕像素。
+四项均以 RGB 注入已知场景，各检查 3 帧、691,200 组 AWB/选择器数据、
+518,400 个打包字和 8,294,400 字节；各核对 921,600 个对应像素。
+Scharr 反色在 ISP 端仍是正边缘数据，HDMI 取反由像素与 mixer 回归另行验证。
 运动配置仍保留 13 拍结果延迟和原有三帧确认策略。此项验证 ISP 选择和打包，
 没有模拟真实 MIPI、传感器响应和 DDR 器件。
 
@@ -182,7 +210,10 @@ sim\run_video_mode.cmd --no-pause 720
 
 
 
-该入口覆盖按键、Scharr/浮雕和选择模块，不覆盖打包模块、真实摄像头、完整 ISP、DDR/HDMI 联合仿真或板上画面。原打包模块不支持任意位置的空拍，当前入口的算法空拍测试不能用于改变打包接口的既有协议。综合通过也不等于布局布线后的时序通过。
+`run_video_mode.cmd` 覆盖按键、Scharr/浮雕/漫画/形态学和选择模块，不覆盖打包模块、
+真实摄像头、完整 ISP、DDR/HDMI 联合仿真或板上画面。
+原打包模块不支持任意位置的空拍，算法空拍测试不能用于改变打包接口的既有协议。
+综合通过也不等于布局布线后的时序通过。
 
 新增运动检测的复现命令：
 
@@ -220,12 +251,15 @@ DDR 帧槽/算法/框的元数据对齐由独立顶层测试覆盖。
 
 ## 上板验收
 
-- 逐次按 K3，确认 `00 COLOR GAMMA → 01 GRAYSCALE → 02 SCHARR EDGE → 03 NEGATIVE → 04 EMBOSS` 循环，且编号与画面一致；用 K1 反向返回。
-- 检查默认原画有 Gamma，灰度、原 Scharr、反色和浮雕画面与名称相符；按 K4 应无变化。
+- 逐次按 K1，确认 `00 COLOR GAMMA → 01 GRAYSCALE → 02 SCHARR EDGE → 03 NEGATIVE → 04 EMBOSS → 05 COLOR KEEP → 06 CARTOON → 07 SCHARR INV → 08 MORPH EDGE → 00` 循环，且编号与画面一致。
+- 检查默认原画有 Gamma，九项画面与名称相符；K3、K4 单独、长按或同时按下均不应改变显示模式。
 - 在浮雕画面中检查平坦墙面为中灰、轮廓有成对明暗边，并检查画面前两行、前两列为中灰。
+- 在保色画面放置红、绿、蓝及灰色物体，检查红绿保色，其余变灰；暗色和低饱和色可能不满足颜色门槛。
+- 在漫画画面检查彩色色块、减少的色阶和黑色轮廓，核对前六行、前六列填黑，红绿蓝物体仍可区分。
+- 在 Scharr 反色画面检查轮廓与模式 02 一致但黑白相反；在形态学画面检查亮边、不同灰度强度以及前两行、前两列填黑。
 - 逐次按 K2，确认 `RED` 和 `MOV` 交替显示；用红色静物和任意颜色的运动物体区分两种算法。
-- 在全部五项画面分别测试 K2，核对目标框位置及 RED/MOV 标签；浮雕框向右下各补偿 1 像素。
-- 长按 K1、K2、K3，确认只触发一次；松开后再按才能再次触发。
+- 在全部九项画面分别测试 K2，核对目标框位置及 RED/MOV 标签；浮雕与形态学各补偿 1 像素，Scharr、Scharr 反色与漫画各补偿 3 像素。
+- 长按 K1、K2，确认只触发一次；松开后再按才能再次触发。
 - 固定摄像头，等待曝光稳定后持续移动物体，检查连续 3 帧候选后出框、小抖动不会不断换位置、停止后第 3 帧清框。
 - 分别测试普通室内光、低照度、灯光切换与远近物体，记录漏检和误框；本版没有摄像头防抖。
 - 视频运动过程中反复切换，观察是否有花屏、卡死或半帧混合。

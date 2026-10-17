@@ -6,10 +6,10 @@
 
 本说明依据当前的 [TD 工程文件](../td_project/anlogic_edge_osd.al)、[系统顶层](../user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](../user_source/hdl_source/isp/isp_top.v) 整理。
 
-## 2026-10-17 五项显示模式
+## 2026-10-17 九项显示模式
 
-K1（D5）选择上一个模式，K3（B9）选择下一个，首尾循环；
-按下/释放均消抖 20 ms。K4（C7）保留引脚但不执行操作。
+K1（D5）按 0..8 单向循环选择模式，按下/释放均消抖 20 ms。
+K3（B9）与 K4（C7）保留引脚但不执行操作。
 K2（A9）独立选择红色/运动检测，仍按原逻辑消抖。
 屏幕在 (192,80) 显示编号和名称；默认原画带 Gamma，无参数显示。
 
@@ -20,49 +20,64 @@ K2（A9）独立选择红色/运动检测，仍按原逻辑消抖。
 | 2 | 原 Scharr 边缘 | 保留原高斯、Scharr、NMS 和固定单阈值 |
 | 3 | RGB 反色 | 每通道 `255-C` |
 | 4 | 灰度浮雕 | `E=clip(128+2*(Y中心-Y左上),0,255)`，平坦区域中灰、轮廓成对明暗边 |
+| 5 | 红绿保色 | 满足红/绿色条件的像素保留 RGB，其他使用模式 1 灰度 |
+| 6 | 彩色漫画 | RGB5 的 3×3 高斯平滑、RGB3 色阶与原 Scharr/NMS 黑轮廓 |
+| 7 | Scharr 反色 | CSI 选择原 Scharr 正边缘，HDMI 取反为白底黑边 |
+| 8 | 形态学边缘 | 第一层灰度 3×3 的 `clip(4*(max-min),0,255)` |
 
-同时按下时 K3 优先于 K1。12 位配置接口仍为 4 位模式加 8 位兼容参数，
+K3/K4 单独或与 K1 同时按下均不影响 K1 的单向循环。12 位配置接口仍为 4 位模式加 8 位兼容参数，
 控制器将参数固定为 0，像素处理忽略参数。Scharr 内部灰度沿用
 `Y=(R+2*G+B)>>2`，浮雕复用此灰度的第一层 3×3 窗口；
-浮雕前两行、前两列输出中灰 128。五项模式和固定两拍像素延迟已由独立整数参考核对，
-见 [仿真说明](../sim/README.md)。
+浮雕前两行、前两列输出中灰 128。漫画前六行、前六列填黑，形态学前两行、前两列填黑。
+九项模式的本轮独立整数参考、综合、布局布线与 bit 生成均已通过，见 [仿真说明](../sim/README.md)。
 
 | 文件 | 职责 | 阅读入口 |
 |---|---|---|
-| [display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | 50 MHz 域的 K1/K3 同步、消抖和五项模式请求；K4 无操作、参数固定 0 | `MODE_COUNT`、`O_effect_mode` |
+| [display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | 50 MHz 域的 K1 同步、消抖和九项单向循环请求；K3/K4 无操作、参数固定 0 | `MODE_COUNT`、`O_effect_mode` |
 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | 12 位配置跨入 CSI；将实际帧配置和框随 DDR 槽保存到 HDMI | `u_display_effect_cdc`、`S_target_mailbox`、`S_target_slots`、`S_effect_config_hdmi` |
-| [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | 摄像头帧首提交配置，模式 2 选择 Scharr、4 选择浮雕，其余输出 RGB；统一 11 拍 | `I_effect_config`、`O_effect_config` |
-| [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 原高斯、Scharr、NMS 和固定单阈值；共享第一层灰度窗口产生浮雕 | `gw`、`sw`、`O_tdata` |
-| [hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 帧首锁存实际槽配置，显示五项名称，复用目标文字字库 | `S_effect_mode`、`S_effect_char` |
-| [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | 原画 Gamma、灰度和反色，Scharr/浮雕直通，固定两拍 | `luma_rgb`、`mode_d`、`O_rgb` |
+| [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | 帧首提交，模式 2/7 选正 Scharr、4 选浮雕、6 选漫画、8 选形态学，其余 RGB；统一 11 拍 | `I_effect_config`、`O_effect_config` |
+| [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 原高斯、Scharr、NMS；共享灰度窗口浮雕/形态学和低位宽彩色窗口漫画 | `gw`、`sw`、`O_morph_data`、`cartoon_channel`、`O_cartoon_data` |
+| [hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 帧首锁存实际槽配置，显示九项名称，复用目标文字字库 | `S_effect_mode`、`S_effect_char` |
+| [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | 原画 Gamma、灰度、反色、红绿保色与 Scharr 取反，其余空间效果直通，固定两拍 | `luma_rgb`、`keep_red_green`、`mode_d`、`O_rgb` |
 
-目标框按实际帧配置，在模式 2 Scharr 下向右、向下各补偿 3 像素，
-在模式 4 浮雕下各补偿 1 像素，其余模式不偏移。
+目标框按实际帧配置，在模式 2 Scharr、6 漫画和 7 Scharr 反色下向右、向下各补偿 3 像素，
+在模式 4 浮雕和 8 形态学下各补偿 1 像素，其余模式不偏移。
+兼容信号 `O_edge_mode` 仍只在模式 2 置位，实际路由使用完整模式配置。
 配置与像素同步经过 DDR 槽，即使显示旧帧或重复帧，算法名也对应实际画面。
 效果模块替代 mixer 原有两拍像素寄存，最终 HDMI 输出仍为三拍；OSD 后叠加。
 
 浮雕复用已有窗口，不新增 DDR 访问或行缓存；乘 2 使用移位。
-本次五模式浮雕版已完成完整构建，ERAM 和 DSP 总量仍分别为 62 和 13。
-按键、五模式像素、名称、DDR 槽和框补偿回归已通过；
-720p Scharr/浮雕回归核对 13 帧、11,980,800 个像素，浮雕覆盖全部 65,536 组灰度差组合。
-当前测试范围见 [仿真说明](../sim/README.md#当前结果与边界)。
+漫画新增 RGB5 高斯行缓存和 RGB3 颜色中心对齐行缓存，不增加 DDR 访问。
+颜色通道先平滑，再取八级色阶并扩展回 8 位，最后将原 NMS 轮廓置黑。
+红绿保色不使用该邻域缓存，在 HDMI 端按 RGB 通道条件处理。
+新增 Scharr 反色与形态学复用已有正边缘和第一层灰度窗口，不增加行缓存、DSP 或 DDR 图像访问。
+本轮控制器通过 468 项检查，像素模块通过 709,647 次参考对照，
+名称/mixer 核对 28 帧、3,612,672 个像素；DDR 对齐覆盖全部九项模式。
+720p 核心核对 22 帧、18,439,680 个像素，新增两模式的红色/运动配置共四项 ISP 打包也已通过。
+当前测试结果和边界见 [仿真说明](../sim/README.md#当前结果与边界)。
 浮雕[合成输入](../build/verification/emboss_synthetic_input.png)与
 [RTL 输出](../build/verification/emboss_synthetic_rtl.png)可对照；它们不是实物摄像头画面。
+漫画[合成输入](../build/verification/cartoon_synthetic_input.png)与
+[RTL 输出](../build/verification/cartoon_synthetic_rtl.png)也仅来自合成场景。
+红绿保色的[RTL 对照预览](../build/verification/color_keep_rtl_preview.png)同样不代替实拍。
 
-浮雕版 `src-b81e1a687c70` 于 2026-10-17 18:44:37（北京时间）完成构建，
-身份见 [构建清单](../build/release/release_manifest.json)。
-最终 Slice 14,881/21,216（70.14%）、LUT6 13,612、寄存器 12,793、
-ERAM 62/108、DSP 13/40，建立/保持余量 +0.117/+0.020 ns。
-显示配置跨时钟的 13 ns 规则覆盖全部 3 条有效路径，未被宽松规则覆盖或忽略。
-221 个构建输入文件与工作区逐项 SHA256 一致，两处 bit 内容一致。
+九模式版 `src-0917069cbe5c` 于 2026-10-17 20:11:21（北京时间）完成构建。
+最终 Slice 16,035/21,216（75.58%）、LUT6 14,773、寄存器 13,573、
+ERAM 69/108、DSP 13/40，建立/保持余量 +0.128/+0.020 ns。
+显示配置跨时钟的 13 ns 规则覆盖全部 4 条有效路径，未被宽松规则覆盖或忽略。
+相对七模式基线增加 789 Slice、796 LUT6、387 个寄存器，ERAM 与 DSP 不变。
+221 个生产构建输入与当前文件 SHA256 一致，两处 bit 内容一致；版本和文件身份见发布清单。
 
 资源和时序报告位于 [资源报告](../build/release/system_phy.area) 与
 [最终时序](../build/release/system_pr.timing)，需结合清单的源码指纹判断版本。
 根目录构建入口成功后更新 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`
-和 `firmware` 副本。本次回归日志和源码校验值见
+和 `firmware` 副本。固定报告路径随成功构建更新，需按
+[构建清单](../build/release/release_manifest.json) 核对源码身份。本轮回归日志和源码校验值见
 [验证证据包](../build/verification/algorithm_regression.zip)；
-新增浮雕在红色/运动两种检测配置的 ISP 选择与打包检查均通过；
+Scharr 反色与形态学在红色/运动两种检测配置的 ISP 选择与打包检查均通过；
 真实摄像头画质仍待重新烧录后确认。
+当前仍是单个红色/运动总框；[低资源连通区域方案](CONNECTED_COMPONENTS_PLAN.md)
+规划多区域统计及 Top4，同本次九模式 bit 无关，尚未实现。
 
 ## 前版固定色调查表与资源基线（2026-10-17）
 
@@ -117,7 +132,7 @@ HDMI 右上角显示同帧总延迟、ISP 延迟、缓存与输出等待、累�
 
 ## 2026-10-16 K2 帧差运动检测与稳定处理
 
-K2（A9）切换红色/运动检测，当前 K1 为上一显示算法。
+K2（A9）切换红色/运动检测，当前 K1 单向循环显示算法，K3/K4 无操作。
 两种检测从 AWB RGB 分流，持续运行，帧首锁定 K2 模式。
 结果的算法标签随实际 DDR 帧槽保存，显示帧首锁存为 `RED` / `MOV`。
 
@@ -196,9 +211,9 @@ AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流
 
 | 文件 | 当前功能 | 阅读入口 |
 |---|---|---|
-| [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 全分辨率亮度边缘算法及共享灰度窗口浮雕 | `luminance` → `gaussian` → `scharr` → `magnitude_direction` → `nms` |
+| [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 全分辨率亮度边缘、共享灰度窗口浮雕/形态学及低位宽彩色漫画 | `luminance` → `gaussian` → `scharr` → `magnitude_direction` → `nms`；`O_morph_data`、`O_cartoon_data` |
 | [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | AWB 输出上的四像素并行红色检测 | `red_mask` → 两行缓存与 `votes` → 框、中心与面积 |
-| [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](../user_source/hdl_source/isp/isp_top.v) | 在相同 RGB 源上并行检测并选择显示 | `u_target_detect_switch/u_red`、`u_rgb_edge_switch`；RGB、Scharr 和浮雕统一 11 拍 |
+| [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) / [isp_top.v](../user_source/hdl_source/isp/isp_top.v) | 在相同 RGB 源上并行检测并选择显示 | `u_target_detect_switch/u_red`、`u_rgb_edge_switch`；RGB、Scharr、浮雕、漫画、形态学统一 11 拍 |
 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | 帧对应及坐标跨时钟传输 | `S_target_mailbox` 请求/确认 → `S_target_slots` 四槽表 → 当前读槽结果 |
 | [camera_diag_cdc.v](../user_source/hdl_source/camera_diag_cdc.v) | 摄像头 4 位配置状态及 8 位错误码的整组跨时钟传输 | `payload_hold` → 请求两级同步 → HDMI 接收 → 确认两级同步；由顶层 `u_camera_diag_cdc` 实例化 |
 | [hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 叠加前端框、十字和坐标 | `I_target_*` → `S_display_frame_start` → 框/十字/文字 |
@@ -206,7 +221,7 @@ AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流
 | [video_in.v](../user_source/hdl_source/video_in.v) / [video_out.v](../user_source/hdl_source/video_out.v) | 提供当前图像的 DDR 槽标记 | `O_write_frame_slot` / `O_read_frame_slot`；原地址与 FIFO 控制不变 |
 
 检测在 **AWB 后、显示算法切换前**，因此所有显示模式均能识别红色物体。
-框按存图的实际 DDR 槽选择；模式 2 Scharr 补偿向右下各 3 像素，模式 4 浮雕各 1 像素。
+框按存图的实际 DDR 槽选择；模式 2/6/7 补偿向右下各 3 像素，模式 4/8 各 1 像素。
 多数滤波忽略最外侧一像素边界；多个红色区域仍合为一个总包围框。
 官方 `edge_detect_96.v`、旧 `color_edge_detect_96.v` 和 `color_target_detect.v`
 留作历史对照，不在当前运行通路内。本版为高斯、Scharr、NMS及固定单阈值，
@@ -230,10 +245,10 @@ flowchart TD
     AESTATS -. 完整帧统计 .-> AE[自动曝光控制]
     AE -. 参数更新 .-> CFG
     ISP --> DET[AWB RGB：红色/帧差检测、去噪、框统计]
-    ISP --> VIN[video_in：RGB、Scharr 或浮雕写入图像]
+    ISP --> VIN[video_in：RGB、Scharr、浮雕、漫画或形态学写入图像]
     VIN --> MEM[DDR 帧缓存]
     MEM --> VOUT[video_out：读出图像]
-    VOUT --> TONE[display_effects_rgb888：Gamma、灰度、反色、Scharr/浮雕直通]
+    VOUT --> TONE[display_effects_rgb888：Gamma、灰度、反色、保色、Scharr取反及空间效果直通]
     TONE --> OSD[hdmi_mixer：叠加 Logo、文字、目标框和坐标]
     DET -.-> META[握手跨时钟、按 DDR 槽保存结果]
     META -.-> OSD
@@ -275,13 +290,16 @@ flowchart TD
 | 自动白平衡 | [awb.v](../user_source/hdl_source/awb.v) | 近中性色采样，红/蓝增益按帧更新；四个 RGB888 像素组成的 96 位数据保持 54 拍输出，帧首提前透传 |
 | 边缘检测 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 96 位 RGB 输入，亮度高斯、Scharr、NMS后输出同宽黑白边缘图 |
 | 灰度浮雕 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 共享第一层灰度窗口，以中心和左上像素差生成中灰底明暗轮廓，统一 11 拍输出 |
+| 彩色漫画 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | RGB5 高斯、RGB3 色阶和 Scharr 黑轮廓，统一 11 拍与 3 像素偏移 |
+| 形态学边缘 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 第一层灰度 3×3 最大减最小、四倍饱和增强，统一 11 拍与 1 像素偏移 |
+| 红绿保色 | [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | DDR 读出后保留红绿像素，其他转灰，固定两拍 |
 | 红色目标检测 | [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 与边缘支路共享 AWB RGB 输入，不依赖显示模式 |
 | 运动目标检测 | [motion_target_detect_96.v](../user_source/hdl_source/isp/motion_target_detect_96.v) | 生产差值门槛 10、最少 12 个变化块；3×3 至少 3 票支持细边，输出原始总框及支持/光照指标 |
 | K2 检测选择与运动稳定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | 两种检测持续运行；3 帧确认、短暂保持与框平滑后，按该帧模式转发结果 |
-| 模式切换 | [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘/浮雕模块持续运行；将彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
+| 模式切换 | [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘/浮雕/漫画/形态学持续运行；彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
 | 板载 K2 控制 | [video_mode_control.v](../user_source/hdl_source/video_mode_control.v) | 50 MHz 时钟下同步并消抖 20 ms，每次按下翻转检测模式 |
 | DDR 数据打包 | [data96_128.v](../user_source/hdl_source/isp/data96_128/data96_128.v) | 文件内的 data_96bit_to_128bit 模块把 96 位像素流重新打包为 128 位 |
-| 板载 K1/K3 控制 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | 上一项/下一项请求在系统时钟域产生，经顶层握手邮箱整组跨域；K4 无操作 |
+| 板载 K1 控制 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | 九项单向循环请求在系统时钟域产生，经顶层握手邮箱整组跨域；K3/K4 无操作 |
 | DDR 读出后的显示效果 | [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v)、[hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 使用实际 DDR 槽配置，固定两拍像素处理后叠加 OSD，默认彩色加 Gamma |
 
 新边缘每拍处理四个独立像素。亮度 `Y=floor((R+2G+B)/4)` 经高斯、
@@ -301,9 +319,11 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 | 改运动检测门槛 | [isp_top.v](../user_source/hdl_source/isp/isp_top.v)、[target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | DIFF_THRESHOLD、MIN_BLOCKS、GLOBAL_CHANGE_PERCENT、motion_result_stabilizer 参数 | 生产均值差≥10、至少12变化块；3帧确认、8像素死区、四分之一平滑及支持/光照过滤 |
 | 改自动曝光参数 | [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v)、[design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | TARGET_LOW/HIGH、DARK/BRIGHT_FAST、GAIN_MAX、AVERAGE_FRAMES | 当前目标96..120、范围E4..1991/G16..176、六帧平均；改后必须重跑曝光闭环和完整构建 |
 | 改白平衡 | [awb.v](../user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
-| 切换显示模式 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v)、[display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | MODE_COUNT、I_mode | K1/K3 选择 0..4，K4 无操作；默认原画加 Gamma，帧首提交，兼容参数固定 0 |
+| 切换显示模式 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v)、[display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | MODE_COUNT、I_mode | K1 单向循环 0..8，K3/K4 无操作；默认原画加 Gamma，帧首提交，兼容参数固定 0 |
+| 改保色范围 | [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | keep_red_green | 通道至少 24、差至少 6，另有比例和色相范围；与目标检测判定分开 |
+| 改漫画平滑或色阶 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | cartoon_channel、cartoon_expand | RGB5 高斯后每通道八级；改变窗口、拍数或中心对齐需同步核对轮廓和框 |
 | 调整 Gamma 暗部和亮灰曲线 | [gamma_lut_rgb888.v](../user_source/hdl_source/gamma_lut_rgb888.v) | TONE_LUT | 模式 0 的彩色画面使用；调表后同步更新参考并重新验证 |
-| 改上电默认模式 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 默认 0=模式 00 原画+Gamma；设为 1 则默认模式 02 Scharr；运行中 K1 上一项、K3 下一项，五项循环 |
+| 改上电默认模式 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 默认 0=模式 00 原画+Gamma；设为 1 则默认模式 02 Scharr；运行中 K1 单向九项循环 |
 | 开关九区通道测试表 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | SHOW_RAW_STATS | 默认 0；诊断时设 1 并重新编译下载；关闭不影响曝光控制或 AWB |
 | 改边缘算法 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | gaussian、scharr、nms | 修改流水级数须同步切换延迟；修改窗口须同步顶层框补偿 |
 | 改仿真阈值 | [tb_scharr_edge_detect_96.sv](../sim/tb_scharr_edge_detect_96.sv) | TH、reference | 默认 20，不自动读取 isp_top；修改后需重新标定场景断言 |
@@ -452,8 +472,8 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/lane_lvds_10_1.v](../user_source/hdl_source/lane_lvds_10_1.v) | 输出通道串行化配套模块 | 已登记 |
 | [user_source/hdl_source/vtc/uivtc.v](../user_source/hdl_source/vtc/uivtc.v) | 显示扫描、同步和有效区时序 | 已登记 |
 | [user_source/hdl_source/hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 图像、Logo、文字/帧计数与调试画面混合 | 已登记 |
-| [user_source/hdl_source/display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | 原画 Gamma、灰度和反色，Scharr/浮雕直通，固定两拍 | 已登记 |
-| [user_source/hdl_source/display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | K1/K3 同步消抖和五项模式请求；K4 无操作，参数固定 0 | 已登记 |
+| [user_source/hdl_source/display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | 原画 Gamma、灰度、反色、红绿保色与 Scharr 取反，其他空间效果直通，固定两拍 | 已登记 |
+| [user_source/hdl_source/display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | K1 同步消抖和九项单向循环请求；K3/K4 无操作，参数固定 0 | 已登记 |
 | [user_source/hdl_source/gamma_lut_rgb888.v](../user_source/hdl_source/gamma_lut_rgb888.v) | 由模式 0 彩色画面复用的固定三通道色调查表 | 已登记 |
 | [user_source/hdl_source/video_latency_timebase.v](../user_source/hdl_source/video_latency_timebase.v) | 微秒时间与寄存 Gray 编码 | 已登记 |
 | [user_source/hdl_source/video_latency_monitor.v](../user_source/hdl_source/video_latency_monitor.v) | RAW、ISP、DDR 槽与显示帧的同帧时间配对 | 已登记 |
@@ -464,13 +484,13 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/audio_arc_calculate.v](../user_source/hdl_source/audio_arc_calculate.v) | HDMI 音频时钟恢复参数计算 | 已登记 |
 | [user_source/hdl_source/key_remove_shakes.v](../user_source/hdl_source/key_remove_shakes.v) | HDMI 子系统配套按键消抖 | 已登记 |
 | [user_source/hdl_source/isp/edge_detect_96.v](../user_source/hdl_source/isp/edge_detect_96.v) | 历史 Sobel 边缘检测 | AutoExcluded=true |
-| [user_source/hdl_source/isp/scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 原高斯、Scharr、NMS 和固定单阈值；共享灰度窗口浮雕 | 已登记 |
+| [user_source/hdl_source/isp/scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 原高斯、Scharr、NMS、共享灰度窗口浮雕/形态学和低位宽彩色漫画 | 已登记 |
 | [user_source/hdl_source/isp/color_edge_detect_96.v](../user_source/hdl_source/isp/color_edge_detect_96.v) | 旧彩色色差边缘；未在当前通路实例化 | AutoExcluded=true |
 | [user_source/hdl_source/isp/red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 当前独立 RGB 红色目标检测 | 已登记 |
 | [user_source/hdl_source/isp/motion_target_detect_96.v](../user_source/hdl_source/isp/motion_target_detect_96.v) | 8×8 灰度均值帧差及运动支持统计 | 已登记 |
 | [user_source/hdl_source/isp/target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | K2 红色/运动选择及运动结果稳定器 | 已登记 |
 | [user_source/hdl_source/color_target_detect.v](../user_source/hdl_source/color_target_detect.v) | 旧目标检测；未在当前通路实例化 | AutoExcluded=true |
-| [user_source/hdl_source/isp/rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | RGB/Scharr/浮雕对齐及帧边界选择 | 已登记 |
+| [user_source/hdl_source/isp/rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | RGB/Scharr/浮雕/漫画/形态学对齐及帧边界选择 | 已登记 |
 | [user_source/hdl_source/video_mode_control.v](../user_source/hdl_source/video_mode_control.v) | K2 输入同步、消抖与检测模式请求 | 已登记 |
 | [user_source/hdl_source/anlogic_logo_rom.v](../user_source/hdl_source/anlogic_logo_rom.v) | 安路 Logo 像素 ROM | 已登记 |
 | [user_source/hdl_source/osd_char_lib.v](../user_source/hdl_source/osd_char_lib.v) | OSD 字符点阵 | 已登记 |
@@ -494,7 +514,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 
 </details>
 
-当前 Scharr、红色/运动检测、K1/K2/K3 控制、显示效果、延迟和 AE 模块均已登记到两个工程，K4 引脚保留但无操作。主工程现有 76 个登记入口；上表的 AutoExcluded 状态按主工程记录。
+当前 Scharr、红色/运动检测、K1/K2 控制、九项显示效果、延迟和 AE 模块均已登记到两个工程，K3/K4 引脚保留但无操作。主工程现有 76 个登记入口；上表的 AutoExcluded 状态按主工程记录。
 
-彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 77 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数仅指定复位默认值；运行中均由 K1/K3 选择算法。
+彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 77 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数仅指定复位默认值；运行中均由 K1 单向循环选择算法。
 

@@ -326,6 +326,10 @@ module hdmi_mixer #(
             2: S_effect_name = "SCHARR EDGE ";
             3: S_effect_name = "NEGATIVE    ";
             4: S_effect_name = "EMBOSS      ";
+            5: S_effect_name = "COLOR KEEP  ";
+            6: S_effect_name = "CARTOON     ";
+            7: S_effect_name = "SCHARR INV  ";
+            8: S_effect_name = "MORPH EDGE  ";
             default: S_effect_name = "COLOR GAMMA ";
         endcase
         S_effect_char = " ";

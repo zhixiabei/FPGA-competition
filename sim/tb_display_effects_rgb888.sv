@@ -21,6 +21,9 @@ module tb_display_effects_rgb888;
     integer param_index;
     integer color_index;
     integer rapid_index;
+    integer boundary_vectors = 0;
+    integer preserved_red = 0, preserved_green = 0, rejected_color = 0;
+    integer bound_green, bound_blue, bound_red, bound_offset, bound_candidate;
     reg expected_valid = 0;
     reg [23:0] expected_previous = 0;
     reg [7:0] sweep_red;
@@ -33,6 +36,35 @@ module tb_display_effects_rgb888;
             weighted = value[23:16] * 77 + value[15:8] * 150
                      + value[7:0] * 29 + 128;
             reference_luma = weighted >> 8;
+        end
+    endfunction
+
+    function automatic bit reference_keep_color(input [23:0] value);
+        integer r,g,b;
+        bit red,green;
+        begin
+            r=value[23:16]; g=value[15:8]; b=value[7:0];
+            red=r>=24 && r-g>=6 && r-b>=6 && r*2>=g*3 && r*2>=b*3 &&
+                g*3-r<=b*2 && b*3-r<=g*2;
+            green=g>=24 && g-r>=6 && g-b>=6 && g*2>=r*3 && g*2>=b*3 &&
+                  r*3-g<=b*2 && b*3-g<=r*2;
+            reference_keep_color=red || green;
+        end
+    endfunction
+
+    function automatic integer minimum_red(input integer g,input integer b);
+        integer threshold;
+        begin
+            // Solve each red condition for its minimum accepted R. These
+            // boundaries exercise inclusive limits and rejection one below.
+            threshold=24;
+            if(threshold<g+6) threshold=g+6;
+            if(threshold<b+6) threshold=b+6;
+            if(threshold<(3*g+1)/2) threshold=(3*g+1)/2;
+            if(threshold<(3*b+1)/2) threshold=(3*b+1)/2;
+            if(threshold<3*g-2*b) threshold=3*g-2*b;
+            if(threshold<3*b-2*g) threshold=3*b-2*g;
+            minimum_red=threshold;
         end
     endfunction
 
@@ -76,8 +108,10 @@ module tb_display_effects_rgb888;
             luma = reference_luma(value);
             case (mode_value)
                 4'd1: reference_rgb = {luma, luma, luma};
-                4'd2, 4'd4: reference_rgb = value;
-                4'd3: reference_rgb = ~value;
+                4'd2, 4'd4, 4'd6, 4'd8: reference_rgb = value;
+                4'd3, 4'd7: reference_rgb = ~value;
+                4'd5: reference_rgb = reference_keep_color(value) ? value :
+                                      {luma, luma, luma};
                 default: reference_rgb = {
                     reference_gamma_channel(value[23:16]),
                     reference_gamma_channel(value[15:8]),
@@ -125,6 +159,11 @@ module tb_display_effects_rgb888;
             expected_previous = expected_now;
             expected_valid = 1;
             vectors = vectors + 1;
+            if(mode_value==5) begin
+                if(!reference_keep_color(value)) rejected_color=rejected_color+1;
+                else if(value[23:16]>value[15:8]) preserved_red=preserved_red+1;
+                else preserved_green=preserved_green+1;
+            end
         end
     endtask
 
@@ -170,9 +209,9 @@ module tb_display_effects_rgb888;
             for (param_index = 0; param_index < 256; param_index = param_index + 1)
                 apply_vector(24'h804020, mode_index[3:0], param_index[7:0]);
 
-        // Scharr/emboss are already computed before DDR; both bypass Gamma.
-        // Cover every R/G combination and all blue values for all five modes.
-        for (mode_index = 0; mode_index < 5; mode_index = mode_index + 1) begin
+        // Spatial effects are computed before DDR and bypass Gamma.
+        // Cover every R/G combination and all blue values for all nine modes.
+        for (mode_index = 0; mode_index < 9; mode_index = mode_index + 1) begin
             for (color_index = 0; color_index < 65536; color_index = color_index + 1) begin
                 sweep_red = color_index >> 8;
                 sweep_green = color_index;
@@ -187,16 +226,35 @@ module tb_display_effects_rgb888;
             end
         end
 
+        // For every G/B pair, straddle the exact red hue/saturation/brightness
+        // boundary. Exchanging R/G repeats the same coverage for green.
+        for(bound_green=0;bound_green<256;bound_green=bound_green+1)
+            for(bound_blue=0;bound_blue<256;bound_blue=bound_blue+1) begin
+                bound_red=minimum_red(bound_green,bound_blue);
+                for(bound_offset=-1;bound_offset<=1;bound_offset=bound_offset+1) begin
+                    bound_candidate=bound_red+bound_offset;
+                    if(bound_candidate>=0 && bound_candidate<=255) begin
+                        apply_vector({8'(bound_candidate),8'(bound_green),8'(bound_blue)},
+                                     4'd5,8'd0);
+                        apply_vector({8'(bound_green),8'(bound_candidate),8'(bound_blue)},
+                                     4'd5,8'd255);
+                        boundary_vectors=boundary_vectors+2;
+                    end
+                end
+            end
+
         // Rapid controls and invalid values must follow the correct pixel.
         for (rapid_index = 0; rapid_index < 4096; rapid_index = rapid_index + 1)
             apply_vector((rapid_index * 24'h51931d) ^ 24'h2ad575,
                          rapid_index[3:0], rapid_index[11:4]);
         flush_pipeline();
-        if (vectors != 337251 || comparisons != vectors || hold_checks != vectors * 2)
+        if (vectors != 600419 + boundary_vectors || comparisons != vectors ||
+            hold_checks != vectors * 2 || boundary_vectors<60000 ||
+            preserved_red==0 || preserved_green==0 || rejected_color==0)
             $fatal(1, "Display effect coverage counters are incomplete");
 
         // Reset suppresses the unreset Gamma ROM and clears both stages.
-        for (mode_index = 0; mode_index < 5; mode_index = mode_index + 1) begin
+        for (mode_index = 0; mode_index < 9; mode_index = mode_index + 1) begin
             @(negedge clk);
             effect_mode = mode_index[3:0];
             rgb = 24'h4a6b8c;
@@ -219,13 +277,14 @@ module tb_display_effects_rgb888;
                 $fatal(1, "Post-reset pixel was not delayed by two clocks");
         end
 
-        $display("DISPLAY_EFFECTS_RGB888_PASS vectors=%0d comparisons=%0d hold_checks=%0d modes=5 invalid_modes=11 params_ignored=256 rg_combinations=65536 latency_clocks=2 gamma_original_curve=1 emboss_precomputed=1",
-                 vectors, comparisons, hold_checks);
+        $display("DISPLAY_EFFECTS_RGB888_PASS vectors=%0d comparisons=%0d hold_checks=%0d modes=9 invalid_modes=7 params_ignored=256 rg_combinations=65536 latency_clocks=2 gamma_original_curve=1 emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1 color_boundaries=%0d preserved_red=%0d preserved_green=%0d rejected=%0d",
+                 vectors, comparisons, hold_checks,boundary_vectors,
+                 preserved_red,preserved_green,rejected_color);
         $finish;
     end
 
     initial begin
-        #5000000;
+        #15000000;
         $fatal(1, "Display effect regression timed out");
     end
 endmodule

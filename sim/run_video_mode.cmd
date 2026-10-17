@@ -41,10 +41,16 @@ findstr /c:"SCHARR_EDGE_TEST_PASS" video_console.log >nul
 if errorlevel 1 goto failed
 findstr /c:"EMBOSS_TEST_PASS" video_console.log >nul
 if errorlevel 1 goto failed
+findstr /c:"CARTOON_TEST_PASS" video_console.log >nul
+if errorlevel 1 goto failed
+findstr /c:"INVERSE_SCHARR_SELECTOR_TEST_PASS" video_console.log >nul
+if errorlevel 1 goto failed
+findstr /c:"MORPHOLOGY_TEST_PASS" video_console.log >nul
+if errorlevel 1 goto failed
 >result.txt echo PASS
 type result.txt
 findstr /c:"VIDEO_MODE_BUTTON_TEST_PASS" button_console.log
-findstr /c:"SCHARR_EDGE_TEST_PASS" /c:"SCHARR_CONTOURS" /c:"EMBOSS_TEST_PASS" /c:"EMBOSS_SYNTHETIC_PREVIEW" video_console.log
+findstr /c:"SCHARR_EDGE_TEST_PASS" /c:"SCHARR_CONTOURS" /c:"EMBOSS_TEST_PASS" /c:"EMBOSS_SYNTHETIC_PREVIEW" /c:"CARTOON_TEST_PASS" /c:"CARTOON_SYNTHETIC_PREVIEW" /c:"INVERSE_SCHARR_SELECTOR_TEST_PASS" /c:"MORPHOLOGY_TEST_PASS" /c:"MORPHOLOGY_SYNTHETIC_PREVIEW" video_console.log
 echo Simulation output: %SIM_OUT%
 popd
 if /I not "%~1"=="--no-pause" pause

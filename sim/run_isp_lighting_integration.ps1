@@ -2,11 +2,16 @@ param(
     [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p',
     [switch] $Motion,
-    [switch] $Emboss
+    [switch] $Emboss,
+    [switch] $Cartoon,
+    [switch] $Morph,
+    [switch] $ScharrInverse
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$selectedModes=@(@($Emboss,$Cartoon,$Morph,$ScharrInverse) | Where-Object { $_ })
+if ($selectedModes.Count -gt 1) { throw 'Choose one third-frame display mode: -Emboss, -Cartoon, -Morph or -ScharrInverse' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceRoot = Join-Path $projectRoot 'user_source\hdl_source'
 $sources = @('isp\isp_top.v','isp\lsc_raw10_4x.v','awb.v',
@@ -30,6 +35,13 @@ foreach($relative in $sources) {
 }
 $testbench=Join-Path $simulationDir 'tb_isp_lighting_integration.sv'
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tb_isp_lighting_integration.sv') -Destination $testbench
+$sourceHashes=foreach($snapshot in @($compiledSources)+@($testbench)) {
+    [pscustomobject]@{
+        File=(Split-Path -Leaf $snapshot)
+        SHA256=(Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash
+    }
+}
+$sourceHashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv') -NoTypeInformation
 # Compile the vendor's unchanged, plaintext functional DRAM module.
 $primitiveText = [System.IO.File]::ReadAllText((Join-Path $TdSimLib 'ph1p_logic_dram.v'))
 $primitiveModule = [regex]::Match($primitiveText, '(?s)\A.*?\bendmodule\b')
@@ -51,19 +63,27 @@ try {
     $modeArgs=@()
     if ($Motion) { $modeArgs+=@('-generic_top','"MOTION_MODE=1"') }
     if ($Emboss) { $modeArgs+=@('-generic_top','"EMBOSS_MODE=1"') }
+    if ($Cartoon) { $modeArgs+=@('-generic_top','"CARTOON_MODE=1"') }
+    if ($Morph) { $modeArgs+=@('-generic_top','"MORPH_MODE=1"') }
+    if ($ScharrInverse) { $modeArgs+=@('-generic_top','"SCHARR_INV_MODE=1"') }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
         @modeArgs work.tb_isp_lighting_integration -s isp_lighting -log xelab.log *> elaborate_console.log
     if ($LASTEXITCODE -ne 0) { throw 'ISP integration elaboration failed; see elaborate_console.log' }
     & (Join-Path $SimBin 'xsim.bat') isp_lighting -runall -log xsim.log *> simulate_console.log
     if ($LASTEXITCODE -ne 0) { throw 'ISP integration simulation failed; see simulate_console.log' }
-    $passPattern=if ($Motion) { '^ISP_MOTION_INTEGRATION_PASS' } else { '^ISP_LIGHTING_INTEGRATION_PASS' }
-    $pass=Select-String -LiteralPath simulate_console.log -Pattern $passPattern
-    if (-not $pass) { throw 'ISP integration did not pass; see simulate_console.log' }
-    $pass.Line
-    if ($Emboss) {
-        $embossPass=Select-String -LiteralPath simulate_console.log -Pattern '^ISP_EMBOSS_INTEGRATION_PASS'
-        if (-not $embossPass) { throw 'ISP emboss integration did not pass; see simulate_console.log' }
-        $embossPass.Line
+    $console=[IO.File]::ReadAllText((Join-Path $simulationDir 'simulate_console.log'))
+    if ($console -match '(?im)^\s*(?:FATAL_ERROR|Fatal|Error|ERROR|FATAL)\b') {
+        throw 'ISP integration reported an error; see simulate_console.log'
+    }
+    $requiredPasses=@($(if ($Motion) { 'ISP_MOTION_INTEGRATION_PASS' } else { 'ISP_LIGHTING_INTEGRATION_PASS' }))
+    if ($Emboss) { $requiredPasses+='ISP_EMBOSS_INTEGRATION_PASS' }
+    if ($Cartoon) { $requiredPasses+='ISP_CARTOON_INTEGRATION_PASS' }
+    if ($Morph) { $requiredPasses+='ISP_MORPH_INTEGRATION_PASS' }
+    if ($ScharrInverse) { $requiredPasses+='ISP_SCHARR_INVERSE_INTEGRATION_PASS' }
+    foreach ($marker in $requiredPasses) {
+        $matches=[regex]::Matches($console,"(?m)^$marker\b.*$")
+        if ($matches.Count -ne 1) { throw "ISP integration did not pass exactly once: $marker; see simulate_console.log" }
+        $matches[0].Value.Trim()
     }
 } finally {
     Pop-Location

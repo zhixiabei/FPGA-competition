@@ -1,6 +1,8 @@
 // Four independent pixels/clock. Y -> Gaussian -> Scharr -> NMS -> threshold.
 // LATENCY=11 clocks including bubbles; Scharr spatial shift=(3,3) pixels.
 // The shared first window also produces emboss with spatial shift=(1,1).
+// Cartoon has a separate low-bit RGB Gaussian path aligned to Scharr.
+// Morphological gradient shares the raw-gray window with spatial shift=(1,1).
 // No adaptive threshold, chroma gradient or Canny hysteresis in this version.
 module scharr_edge_detect_96 #(
     parameter integer IMG_WIDTH=1280,
@@ -12,6 +14,8 @@ module scharr_edge_detect_96 #(
     input [95:0] I_tdata,input I_tvalid,I_tready,
     output reg O_tlast,O_tuser,output reg [95:0] O_tdata,
     output reg [95:0] O_emboss_data,
+    output reg [95:0] O_cartoon_data,
+    output reg [95:0] O_morph_data,
     output reg O_tvalid,output O_tready
 );
     assign O_tready=I_tready; // The camera path does not support backpressure.
@@ -85,6 +89,64 @@ module scharr_edge_detect_96 #(
                 emboss(gw[287-emboss_stage*72 -:72]);
         for(emboss_stage=1;emboss_stage<8;emboss_stage=emboss_stage+1)
             emboss_pipe[emboss_stage]<=emboss_pipe[emboss_stage-1];
+    end
+
+    function [7:0] minimum3;
+        input [7:0] a,b,c;
+        reg [7:0] ab;
+        begin
+            ab=a<b ? a : b;
+            minimum3=ab<c ? ab : c;
+        end
+    endfunction
+    function [7:0] maximum3;
+        input [7:0] a,b,c;
+        reg [7:0] ab;
+        begin
+            ab=a>b ? a : b;
+            maximum3=ab>c ? ab : c;
+        end
+    endfunction
+    function [7:0] morphology_level;
+        input [7:0] maximum,minimum;
+        reg [7:0] difference;
+        begin
+            difference=maximum-minimum;
+            morphology_level=|difference[7:6] ? 8'hff : {difference[5:0],2'b00};
+        end
+    endfunction
+    // Separate horizontal/vertical extrema at clocks three/four. The gradient
+    // is reduced to four bytes at clock five and reaches the output at eleven.
+    reg [95:0] morph_row_min,morph_row_max;
+    reg [31:0] morph_min,morph_max;
+    reg [31:0] morph_pipe[0:5];
+    integer morph_lane,morph_row,morph_stage;
+    always @(posedge I_clk) begin
+        for(morph_lane=0;morph_lane<4;morph_lane=morph_lane+1) begin
+            for(morph_row=0;morph_row<3;morph_row=morph_row+1) begin
+                morph_row_min[95-morph_lane*24-morph_row*8 -:8]<=minimum3(
+                    gw[287-morph_lane*72-morph_row*24 -:8],
+                    gw[279-morph_lane*72-morph_row*24 -:8],
+                    gw[271-morph_lane*72-morph_row*24 -:8]);
+                morph_row_max[95-morph_lane*24-morph_row*8 -:8]<=maximum3(
+                    gw[287-morph_lane*72-morph_row*24 -:8],
+                    gw[279-morph_lane*72-morph_row*24 -:8],
+                    gw[271-morph_lane*72-morph_row*24 -:8]);
+            end
+            morph_min[31-morph_lane*8 -:8]<=minimum3(
+                morph_row_min[95-morph_lane*24 -:8],
+                morph_row_min[87-morph_lane*24 -:8],
+                morph_row_min[79-morph_lane*24 -:8]);
+            morph_max[31-morph_lane*8 -:8]<=maximum3(
+                morph_row_max[95-morph_lane*24 -:8],
+                morph_row_max[87-morph_lane*24 -:8],
+                morph_row_max[79-morph_lane*24 -:8]);
+            morph_pipe[0][31-morph_lane*8 -:8]<=morphology_level(
+                morph_max[31-morph_lane*8 -:8],
+                morph_min[31-morph_lane*8 -:8]);
+        end
+        for(morph_stage=1;morph_stage<6;morph_stage=morph_stage+1)
+            morph_pipe[morph_stage]<=morph_pipe[morph_stage-1];
     end
 
     wire sv,su,sl;
@@ -176,6 +238,87 @@ module scharr_edge_detect_96 #(
         .clk(I_clk),.rst_n(I_rst_n),.valid(vp[2]),.user(up[2]),.last(lp[2]),
         .word(magnitude_word),.out_valid(nv),.out_user(nu),.out_last(nl),
         .ok(nok),.windows(nw),.out_x(nx),.out_y(ny));
+
+    wire [59:0] cartoon_rgb5={
+        I_tdata[95:91],I_tdata[87:83],I_tdata[79:75],
+        I_tdata[71:67],I_tdata[63:59],I_tdata[55:51],
+        I_tdata[47:43],I_tdata[39:35],I_tdata[31:27],
+        I_tdata[23:19],I_tdata[15:11],I_tdata[7:3]};
+    wire [539:0] cartoon_rgb_window;
+    scharr_window_4 #(.DATA_WIDTH(15),.IMG_WIDTH(IMG_WIDTH),
+        .IMG_HEIGHT(IMG_HEIGHT),.TRACK_POSITION(0))
+    u_cartoon_gaussian_window(
+        .clk(I_clk),.rst_n(I_rst_n),.valid(I_tvalid),.user(I_tuser),.last(I_tlast),
+        .word(cartoon_rgb5),.out_valid(),.out_user(),.out_last(),.ok(),
+        .windows(cartoon_rgb_window),.out_x(),.out_y());
+    function [2:0] cartoon_channel;
+        input [134:0] w;
+        input integer channel;
+        reg [6:0] left,middle,right;
+        reg [8:0] sum;
+        begin
+            left={2'd0,w[134-channel*5 -:5]}+
+                 ({2'd0,w[89-channel*5 -:5]}<<1)+
+                 {2'd0,w[44-channel*5 -:5]};
+            middle={2'd0,w[119-channel*5 -:5]}+
+                   ({2'd0,w[74-channel*5 -:5]}<<1)+
+                   {2'd0,w[29-channel*5 -:5]};
+            right={2'd0,w[104-channel*5 -:5]}+
+                  ({2'd0,w[59-channel*5 -:5]}<<1)+
+                  {2'd0,w[14-channel*5 -:5]};
+            sum={2'd0,left}+({2'd0,middle}<<1)+{2'd0,right};
+            // /16 Gaussian normalisation, then /4 gives eight levels/channel.
+            cartoon_channel=sum[8:6];
+        end
+    endfunction
+    reg [35:0] cartoon_quantized;
+    integer cartoon_lane;
+    always @(posedge I_clk) begin
+        for(cartoon_lane=0;cartoon_lane<4;cartoon_lane=cartoon_lane+1)
+            cartoon_quantized[35-cartoon_lane*9 -:9]<={
+                cartoon_channel(cartoon_rgb_window[539-cartoon_lane*135 -:135],0),
+                cartoon_channel(cartoon_rgb_window[539-cartoon_lane*135 -:135],1),
+                cartoon_channel(cartoon_rgb_window[539-cartoon_lane*135 -:135],2)};
+    end
+    // Centre taps add one row/column each. Together with the Gaussian centre,
+    // the color now represents the same (+3,+3) position as the NMS contour.
+    wire [323:0] cartoon_center_window;
+    scharr_window_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH),
+        .IMG_HEIGHT(IMG_HEIGHT),.TRACK_POSITION(0))
+    u_cartoon_center_window(
+        .clk(I_clk),.rst_n(I_rst_n),.valid(pv),.user(pu),.last(pl),
+        .word(cartoon_quantized),.out_valid(),.out_user(),.out_last(),.ok(),
+        .windows(cartoon_center_window),.out_x(),.out_y());
+    reg [35:0] cartoon_delay[0:2];
+    integer cartoon_stage;
+    always @(posedge I_clk) begin
+        for(cartoon_lane=0;cartoon_lane<4;cartoon_lane=cartoon_lane+1)
+            cartoon_delay[0][35-cartoon_lane*9 -:9]<=
+                cartoon_center_window[287-cartoon_lane*81 -:9];
+        for(cartoon_stage=1;cartoon_stage<3;cartoon_stage=cartoon_stage+1)
+            cartoon_delay[cartoon_stage]<=cartoon_delay[cartoon_stage-1];
+    end
+    wire [323:0] cartoon_final_window;
+    scharr_window_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH),
+        .IMG_HEIGHT(IMG_HEIGHT),.TRACK_POSITION(0))
+    u_cartoon_final_window(
+        .clk(I_clk),.rst_n(I_rst_n),.valid(vp[2]),.user(up[2]),.last(lp[2]),
+        .word(cartoon_delay[2]),.out_valid(),.out_user(),.out_last(),.ok(),
+        .windows(cartoon_final_window),.out_x(),.out_y());
+    function [23:0] cartoon_expand;
+        input [8:0] rgb;
+        begin
+            cartoon_expand={
+                rgb[8:6],rgb[8:6],rgb[8:7],
+                rgb[5:3],rgb[5:3],rgb[5:4],
+                rgb[2:0],rgb[2:0],rgb[2:1]};
+        end
+    endfunction
+    wire [3:0] edge_present;
+    genvar edge_lane;
+    generate for(edge_lane=0;edge_lane<4;edge_lane=edge_lane+1) begin: g_edge_present
+        assign edge_present[3-edge_lane]=nms(nw[539-edge_lane*135 -:135]);
+    end endgenerate
     function nms;
         input [134:0] w;
         reg [12:0] m,a,b;
@@ -196,16 +339,22 @@ module scharr_edge_detect_96 #(
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
             O_tvalid<=0;O_tuser<=0;O_tlast<=0;O_tdata<=0;O_emboss_data<=0;
+            O_cartoon_data<=0;O_morph_data<=0;
         end
         else begin
             O_tvalid<=nv;O_tuser<=nu;O_tlast<=nl;
             for(lane=0;lane<4;lane=lane+1) begin
                 O_tdata[95-lane*24 -:24]<=nv&&nok[3-lane]&&
                     ny>=6&&((nx<<2)+lane>=6)&&
-                    nms(nw[539-lane*135 -:135]) ? 24'hffffff : 24'd0;
+                    edge_present[3-lane] ? 24'hffffff : 24'd0;
                 O_emboss_data[95-lane*24 -:24]<=!nv ? 24'd0 :
                     ny>=2&&((nx<<2)+lane>=2) ?
                     {3{emboss_pipe[7][31-lane*8 -:8]}} : 24'h808080;
+                O_cartoon_data[95-lane*24 -:24]<=nv&&nok[3-lane]&&
+                    ny>=6&&((nx<<2)+lane>=6)&&!edge_present[3-lane] ?
+                    cartoon_expand(cartoon_final_window[287-lane*81 -:9]) : 24'd0;
+                O_morph_data[95-lane*24 -:24]<=nv&&ny>=2&&((nx<<2)+lane>=2) ?
+                    {3{morph_pipe[5][31-lane*8 -:8]}} : 24'd0;
             end
         end
     end

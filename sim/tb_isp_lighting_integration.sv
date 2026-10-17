@@ -1,15 +1,20 @@
 `timescale 1ns/1ps
-// Real RAW AE tap plus the post-demosaic RGB path through AWB, mode/Scharr/emboss,
+// Real RAW AE tap plus the post-demosaic RGB path through AWB and display modes,
 // selected target detection and the byte packer. Camera MIPI and demosaic
 // arithmetic are deliberately outside this integration test.
 module tb_isp_lighting_integration #(
     parameter integer MOTION_MODE=0,
-    parameter integer EMBOSS_MODE=0
+    parameter integer EMBOSS_MODE=0,
+    parameter integer CARTOON_MODE=0,
+    parameter integer MORPH_MODE=0,
+    parameter integer SCHARR_INV_MODE=0
 );
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
     localparam integer AWB_LATENCY=54;
     localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 6;
+    localparam [3:0] THIRD_FRAME_MODE=EMBOSS_MODE ? 4'd4 :
+        CARTOON_MODE ? 4'd6 : SCHARR_INV_MODE ? 4'd7 : MORPH_MODE ? 4'd8 : 4'd0;
     reg clk=0;
     always #5 clk=~clk;
     reg rst_n=0;
@@ -53,6 +58,13 @@ module tb_isp_lighting_integration #(
     integer cycle_number=0, awb_last_cycle[0:2], white_pixels=0;
     integer emboss_pixels=0,emboss_bright=0,emboss_dark=0,emboss_neutral=0;
     integer emboss_white=0,emboss_black=0;
+    integer cartoon_pixels=0,cartoon_black=0,cartoon_color=0,cartoon_nonblack=0;
+    integer morph_pixels=0,morph_black=0,morph_white=0,morph_intermediate=0;
+    integer inverse_pixels=0,inverse_black=0,inverse_white=0;
+    integer cartoon_gray[0:W*H-1],cartoon_smooth[0:W*H-1];
+    integer cartoon_magnitude[0:W*H-1],cartoon_direction[0:W*H-1];
+    reg [23:0] cartoon_expected[0:W*H-1];
+    reg [23:0] scharr_expected[0:W*H-1];
     reg [7:0] byte_queue[0:127];
     integer byte_tag[0:127];
     integer byte_write=0, byte_read=0;
@@ -81,10 +93,83 @@ module tb_isp_lighting_integration #(
                 1: scene = x>=700 && x<=859 && y>=400 && y<=519 ?
                            24'h320f0c : 24'hffaaBE;
                 default: scene = (x<128 && y<80) ||
-                    (EMBOSS_MODE && x>=256 && x<384 && y>=160 && y<240) ?
-                    24'hffffff : 24'h646e8c;
+                    ((EMBOSS_MODE || CARTOON_MODE || MORPH_MODE || SCHARR_INV_MODE) &&
+                     x>=256 && x<384 && y>=160 && y<240) ?
+                    24'hffffff :
+                    MORPH_MODE && x>=512 && x<640 && y>=320 && y<400 ?
+                    24'h888888 : 24'h646e8c;
             endcase
     endfunction
+    task automatic build_cartoon_reference;
+        integer x,y,i,dx,dy,ch,sum,gx,gy,ax,ay,a,b,m,q,expanded,value,weight;
+        reg [23:0] original,color;
+        begin
+            // Independent whole-image convolutions use AWB-corrected source
+            // pixels, with the same documented (3,3) causal output position.
+            for(y=0;y<H;y=y+1) for(x=0;x<W;x=x+1) begin
+                i=y*W+x;
+                cartoon_gray[i]=scene_luminance(2,x,y);
+                cartoon_smooth[i]=0;
+                cartoon_magnitude[i]=0;
+                cartoon_direction[i]=0;
+                cartoon_expected[i]=0;
+                scharr_expected[i]=0;
+            end
+            for(y=1;y<H-1;y=y+1) for(x=1;x<W-1;x=x+1) begin
+                sum=0;
+                for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1)
+                    sum=sum+cartoon_gray[(y+dy)*W+x+dx]*
+                        (dx==0 ? 2 : 1)*(dy==0 ? 2 : 1);
+                cartoon_smooth[y*W+x]=sum/16;
+            end
+            for(y=2;y<H-2;y=y+1) for(x=2;x<W-2;x=x+1) begin
+                gx=0;gy=0;
+                for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1) begin
+                    value=cartoon_smooth[(y+dy)*W+x+dx];
+                    gx=gx+dx*(dy==0 ? 10 : 3)*value;
+                    gy=gy+dy*(dx==0 ? 10 : 3)*value;
+                end
+                ax=gx<0 ? -gx : gx;
+                ay=gy<0 ? -gy : gy;
+                i=y*W+x;
+                cartoon_magnitude[i]=ax+ay;
+                if(ay*256<=ax*106) cartoon_direction[i]=0;
+                else if(ax*256<=ay*106) cartoon_direction[i]=2;
+                else cartoon_direction[i]=(gx<0)==(gy<0) ? 1 : 3;
+            end
+            for(y=6;y<H;y=y+1) for(x=6;x<W;x=x+1) begin
+                i=(y-3)*W+x-3;
+                m=cartoon_magnitude[i];
+                case(cartoon_direction[i])
+                    0: begin a=cartoon_magnitude[i-1];b=cartoon_magnitude[i+1];end
+                    1: begin a=cartoon_magnitude[i-W-1];b=cartoon_magnitude[i+W+1];end
+                    2: begin a=cartoon_magnitude[i-W];b=cartoon_magnitude[i+W];end
+                    default: begin a=cartoon_magnitude[i-W+1];b=cartoon_magnitude[i+W-1];end
+                endcase
+                if(m>a && m>=b && m>=20*16)
+                    scharr_expected[y*W+x]=24'hffffff;
+                else if(CARTOON_MODE) begin
+                    color=0;
+                    for(ch=0;ch<3;ch=ch+1) begin
+                        sum=0;
+                        for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1) begin
+                            original=scene(2,x-3+dx,y-3+dy);
+                            value=original[23-ch*8 -:8];
+                            if(!MOTION_MODE && ch==0) value=value*249/256;
+                            if(!MOTION_MODE && ch==2) value=value*260/256;
+                            if(value>255) value=255;
+                            weight=(dx==0 ? 2 : 1)*(dy==0 ? 2 : 1);
+                            sum=sum+(value/8)*weight;
+                        end
+                        q=sum/64;
+                        expanded=q*36+q/2;
+                        color[23-ch*8 -:8]=expanded;
+                    end
+                    cartoon_expected[y*W+x]=color;
+                end
+            end
+        end
+    endtask
     function automatic integer scene_luminance(
         input integer frame_id,input integer x,input integer y
     );
@@ -100,6 +185,23 @@ module tb_isp_lighting_integration #(
             if(r>255) r=255;
             if(b>255) b=255;
             scene_luminance=(r+2*g+b)/4;
+        end
+    endfunction
+    function automatic integer morph_reference(
+        input integer x,input integer y
+    );
+        integer dx,dy,value,minimum,maximum,level;
+        begin
+            minimum=255;
+            maximum=0;
+            if(x>=2 && y>=2)
+                for(dy=-2;dy<=0;dy=dy+1) for(dx=-2;dx<=0;dx=dx+1) begin
+                    value=scene_luminance(2,x+dx,y+dy);
+                    if(value<minimum) minimum=value;
+                    if(value>maximum) maximum=value;
+                end
+            level=x>=2 && y>=2 ? (maximum-minimum)*4 : 0;
+            morph_reference=level>255 ? 255 : level;
         end
     endfunction
     function automatic integer emboss_reference(
@@ -190,7 +292,7 @@ module tb_isp_lighting_integration #(
                     $fatal(1,"Mode token did not follow its frame");
                 if(sampled_effect_config !==
                     {edge_frame==1 ? 4'd2 :
-                     (EMBOSS_MODE && edge_frame==2 ? 4'd4 : 4'd0),8'd0})
+                     edge_frame==2 ? THIRD_FRAME_MODE : 4'd0,8'd0})
                     $fatal(1,"Effect config did not follow frame%0d: %h",
                         edge_frame,sampled_effect_config);
                 if(EMBOSS_MODE && edge_frame==2)
@@ -209,6 +311,52 @@ module tb_isp_lighting_integration #(
                         else emboss_neutral=emboss_neutral+1;
                         if(emboss_level==255) emboss_white=emboss_white+1;
                         if(emboss_level==0) emboss_black=emboss_black+1;
+                    end
+                if(CARTOON_MODE && edge_frame==2)
+                    for(lane=0;lane<4;lane=lane+1) begin
+                        emboss_x=((edge_count[edge_frame]%GROUPS)*4)+lane;
+                        emboss_y=edge_count[edge_frame]/GROUPS;
+                        expected_emboss=cartoon_expected[emboss_y*W+emboss_x];
+                        if(sampled_edge_data[95-lane*24 -:24]!==expected_emboss)
+                            $fatal(1,"Cartoon ISP pixel mismatch at %0d,%0d got=%h expected=%h",
+                                emboss_x,emboss_y,
+                                sampled_edge_data[95-lane*24 -:24],expected_emboss);
+                        cartoon_pixels=cartoon_pixels+1;
+                        if(expected_emboss==0) cartoon_black=cartoon_black+1;
+                        else cartoon_nonblack=cartoon_nonblack+1;
+                        if(expected_emboss[23:16]!=expected_emboss[15:8] ||
+                           expected_emboss[15:8]!=expected_emboss[7:0])
+                            cartoon_color=cartoon_color+1;
+                    end
+                if(MORPH_MODE && edge_frame==2)
+                    for(lane=0;lane<4;lane=lane+1) begin
+                        emboss_x=((edge_count[edge_frame]%GROUPS)*4)+lane;
+                        emboss_y=edge_count[edge_frame]/GROUPS;
+                        emboss_level=morph_reference(emboss_x,emboss_y);
+                        expected_emboss={3{8'(emboss_level)}};
+                        if(sampled_edge_data[95-lane*24 -:24]!==expected_emboss)
+                            $fatal(1,"Morph ISP pixel mismatch at %0d,%0d got=%h expected=%h",
+                                emboss_x,emboss_y,
+                                sampled_edge_data[95-lane*24 -:24],expected_emboss);
+                        morph_pixels=morph_pixels+1;
+                        if(emboss_level==0) morph_black=morph_black+1;
+                        else if(emboss_level==255) morph_white=morph_white+1;
+                        else morph_intermediate=morph_intermediate+1;
+                    end
+                if(SCHARR_INV_MODE && edge_frame==2)
+                    for(lane=0;lane<4;lane=lane+1) begin
+                        emboss_x=((edge_count[edge_frame]%GROUPS)*4)+lane;
+                        emboss_y=edge_count[edge_frame]/GROUPS;
+                        // The DDR payload stays positive; HDMI performs the
+                        // white-background inversion with the frame's mode.
+                        expected_emboss=scharr_expected[emboss_y*W+emboss_x];
+                        if(sampled_edge_data[95-lane*24 -:24]!==expected_emboss)
+                            $fatal(1,"Scharr inverse ISP payload mismatch at %0d,%0d got=%h expected=%h",
+                                emboss_x,emboss_y,
+                                sampled_edge_data[95-lane*24 -:24],expected_emboss);
+                        inverse_pixels=inverse_pixels+1;
+                        if(expected_emboss==0) inverse_black=inverse_black+1;
+                        else inverse_white=inverse_white+1;
                     end
                 edge_count[edge_frame]=edge_count[edge_frame]+1;
                 for(byte_index=0;byte_index<12;byte_index=byte_index+1) begin
@@ -344,6 +492,9 @@ module tb_isp_lighting_integration #(
     integer f,y,g,i,raw_value,scaled;
     reg [39:0] metered_raw;
     initial begin
+        if(EMBOSS_MODE+CARTOON_MODE+MORPH_MODE+SCHARR_INV_MODE>1)
+            $fatal(1,"Choose one third-frame display mode per run");
+        if(CARTOON_MODE || SCHARR_INV_MODE) build_cartoon_reference();
         force dut.m_aixs_tdata_96=injected_data;
         force dut.m_aixs_tvalid=injected_valid;
         force dut.m_aixs_tuser=injected_user;
@@ -376,7 +527,7 @@ module tb_isp_lighting_integration #(
                 for(g=0;g<GROUPS;g=g+1) begin
                     if(y==H/2 && g==0)
                         request_mode=f==0 ? 4'd2 :
-                            (EMBOSS_MODE && f==1 ? 4'd4 : 4'd0);
+                            f==1 ? THIRD_FRAME_MODE : 4'd0;
                     tick(1,f!=2 && y==0 && g==0,g==GROUPS-1,scene_group(f,g,y));
                 end
                 repeat(4) tick(0,0,0,0); // Complete pack groups at every line.
@@ -401,6 +552,18 @@ module tb_isp_lighting_integration #(
             $fatal(1,"Emboss ISP coverage incomplete pixels=%0d bright=%0d dark=%0d neutral=%0d white=%0d black=%0d",
                 emboss_pixels,emboss_bright,emboss_dark,emboss_neutral,
                 emboss_white,emboss_black);
+        if(CARTOON_MODE && (cartoon_pixels!=W*H || cartoon_black==0 ||
+            cartoon_nonblack==0 || (!MOTION_MODE && cartoon_color==0)))
+            $fatal(1,"Cartoon ISP coverage incomplete pixels=%0d black=%0d nonblack=%0d colored=%0d",
+                cartoon_pixels,cartoon_black,cartoon_nonblack,cartoon_color);
+        if(MORPH_MODE && (morph_pixels!=W*H || morph_black==0 ||
+            morph_white==0 || (!MOTION_MODE && morph_intermediate==0)))
+            $fatal(1,"Morph ISP coverage incomplete pixels=%0d black=%0d white=%0d intermediate=%0d",
+                morph_pixels,morph_black,morph_white,morph_intermediate);
+        if(SCHARR_INV_MODE && (inverse_pixels!=W*H ||
+            inverse_black==0 || inverse_white==0))
+            $fatal(1,"Scharr inverse ISP coverage incomplete pixels=%0d black=%0d white=%0d",
+                inverse_pixels,inverse_black,inverse_white);
         if(MOTION_MODE)
             $display("ISP_MOTION_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d target_latency=%0d raw_results=%0d confirmed=0",
                 3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
@@ -413,6 +576,18 @@ module tb_isp_lighting_integration #(
             $display("ISP_EMBOSS_INTEGRATION_PASS frames=3 emboss_pixels=%0d bright=%0d dark=%0d neutral=%0d saturated_white=%0d saturated_black=%0d bytes=%0d ae=%0d targets=%0d motion=%0d",
                 emboss_pixels,emboss_bright,emboss_dark,emboss_neutral,
                 emboss_white,emboss_black,bytes_checked,ae_results,target_results,MOTION_MODE);
+        if(CARTOON_MODE)
+            $display("ISP_CARTOON_INTEGRATION_PASS frames=3 cartoon_pixels=%0d black=%0d nonblack=%0d colored=%0d bytes=%0d ae=%0d targets=%0d motion=%0d",
+                cartoon_pixels,cartoon_black,cartoon_nonblack,cartoon_color,
+                bytes_checked,ae_results,target_results,MOTION_MODE);
+        if(MORPH_MODE)
+            $display("ISP_MORPH_INTEGRATION_PASS frames=3 morph_pixels=%0d black=%0d white=%0d intermediate=%0d bytes=%0d ae=%0d targets=%0d motion=%0d",
+                morph_pixels,morph_black,morph_white,morph_intermediate,
+                bytes_checked,ae_results,target_results,MOTION_MODE);
+        if(SCHARR_INV_MODE)
+            $display("ISP_SCHARR_INVERSE_INTEGRATION_PASS frames=3 pixels=%0d black=%0d white=%0d bytes=%0d ae=%0d targets=%0d motion=%0d inversion_in_hdmi=1",
+                inverse_pixels,inverse_black,inverse_white,bytes_checked,
+                ae_results,target_results,MOTION_MODE);
         $finish;
     end
     initial begin

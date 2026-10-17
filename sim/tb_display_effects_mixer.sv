@@ -4,7 +4,7 @@
 module tb_display_effects_mixer;
     localparam integer W = 576;
     localparam integer H = 224;
-    localparam integer PLAN_FRAMES = 15;
+    localparam integer PLAN_FRAMES = 27;
     reg src_clk = 0;
     reg hdmi_clk = 0;
     always #10 src_clk = ~src_clk;
@@ -36,11 +36,11 @@ module tb_display_effects_mixer;
     integer osd_pixels = 0, box_pixels = 0, status_pixels = 0;
     integer changed_pixels = 0, ignored_parameter_frames = 0;
     integer requests = 0;
-    integer mode_pixels [0:4];
-    integer mode_osd_pixels [0:4];
-    integer mode_box_pixels [0:4];
-    integer mode_status_pixels [0:4];
-    integer mode_label_pixels [0:4];
+    integer mode_pixels [0:8];
+    integer mode_osd_pixels [0:8];
+    integer mode_box_pixels [0:8];
+    integer mode_status_pixels [0:8];
+    integer mode_label_pixels [0:8];
     integer label_checks = 0, label_glyphs = 0;
     integer removed_parameter_checks = 0;
 
@@ -98,8 +98,18 @@ module tb_display_effects_mixer;
             y = (77*r + 150*g + 29*b + 128) / 256;
             case (mode)
                 1: begin r=y; g=y; b=y; end
-                2,4: begin r=r; g=g; b=b; end
-                3: begin r=255-r; g=255-g; b=255-b; end
+                2,4,6,8: begin r=r; g=g; b=b; end
+                3,7: begin r=255-r; g=255-g; b=255-b; end
+                5: begin
+                    if (!((r>=24 && r>=g+6 && r>=b+6 &&
+                           2*r>=3*g && 2*r>=3*b &&
+                           3*g<=r+2*b && 3*b<=r+2*g) ||
+                          (g>=24 && g>=r+6 && g>=b+6 &&
+                           2*g>=3*r && 2*g>=3*b &&
+                           3*r<=g+2*b && 3*b<=g+2*r))) begin
+                        r=y; g=y; b=y;
+                    end
+                end
                 default: begin r=gamma_channel(r); g=gamma_channel(g); b=gamma_channel(b); end
             endcase
             expected_pixel = {8'(r), 8'(g), 8'(b)};
@@ -108,8 +118,8 @@ module tb_display_effects_mixer;
 
     function automatic [11:0] frame_config(input integer frame_index);
         begin
-            frame_config = {4'(frame_index%5),
-                frame_index<5 ? 8'd128 : frame_index<10 ? 8'd0 : 8'd255};
+            frame_config = {4'(frame_index%9),
+                frame_index<9 ? 8'd128 : frame_index<18 ? 8'd0 : 8'd255};
         end
     endfunction
 
@@ -123,6 +133,10 @@ module tb_display_effects_mixer;
                 2: name = "SCHARR EDGE ";
                 3: name = "NEGATIVE    ";
                 4: name = "EMBOSS      ";
+                5: name = "COLOR KEEP  ";
+                6: name = "CARTOON     ";
+                7: name = "SCHARR INV  ";
+                8: name = "MORPH EDGE  ";
                 default: name = "COLOR GAMMA ";
             endcase
             label_char = " ";
@@ -341,7 +355,7 @@ module tb_display_effects_mixer;
 
     initial begin
         for (integer i=0; i<4096; i=i+1) published[i]=0;
-        for (integer i=0; i<5; i=i+1) begin
+        for (integer i=0; i<9; i=i+1) begin
             mode_pixels[i]=0; mode_osd_pixels[i]=0;
             mode_box_pixels[i]=0; mode_status_pixels[i]=0;
             mode_label_pixels[i]=0;
@@ -365,14 +379,14 @@ module tb_display_effects_mixer;
         repeat (6) @(negedge hdmi_clk); rst_n=1;
         planned_mode=0; planned_param=128;
         wait_config({4'd0,8'd128}); blank(16); display_frame(); blank(16);
-        for (integer i=0; i<5; i=i+1) begin
+        for (integer i=0; i<9; i=i+1) begin
             if (mode_pixels[i]<W*H || mode_osd_pixels[i]==0 ||
                 mode_box_pixels[i]==0 || mode_status_pixels[i]==0 ||
                 mode_label_pixels[i]<240*16)
                 $fatal(1, "Incomplete per-mode pixel/overlay coverage for mode %0d",i);
         end
         if (pixels!=(PLAN_FRAMES+1)*W*H || frames!=PLAN_FRAMES+1 ||
-            first_pixels!=PLAN_FRAMES+1 || ignored_parameter_frames!=10 ||
+            first_pixels!=PLAN_FRAMES+1 || ignored_parameter_frames!=18 ||
             snapshots<PLAN_FRAMES-1 || requests!=PLAN_FRAMES+3 ||
             osd_pixels==0 || box_pixels==0 || status_pixels==0 ||
             label_checks!=(PLAN_FRAMES+1)*240*16 || label_glyphs<1000 ||
@@ -380,7 +394,7 @@ module tb_display_effects_mixer;
             changed_pixels<100000)
             $fatal(1, "Incomplete mixer/effect integration coverage: pixels=%0d frames=%0d snapshots=%0d requests=%0d",
                    pixels,frames,snapshots,requests);
-        $display("DISPLAY_EFFECTS_MIXER_PASS modes=5 pixels=%0d frames=%0d first_pixels=%0d ignored_parameter_frames=%0d snapshots=%0d requests=%0d osd=%0d box=%0d status=%0d changed=%0d label=%0d glyphs=%0d removed_parameter=%0d default=COLOR_GAMMA emboss_precomputed=1",
+        $display("DISPLAY_EFFECTS_MIXER_PASS modes=9 pixels=%0d frames=%0d first_pixels=%0d ignored_parameter_frames=%0d snapshots=%0d requests=%0d osd=%0d box=%0d status=%0d changed=%0d label=%0d glyphs=%0d removed_parameter=%0d default=COLOR_GAMMA emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1",
                  pixels,frames,first_pixels,ignored_parameter_frames,snapshots,requests,
                  osd_pixels,box_pixels,status_pixels,changed_pixels,label_checks,label_glyphs,
                  removed_parameter_checks);

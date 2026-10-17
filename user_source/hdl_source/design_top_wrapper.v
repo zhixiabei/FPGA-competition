@@ -14,9 +14,9 @@ module design_top_wrapper #(
     output wire       O_cam_rst,
       
     inout wire [1:0]  I_button,
-    input wire        I_mode_key_n, // Board K1 (D5), previous algorithm.
+    input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
-    input wire        I_effect_key_n, // Board K3 (B9), next algorithm.
+    input wire        I_effect_key_n, // Board K3 (B9), reserved.
     input wire        I_param_key_n, // Board K4 (C7), reserved.
 
     output wire       O_screen_pwm,
@@ -126,10 +126,13 @@ module design_top_wrapper #(
     wire        S_ae_stats_valid;
     wire [63:0] S_ae_stats_data;
 
-    // Tag the box with that frame's causal window offset: Scharr 3, emboss 1.
+    // Keep boxes aligned to each buffered frame's causal window position.
     wire [1:0] S_target_spatial_shift =
-        S_target_frame_effect_config[11:8] == 4'd2 ? 2'd3 :
-        S_target_frame_effect_config[11:8] == 4'd4 ? 2'd1 : 2'd0;
+        (S_target_frame_effect_config[11:8] == 4'd2 ||
+         S_target_frame_effect_config[11:8] == 4'd6 ||
+         S_target_frame_effect_config[11:8] == 4'd7) ? 2'd3 :
+        (S_target_frame_effect_config[11:8] == 4'd4 ||
+         S_target_frame_effect_config[11:8] == 4'd8) ? 2'd1 : 2'd0;
     wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + {11'd0,S_target_spatial_shift};
     wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + {11'd0,S_target_spatial_shift};
     wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + {11'd0,S_target_spatial_shift};
