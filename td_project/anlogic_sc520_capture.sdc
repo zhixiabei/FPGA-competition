@@ -1,8 +1,9 @@
 create_clock -name {sys_clk_50m} -period 20.000 -waveform {0.000 10.000} [get_ports {I_sys_clk}]
-# K1-K3 are asynchronous; only the button synchronizers sample these ports.
+# K1-K3 and SW1 are asynchronous; only their synchronizers sample these ports.
 set_false_path -from [get_ports {I_mode_key_n}]
 set_false_path -from [get_ports {I_detect_key_n}]
 set_false_path -from [get_ports {I_effect_key_n}]
+set_false_path -from [get_ports {I_latency_switch}]
 create_clock -name {mipi_rx_ck_pad} -period 2.415 -waveform {0.000 1.208} [get_nets {IO_rx_clk_pad_p}]
 
 derive_clocks
@@ -72,3 +73,5 @@ set_max_delay -datapath_only -from [get_regs {u_video/u_target_frame_bridge/S_re
 
 # K2 selects detection only at a camera frame boundary.
 set_false_path -from [get_regs {u_video/u_detection_mode_control/O_edge_mode}] -to [get_regs {u_video/u_isp_top/u_target_detect_switch/mode_meta}]
+# SW1 is sampled by the first HDMI synchronizer; the second stage remains timed.
+set_false_path -from [get_ports {I_latency_switch}] -to [get_regs {u_video/u_hdmi_mixer/latency_switch$show_meta}]

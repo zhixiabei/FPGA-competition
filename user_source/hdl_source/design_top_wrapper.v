@@ -18,6 +18,7 @@ module design_top_wrapper #(
     input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
     input wire        I_effect_key_n, // Board K3 (B9), reserved.
+    input wire        I_latency_switch, // Board SW1 (A4), high to show latency panel.
     input wire        I_param_key_n, // Board K4 (C7), reserved.
 
     output wire       O_screen_pwm,
@@ -123,6 +124,12 @@ module design_top_wrapper #(
     wire        S_ISP_motion_mode_active;
     wire        S_ISP_edge_mode_active;
     wire [11:0] S_ISP_effect_config;
+    wire        S_ISP_cnn_result_valid;
+    wire [2:0]  S_ISP_cnn_class;
+    wire        S_ISP_cnn_busy;
+    wire        S_ISP_cnn_overrun;
+    wire        S_cnn_result_valid_hdmi;
+    wire [2:0]  S_cnn_class_hdmi;
     reg [11:0]  S_target_frame_effect_config;
     wire        S_ISP_ae_stats_valid;
     wire [31:0] S_ISP_ae_sum_y;
@@ -1051,9 +1058,23 @@ isp_top #(
 .O_ae_sum_y            (S_ISP_ae_sum_y),
 .O_ae_sample_count     (S_ISP_ae_sample_count),
 .O_ae_bright_count     (S_ISP_ae_bright_count),
+.O_cnn_result_valid    (S_ISP_cnn_result_valid),
+.O_cnn_class           (S_ISP_cnn_class),
+.O_cnn_busy            (S_ISP_cnn_busy),
+.O_cnn_overrun         (S_ISP_cnn_overrun),
 .O_latency_frame_id   (S_isp_frame_id),
 .I_tready        ()
   );
+
+    cnn_result_cdc u_cnn_result_cdc (
+        .I_src_clk(S_csi_rx_clk),
+        .I_dst_clk(S_hdmi_pixel_clk),
+        .I_rst_n(S_rst_n),
+        .I_src_valid(S_ISP_cnn_result_valid),
+        .I_src_class(S_ISP_cnn_class),
+        .O_dst_valid(S_cnn_result_valid_hdmi),
+        .O_dst_class(S_cnn_class_hdmi)
+    );
 
 
     video_in u_video_in(
@@ -1213,6 +1234,7 @@ isp_top #(
         .MULTI_TARGET_ENABLE( RED_MULTI_ENABLE ),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
         .SHOW_LATENCY       ( 1 ),
+        .LATENCY_SWITCH_ENABLE( 1 ),
         .SHOW_EFFECT_LABEL  ( 1 ),
         .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
     )u_hdmi_mixer(
@@ -1232,10 +1254,13 @@ isp_top #(
         .I_ae_readout_valid(S_ae_readout_valid),
         .I_ae_readout_data(S_ae_readout_data),
         .I_latency_sample_strobe(S_latency_sample_strobe),
+        .I_latency_show(I_latency_switch),
         .I_latency_sample_valid(S_latency_sample_valid),
         .I_latency_total_us(S_latency_total_us),
         .I_latency_isp_us(S_latency_isp_us),
         .I_latency_buffer_us(S_latency_buffer_us),
+        .I_cnn_result_valid(S_cnn_result_valid_hdmi),
+        .I_cnn_class(S_cnn_class_hdmi),
         .O_display_frame_start(S_display_frame_start),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),

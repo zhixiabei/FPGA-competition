@@ -18,7 +18,7 @@ module tb_video_latency_osd;
     reg [23:0] camera_rgb=0;
     wire out_de, out_hs, out_vs, rd, frame_start;
     wire [23:0] out_rgb;
-    hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(1),
+    hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(1),.SHOW_CNN(0),
         .SHOW_CAMERA_STATUS(1),.SHOW_COLOR_TARGET(1)) mixer(
         .I_clk(clk),.I_rst_n(mix_rst),.I_video_de(de),.I_video_user(user),
         .I_effect_mode(4'd0),.I_effect_param(8'd0),
@@ -26,14 +26,18 @@ module tb_video_latency_osd;
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0),
         .I_raw_stats_valid(1'b0),.I_raw_stats_data(45'd0),
         .I_ae_readout_valid(1'b0),.I_ae_readout_data(28'd0),
-        .I_latency_sample_strobe(mix_strobe),.I_latency_sample_valid(mix_valid),
+        .I_latency_sample_strobe(mix_strobe),.I_latency_show(1'b1),
+        .I_latency_sample_valid(mix_valid),
         .I_latency_total_us(mix_total),.I_latency_isp_us(mix_isp),
-        .I_latency_buffer_us(mix_buffer),.O_display_frame_start(frame_start),
+        .I_latency_buffer_us(mix_buffer),
+        .I_cnn_result_valid(1'b0),.I_cnn_class(3'd0),.O_display_frame_start(frame_start),
         .O_video_rd_en(rd),.I_video_rd_data(camera_rgb),
         .I_target_result_ready(1'b1),.I_target_found(1'b1),.I_target_motion_mode(1'b1),
         .I_target_xmin(12'd500),.I_target_xmax(12'd700),
         .I_target_ymin(12'd300),.I_target_ymax(12'd450),
         .I_target_center_x(12'd600),.I_target_center_y(12'd375),
+        .I_target_multi_valid(4'd0),.I_target_multi_hold(4'd0),
+        .I_target_multi_boxes(192'd0),.I_target_multi_overflow(1'b0),
         .O_hdmi_de(out_de),.O_hdmi_hsync(out_hs),.O_hdmi_vsync(out_vs),.O_hdmi_data(out_rgb));
 
     integer reference_history[0:63];

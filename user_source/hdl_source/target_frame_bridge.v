@@ -46,7 +46,10 @@ module target_frame_bridge #(
     output reg [191:0] O_multi_boxes,
     output reg O_multi_overflow
 );
-    localparam integer BODY_WIDTH = 275;
+    // Clipped 720p coordinates need 11 x bits and 10 y bits. Keep the
+    // external 12-bit ports while storing only significant payload bits.
+    localparam integer BOX_WIDTH = 42;
+    localparam integer BODY_WIDTH = 242;
     localparam integer RESULT_WIDTH = 16+10+BODY_WIDTH;
     localparam integer READ_WIDTH = 1+12+BODY_WIDTH;
     localparam integer COUNT_WIDTH = (FRAME_WORDS < 2) ? 1 : $clog2(FRAME_WORDS+1);
@@ -80,6 +83,48 @@ module target_frame_bridge #(
         end
     endfunction
 
+    function [BOX_WIDTH-1:0] F_pack_box;
+        input [47:0] box_value;
+        begin
+            F_pack_box = {box_value[45:36],box_value[33:24],
+                          box_value[22:12],box_value[10:0]};
+        end
+    endfunction
+    function [47:0] F_expand_box;
+        input [BOX_WIDTH-1:0] box_value;
+        begin
+            F_expand_box = {2'b0,box_value[41:32],2'b0,box_value[31:22],
+                            1'b0,box_value[21:11],1'b0,box_value[10:0]};
+        end
+    endfunction
+    function [62:0] F_pack_single;
+        input [71:0] coordinates;
+        begin
+            F_pack_single = {coordinates[70:60],coordinates[58:48],
+                             coordinates[45:36],coordinates[33:24],
+                             coordinates[22:12],coordinates[9:0]};
+        end
+    endfunction
+    function [71:0] F_expand_single;
+        input [62:0] coordinates;
+        begin
+            F_expand_single = {1'b0,coordinates[62:52],1'b0,coordinates[51:41],
+                               2'b0,coordinates[40:31],2'b0,coordinates[30:21],
+                               1'b0,coordinates[20:10],2'b0,coordinates[9:0]};
+        end
+    endfunction
+    function [274:0] F_expand_body;
+        input [BODY_WIDTH-1:0] body;
+        integer index;
+        begin
+            F_expand_body = {body[241:240],F_expand_single(body[239:177]),
+                             body[176:169],192'b0,body[0]};
+            for (index=0; index<4; index=index+1)
+                F_expand_body[1+48*index +: 48] =
+                    F_expand_box(body[1+BOX_WIDTH*index +: BOX_WIDTH]);
+        end
+    endfunction
+
     reg [15:0] S_nonce_counter;
     // Held from ISP SOF until the next ISP SOF. video_in crosses that same
     // SOF through two DDR stages before I_write_start samples these registers.
@@ -100,27 +145,28 @@ module target_frame_bridge #(
         S_context_motion[S_context_index] == I_result_motion_mode &&
         !(I_frame_start && I_frame_id[1:0] == S_context_index);
     wire [1:0] S_result_offset = F_offset(S_context_config[S_context_index]);
-    wire [191:0] S_adjusted_boxes;
+    wire [4*BOX_WIDTH-1:0] S_adjusted_boxes;
     genvar box_index;
     generate
         for (box_index=0; box_index<4; box_index=box_index+1) begin : g_adjust_boxes
             // Every box is {ymax,ymin,xmax,xmin}; box zero occupies [47:0].
-            assign S_adjusted_boxes[48*box_index +: 48] = {
+            assign S_adjusted_boxes[BOX_WIDTH*box_index +: BOX_WIDTH] = F_pack_box({
                 F_clip_y(I_multi_boxes[48*box_index+36 +: 12], S_result_offset),
                 F_clip_y(I_multi_boxes[48*box_index+24 +: 12], S_result_offset),
                 F_clip_x(I_multi_boxes[48*box_index+12 +: 12], S_result_offset),
-                F_clip_x(I_multi_boxes[48*box_index +: 12], S_result_offset)};
+                F_clip_x(I_multi_boxes[48*box_index +: 12], S_result_offset)});
         end
     endgenerate
     wire [RESULT_WIDTH-1:0] S_new_result = {
         S_context_nonce[S_context_index],I_result_frame_id,
         I_result_motion_mode,I_result_found,
+        F_pack_single({
         F_clip_x(I_result_xmin,S_result_offset),
         F_clip_x(I_result_xmax,S_result_offset),
         F_clip_y(I_result_ymin,S_result_offset),
         F_clip_y(I_result_ymax,S_result_offset),
         F_clip_x(I_result_center_x,S_result_offset),
-        F_clip_y(I_result_center_y,S_result_offset),
+        F_clip_y(I_result_center_y,S_result_offset)}),
         I_multi_valid,I_multi_hold,S_adjusted_boxes,I_multi_overflow};
     wire S_new_result_valid = I_result_ready && S_context_match;
 
@@ -316,7 +362,9 @@ module target_frame_bridge #(
             if (S_read_req_sync != S_read_ack) begin
                 {O_ready,O_effect_config,O_motion_mode,O_found,
                  O_xmin,O_xmax,O_ymin,O_ymax,O_center_x,O_center_y,
-                 O_multi_valid,O_multi_hold,O_multi_boxes,O_multi_overflow} <= S_read_payload;
+                 O_multi_valid,O_multi_hold,O_multi_boxes,O_multi_overflow} <=
+                    {S_read_payload[READ_WIDTH-1 -: 13],
+                     F_expand_body(S_read_payload[BODY_WIDTH-1:0])};
                 S_read_ack <= S_read_req_sync;
             end
         end

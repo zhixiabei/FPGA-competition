@@ -2,11 +2,15 @@
 
 以下命令均在项目根目录执行。测试会将编译产物和日志写到打印出的 TEMP 目录，
 测试台与脚本留在本目录，不生成或更新 `firmware` 中的烧录文件。
+CNN 厂商模型测试将向量和日志写入 `tmp/cnn_*`；同样只运行仿真。
 
 ## 常用检查
 
 | 内容 | 命令 |
 |---|---|
+| CNN 安路真实 RAM、独立数值参考、逐层张量和来帧保护 | `& './sim/run_cnn_fixed_reference.ps1'` |
+| CNN 实际裁剪框、五类标签、旧结果超时与显示同步 | `& './sim/run_cnn_display_status.ps1'` |
+| CNN 两种地址生成实现逐拍一致性（同步读行为模型） | `& './sim/run_cnn_infer_32.ps1'` |
 | 原画 Gamma、灰度、反色、红绿保色、Scharr 取反、空间效果直通与两拍延迟 | `& './sim/run_display_effects_rgb888.ps1'` |
 | K1 消抖、九模式单向循环、K3/K4 忽略和参数恒零 | `& './sim/run_display_effect_control.ps1'` |
 | 九项名称、旧参数区清除与 HDMI 帧首配置 | `& './sim/run_display_effects_mixer.ps1'` |
@@ -44,6 +48,9 @@
 | FIFO 图像完整性 | `& './sim/run_video_fifo_frame_integrity.ps1' -RawSource` |
 | RAW10 分区统计与 HDMI 数字表 | `& './sim/run_raw_stats.ps1'` |
 | 红色检测照明场景 | `& './sim/run_red_target_lighting.ps1'` |
+
+CNN 的尺度说明、验证范围及此前 99.2% 指标的纠正见
+[CNN 修正与验证](../docs/CNN_VALIDATION.md)。
 
 按键、Scharr/浮雕/漫画/形态学和显示切换：
 

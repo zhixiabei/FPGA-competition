@@ -42,7 +42,7 @@ module tb_red_multi_frame_alignment;
     design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(1)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
-        .I_effect_key_n(1'b1), .I_param_key_n(1'b1)
+        .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1)
     );
 
     function automatic integer slot_of_base(input [24:0] address);

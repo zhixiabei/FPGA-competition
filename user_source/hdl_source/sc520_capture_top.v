@@ -12,6 +12,7 @@ module sc520_capture_top (
     input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
     input wire        I_effect_key_n, // Board K3 (B9), reserved.
+    input wire        I_latency_switch, // Board SW1 (A4), high to show latency panel.
     input wire        I_param_key_n, // Board K4 (C7), reserved.
 
     output wire       O_screen_pwm,
@@ -51,6 +52,7 @@ module sc520_capture_top (
         .I_mode_key_n(I_mode_key_n),
         .I_detect_key_n(I_detect_key_n),
         .I_effect_key_n(I_effect_key_n),
+        .I_latency_switch(I_latency_switch),
         .I_param_key_n(I_param_key_n),
         .O_screen_pwm(O_screen_pwm),
         .O_tmds_ch0_p(O_tmds_ch0_p),

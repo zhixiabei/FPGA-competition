@@ -13,7 +13,7 @@ module video_latency_osd #(
 );
     reg have_valid, display_valid, extrema_ready, current_overflow;
     reg [19:0] min_us, max_us;
-    reg [19:0] convert_isp, convert_buffer, convert_min, convert_max;
+    reg [19:0] convert_isp, convert_buffer;
     reg [23:0] bcd_total, bcd_isp, bcd_buffer, bcd_min, bcd_max;
     reg busy;
     reg [2:0] field;
@@ -61,7 +61,7 @@ module video_latency_osd #(
         if (!I_rst_n) begin
             have_valid<=0; display_valid<=0; extrema_ready<=0;
             current_overflow<=0; min_us<=0; max_us<=0;
-            convert_isp<=0; convert_buffer<=0; convert_min<=0; convert_max<=0;
+            convert_isp<=0; convert_buffer<=0;
             bcd_total<=0; bcd_isp<=0; bcd_buffer<=0; bcd_min<=0; bcd_max<=0;
             busy<=0; field<=0; step<=0; bcd_work<=0;
             write_pointer<=0; sample_slot<=0; history_count<=0; sample_overflow<=0;
@@ -79,8 +79,6 @@ module video_latency_osd #(
                 have_valid<=1;
                 min_us<=(!have_valid || I_total_us<min_us) ? I_total_us : min_us;
                 max_us<=(!have_valid || I_total_us>max_us) ? I_total_us : max_us;
-                convert_min<=(!have_valid || I_total_us<min_us) ? I_total_us : min_us;
-                convert_max<=(!have_valid || I_total_us>max_us) ? I_total_us : max_us;
                 convert_isp<=I_isp_us; convert_buffer<=I_buffer_us;
                 bcd_work<={24'd0,text_value(I_total_us)};
             end
@@ -101,11 +99,11 @@ module video_latency_osd #(
                     end
                     2: begin
                         bcd_buffer<=bcd_shifted[43:20];
-                        bcd_work<={24'd0,text_value(convert_min)};
+                        bcd_work<={24'd0,text_value(min_us)};
                     end
                     3: begin
                         bcd_min<=bcd_shifted[43:20];
-                        bcd_work<={24'd0,text_value(convert_max)};
+                        bcd_work<={24'd0,text_value(max_us)};
                     end
                     default: begin
                         bcd_max<=bcd_shifted[43:20];

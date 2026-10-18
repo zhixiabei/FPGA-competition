@@ -57,7 +57,7 @@ module tb_target_frame_alignment;
     design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
-        .I_effect_key_n(1'b1), .I_param_key_n(1'b1)
+        .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1)
     );
 
     function automatic integer slot_of_base(input [24:0] address);
@@ -683,6 +683,7 @@ module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
     O_target_multi_boxes, O_target_multi_overflow,
     O_edge_mode_active, O_effect_config, I_tready,
     O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count,
+    O_cnn_result_valid, O_cnn_class, O_cnn_busy, O_cnn_overrun,
     O_latency_frame_id);
 endmodule
 module mc_to_user_interface(input wire [127:0] I_clk, I_rst_n,

@@ -9,6 +9,7 @@ $sources = @(
     'user_source\hdl_source\design_top_wrapper.v',
     'user_source\hdl_source\target_frame_bridge.v',
     'user_source\hdl_source\camera_diag_cdc.v',
+    'user_source\hdl_source\cnn\cnn_result_cdc.v',
     'user_source\hdl_source\video_in.v',
     'user_source\hdl_source\video_out.v',
     'user_source\hdl_source\video_latency_monitor.v',

@@ -18,7 +18,8 @@ $relativeSources = @(
     'user_source\hdl_source\ae_stats_cdc.v',
     'sim\tb_video_latency_timebase.sv',
     'sim\tb_video_latency_monitor.sv',
-    'sim\tb_video_latency_word_count.sv'
+    'sim\tb_video_latency_word_count.sv',
+    'sim\tb_video_latency_default_wrap.sv'
 )
 $copiedSources = @()
 foreach ($relative in $relativeSources) {
@@ -38,7 +39,8 @@ $hashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv')
 $tests = @(
     @{ Top = 'tb_video_latency_timebase'; Snapshot = 'latency_timebase'; Pass = '^VIDEO_LATENCY_TIMEBASE_PASS\b' },
     @{ Top = 'tb_video_latency_monitor'; Snapshot = 'latency_monitor'; Pass = '^VIDEO_LATENCY_MONITOR_PASS\b' },
-    @{ Top = 'tb_video_latency_word_count'; Snapshot = 'latency_word_count'; Pass = '^VIDEO_LATENCY_WORD_COUNT_PASS\b' }
+    @{ Top = 'tb_video_latency_word_count'; Snapshot = 'latency_word_count'; Pass = '^VIDEO_LATENCY_WORD_COUNT_PASS\b' },
+    @{ Top = 'tb_video_latency_default_wrap'; Snapshot = 'latency_default_wrap'; Pass = '^VIDEO_LATENCY_DEFAULT_WRAP_PASS\b' }
 )
 Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir

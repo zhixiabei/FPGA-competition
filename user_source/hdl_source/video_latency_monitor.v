@@ -1,7 +1,7 @@
 // Passive first-pixel latency monitor. Frame tags follow the ISP and actual
 // DDR slot allocation; none of these signals control the video datapath.
 module video_latency_monitor #(
-    parameter integer TIME_WIDTH = 32,
+    parameter integer TIME_WIDTH = 24,
     parameter integer TIME_NUM = 1,
     parameter integer TIME_DEN = 50,
     parameter integer FRAME_WORDS = 172800,
@@ -35,6 +35,9 @@ module video_latency_monitor #(
     localparam integer AGE_BIT = $clog2(MAX_AGE_US)-1;
     localparam integer PAYLOAD_WIDTH = 11+2*TIME_WIDTH;
 
+    // The default 24-bit microsecond counter wraps after 16.78 seconds.
+    // Slot aging clears records within 1.58 seconds and stays expired until
+    // the next write, so a stopped stream cannot revive on counter wrap.
     wire [TIME_WIDTH-1:0] S_time_us, S_time_gray;
     video_latency_timebase #(
         .TIME_WIDTH(TIME_WIDTH), .TIME_NUM(TIME_NUM), .TIME_DEN(TIME_DEN)

@@ -959,7 +959,8 @@ module red_multi_small_ram #(
 `else
     localparam integer PORTABLE = 0;
 `endif
-    localparam integer BANKS = (WIDTH+31)/32;
+    localparam integer BANK_WIDTH = 40;
+    localparam integer BANKS = (WIDTH+BANK_WIDTH-1)/BANK_WIDTH;
     generate
         if (PORTABLE) begin : gen_portable
             reg [WIDTH-1:0] memory [0:DEPTH-1];
@@ -970,14 +971,17 @@ module red_multi_small_ram #(
             end
             assign O_data=read_data;
         end else begin : gen_eram
-            wire [BANKS*32-1:0] padded_input={{(BANKS*32-WIDTH){1'b0}},I_data};
-            wire [BANKS*32-1:0] padded_output;
+            // A only writes and B only reads. Pseudo dual-port mode uses
+            // all 40 bits of each ERAM while retaining a one-clock read.
+            wire [BANKS*BANK_WIDTH-1:0] padded_input=
+                {{(BANKS*BANK_WIDTH-WIDTH){1'b0}},I_data};
+            wire [BANKS*BANK_WIDTH-1:0] padded_output;
             genvar bank;
             for (bank=0; bank<BANKS; bank=bank+1) begin : gen_bank
                 PH1P_LOGIC_ERAM #(
-                    .DATA_WIDTH_A(32), .DATA_WIDTH_B(32),
+                    .DATA_WIDTH_A(BANK_WIDTH), .DATA_WIDTH_B(BANK_WIDTH),
                     .ADDR_WIDTH_A(ADDR_BITS), .ADDR_WIDTH_B(ADDR_BITS),
-                    .DATA_DEPTH_A(DEPTH), .DATA_DEPTH_B(DEPTH), .MODE("DP"),
+                    .DATA_DEPTH_A(DEPTH), .DATA_DEPTH_B(DEPTH), .MODE("PDPW"),
                     .REGMODE_A("NOREG"), .REGMODE_B("NOREG"),
                     .WRITEMODE_A("NORMAL"), .WRITEMODE_B("NORMAL"),
                     .IMPLEMENT("20K(FAST)"), .CLKMODE("SYNC"),
@@ -987,8 +991,10 @@ module red_multi_small_ram #(
                     .clka(I_clk), .clkb(I_clk), .cea(I_write), .ceb(I_read),
                     .ocea(1'b0), .oceb(1'b0), .wea(I_write), .web(1'b0),
                     .rsta(1'b0), .rstb(1'b0), .bea(1'b0), .beb(1'b0),
-                    .addra(I_waddr), .addrb(I_raddr), .dia(padded_input[bank*32+:32]),
-                    .dib(32'd0), .doa(), .dob(padded_output[bank*32+:32]),
+                    .addra(I_waddr), .addrb(I_raddr),
+                    .dia(padded_input[bank*BANK_WIDTH+:BANK_WIDTH]),
+                    .dib({BANK_WIDTH{1'b0}}), .doa(),
+                    .dob(padded_output[bank*BANK_WIDTH+:BANK_WIDTH]),
                     .ecc_sbiterr(), .ecc_dbiterr(),
                     .ecc_sbiterrinj(1'b0), .ecc_dbiterrinj(1'b0)
                 );

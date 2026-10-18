@@ -49,6 +49,10 @@ module isp_top #(
     output [31:0]   O_ae_sum_y,
     output [15:0]   O_ae_sample_count,
     output [15:0]   O_ae_bright_count,
+    output          O_cnn_result_valid,
+    output [2:0]    O_cnn_class,
+    output          O_cnn_busy,
+    output          O_cnn_overrun,
     output reg [9:0] O_latency_frame_id
 );
  
@@ -202,6 +206,23 @@ awb #(
     .O_tdata (awb_O_tdata ),
     .O_tvalid(awb_O_tvalid),
     .O_tready(awb_O_tready)
+);
+
+// CNN observes the early-SOF AWB stream without display backpressure.
+// The active engine aligns each synchronous ERAM read with its weight and
+// padding flag. The alternate address implementation remains excluded;
+// equivalence alone is not the independent tensor/reference regression.
+cnn_infer_32 u_cnn_infer_32 (
+    .I_clk       (axi4s_video_aclk),
+    .I_rst_n     (I_rst_n),
+    .I_tuser     (awb_O_tuser),
+    .I_tlast     (awb_O_tlast),
+    .I_tvalid    (awb_O_tvalid),
+    .I_tdata     (awb_O_tdata),
+    .O_result_valid(O_cnn_result_valid),
+    .O_class     (O_cnn_class),
+    .O_busy      (O_cnn_busy),
+    .O_overrun   (O_cnn_overrun)
 );
 
 rgb_edge_switch_96 #(

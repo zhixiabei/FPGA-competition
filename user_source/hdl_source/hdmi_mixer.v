@@ -12,8 +12,11 @@ module hdmi_mixer #(
     parameter integer TARGET_MIN_PIXELS = 128,
     parameter integer SHOW_RAW_STATS = 0,
     parameter integer SHOW_LATENCY = 0,
+    parameter integer LATENCY_SWITCH_ENABLE = 0,
     parameter integer SHOW_EFFECT_LABEL = 0,
-    parameter integer MULTI_TARGET_ENABLE = 0
+    parameter integer SHOW_CNN = 1,
+    parameter integer MULTI_TARGET_ENABLE = 0,
+    parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -33,10 +36,13 @@ module hdmi_mixer #(
     input wire        I_ae_readout_valid,
     input wire [27:0] I_ae_readout_data,
     input wire        I_latency_sample_strobe,
+    input wire        I_latency_show,
     input wire        I_latency_sample_valid,
     input wire [19:0] I_latency_total_us,
     input wire [19:0] I_latency_isp_us,
     input wire [19:0] I_latency_buffer_us,
+    input wire        I_cnn_result_valid,
+    input wire [2:0]  I_cnn_class,
 
     output wire       O_video_rd_en,
     output wire       O_display_frame_start,
@@ -80,6 +86,27 @@ module hdmi_mixer #(
     reg [11:0] S_y_2d;
 
     reg [3:0] S_effect_mode;
+    wire S_latency_visible;
+    generate if (LATENCY_SWITCH_ENABLE != 0) begin: latency_switch
+        (* async_reg = "true" *) reg show_meta, show_sync;
+        reg show_active;
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if (!I_rst_n) begin
+                show_meta <= 1'b0;
+                show_sync <= 1'b0;
+                show_active <= 1'b0;
+            end else begin
+                show_meta <= I_latency_show;
+                show_sync <= show_meta;
+                if (I_video_user)
+                    show_active <= show_sync;
+            end
+        end
+        assign S_latency_visible = show_active;
+    end else begin: latency_always_visible
+        assign S_latency_visible = 1'b1;
+    end endgenerate
+
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             S_effect_mode <= 4'd0;
@@ -87,6 +114,8 @@ module hdmi_mixer #(
             S_effect_mode <= I_effect_mode;
         end
     end
+
+    reg [2:0] S_cnn_class;
 
     // USER accompanies the first pixel: bypass the active registers on that
     // edge so the whole frame uses one coherent configuration, including SOF.
@@ -214,6 +243,25 @@ module hdmi_mixer #(
     wire S_display_frame_start = S_video_de_2d &&
                                  (S_x_2d == 0) && (S_y_2d == 0);
     assign O_display_frame_start = S_display_frame_start;
+
+    localparam integer CNN_AGE_WIDTH = CNN_RESULT_TIMEOUT_FRAMES < 2 ?
+        1 : $clog2(CNN_RESULT_TIMEOUT_FRAMES+1);
+    reg [CNN_AGE_WIDTH-1:0] S_cnn_result_age;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_cnn_class <= 3'd1;
+            S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
+        end else if (I_cnn_result_valid) begin
+            S_cnn_class <= (I_cnn_class <= 3'd4) ? I_cnn_class : 3'd1;
+            S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
+        end else if ((CNN_RESULT_TIMEOUT_FRAMES != 0) &&
+                     S_display_frame_start) begin
+            if (S_cnn_result_age < CNN_RESULT_TIMEOUT_FRAMES)
+                S_cnn_result_age <= S_cnn_result_age + 1'b1;
+            if (S_cnn_result_age >= CNN_RESULT_TIMEOUT_FRAMES-1)
+                S_cnn_class <= 3'd1;
+        end
+    end
 
     always @(*) begin
         S_target_bcd_adjust_x = S_target_bcd_work_x;
@@ -401,7 +449,7 @@ module hdmi_mixer #(
                 F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
                     13'd192,13'd80,13'd240,13'd16))
                 candidate_valid = 1'b0;
-            if ((SHOW_LATENCY != 0) &&
+            if ((SHOW_LATENCY != 0) && S_latency_visible &&
                 F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
                     13'd864,13'd16,13'd400,13'd216))
                 candidate_valid = 1'b0;
@@ -642,11 +690,35 @@ module hdmi_mixer #(
         else if (S_effect_char_index >= 3 && S_effect_char_index <= 14)
             S_effect_char = S_effect_name[95-8*(S_effect_char_index-3) -: 8];
     end
+
+    // CNN status label. Keep the declarations before the shared character ROM
+    // instance; otherwise older Verilog elaboration treats the earlier uses as
+    // implicit nets and the synthesized panel becomes undriven.
+    localparam CNN_TEXT_X = 16;
+    localparam CNN_TEXT_Y = 16;
+    wire S_cnn_panel_on = (SHOW_CNN != 0) && S_video_de_2d &&
+        (S_x_2d >= CNN_TEXT_X) && (S_x_2d < CNN_TEXT_X+192) &&
+        (S_y_2d >= CNN_TEXT_Y) && (S_y_2d < CNN_TEXT_Y+16);
+    wire [11:0] S_cnn_text_x = S_x_2d - CNN_TEXT_X;
+    wire [3:0] S_cnn_text_y = S_y_2d - CNN_TEXT_Y;
+    wire [4:0] S_cnn_char_index = S_cnn_text_x[8:4];
+    reg [7:0] S_cnn_char;
+    // Match the inference engine's fixed 256x256 camera crop. This border
+    // uses the same delayed coordinates as the displayed camera pixels.
+    wire S_cnn_roi_on = (SHOW_CNN != 0) &&
+        (IMG_WIDTH >= 768) && (IMG_HEIGHT >= 488) && S_video_de_2d &&
+        (S_x_2d >= 12'd512) && (S_x_2d <= 12'd767) &&
+        (S_y_2d >= 12'd232) && (S_y_2d <= 12'd487) &&
+        ((S_x_2d < 12'd514) || (S_x_2d > 12'd765) ||
+         (S_y_2d < 12'd234) || (S_y_2d > 12'd485));
+
     // Fixed panels and all following labels share one character lookup.
     osd_char_lib u_target_char_lib (
         .I_char(S_effect_panel_on ? S_effect_char :
+                S_cnn_panel_on ? S_cnn_char :
                 S_target_panel_on ? S_target_char : S_follow_char),
         .I_row(S_effect_panel_on ? S_effect_text_y :
+               S_cnn_panel_on ? S_cnn_text_y :
                S_target_panel_on ? S_target_text_y : S_follow_row),
         .O_row_bits(S_target_char_bits)
     );
@@ -654,8 +726,62 @@ module hdmi_mixer #(
         S_target_char_bits[15-S_target_text_x[3:0]];
     wire S_effect_text_on = S_effect_panel_on &&
         S_target_char_bits[15-S_effect_text_x[3:0]];
+    wire S_cnn_text_on = S_cnn_panel_on &&
+        S_target_char_bits[15-S_cnn_text_x[3:0]];
     assign S_follow_text_on = S_follow_panel_on &&
         S_target_char_bits[15-S_follow_col];
+
+    always @(*) begin
+        S_cnn_char = 8'h20;
+        case (S_cnn_char_index)
+            0: S_cnn_char = "C";
+            1: S_cnn_char = "N";
+            2: S_cnn_char = "N";
+            3: S_cnn_char = ":";
+            5: begin
+                case (S_cnn_class)
+                    3'd0: S_cnn_char = "O";
+                    3'd1: S_cnn_char = "N";
+                    3'd2: S_cnn_char = "P";
+                    3'd3: S_cnn_char = "P";
+                    default: S_cnn_char = "S";
+                endcase
+            end
+            6: begin
+                case (S_cnn_class)
+                    3'd0: S_cnn_char = "K";
+                    3'd1: S_cnn_char = "O";
+                    3'd2: S_cnn_char = "E";
+                    3'd3: S_cnn_char = "U";
+                    default: S_cnn_char = "T";
+                endcase
+            end
+            7: begin
+                case (S_cnn_class)
+                    3'd1: S_cnn_char = "T";
+                    3'd2: S_cnn_char = "A";
+                    3'd3: S_cnn_char = "N";
+                    3'd4: S_cnn_char = "O";
+                    default: S_cnn_char = " ";
+                endcase
+            end
+            8: begin
+                case (S_cnn_class)
+                    3'd1: S_cnn_char = "H";
+                    3'd2: S_cnn_char = "C";
+                    3'd3: S_cnn_char = "C";
+                    3'd4: S_cnn_char = "P";
+                    default: S_cnn_char = " ";
+                endcase
+            end
+            9: S_cnn_char = S_cnn_class == 3'd1 ? "I" :
+                            S_cnn_class == 3'd2 ? "E" :
+                            S_cnn_class == 3'd3 ? "H" : " ";
+            10: S_cnn_char = S_cnn_class == 3'd1 ? "N" : " ";
+            11: S_cnn_char = S_cnn_class == 3'd1 ? "G" : " ";
+            default: S_cnn_char = 8'h20;
+        endcase
+    end
 
     wire S_raw_panel, S_raw_text, S_raw_alert;
     generate if (SHOW_RAW_STATS != 0) begin: raw_readout
@@ -681,7 +807,8 @@ module hdmi_mixer #(
             .I_sample_valid(I_latency_sample_valid),
             .I_total_us(I_latency_total_us), .I_isp_us(I_latency_isp_us),
             .I_buffer_us(I_latency_buffer_us),
-            .I_de(S_video_de_1d), .I_x(S_x_1d), .I_y(S_y_1d),
+            .I_de(S_video_de_1d && S_latency_visible),
+            .I_x(S_x_1d), .I_y(S_y_1d),
             .O_panel(S_latency_panel), .O_text(S_latency_text),
             .O_graph(S_latency_graph), .O_alert(S_latency_alert)
         );
@@ -1410,6 +1537,8 @@ module hdmi_mixer #(
                         S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
                 else if(S_effect_panel_on)
                     O_hdmi_data <= S_effect_text_on ? 24'h00e6ff : 24'h101010;
+                else if(S_cnn_panel_on)
+                    O_hdmi_data <= S_cnn_text_on ? 24'h40ff80 : 24'h101010;
                 else if(S_latency_panel)
                     O_hdmi_data <= S_latency_text ?
                         (S_latency_alert ? 24'hffb040 : 24'hffffff) :
@@ -1431,6 +1560,8 @@ module hdmi_mixer #(
                         (S_target_motion_mode && S_multi_count != 0)) &&
                         SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
                     O_hdmi_data <= 24'hfff200;
+                else if(S_cnn_roi_on)
+                    O_hdmi_data <= 24'h40ff80;
                 else
                     O_hdmi_data <= S_video_data_2d;
             end
