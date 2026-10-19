@@ -170,15 +170,14 @@ function Assert-TargetFrameConstraintHealth([string] $Path) {
     return [pscustomobject]$results
 }
 
-$firmwareDirectory=Get-WorkspaceDestination 'firmware'
 $bestResultDirectory=Get-WorkspaceDestination 'td_project\anlogic_edge_osd_Runs\best_result'
 $reportDirectory=$null
 if($GenerateBit) {
     $reportDirectory=Get-WorkspaceDestination $(if($OutputDirectory) {$OutputDirectory} else {'build\release'})
-    if($reportDirectory.Equals($firmwareDirectory,[StringComparison]::OrdinalIgnoreCase) -or
-        $reportDirectory.StartsWith($firmwareDirectory+[IO.Path]::DirectorySeparatorChar,
+    if($reportDirectory.Equals($bestResultDirectory,[StringComparison]::OrdinalIgnoreCase) -or
+        $reportDirectory.StartsWith($bestResultDirectory+[IO.Path]::DirectorySeparatorChar,
             [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Firmware contains only the fixed bitstream and its instructions; choose a separate report directory'
+        throw 'Release reports must remain outside the best_result programming directory'
     }
 }
 $tdCommand=Join-Path $TdBin 'td_commands_prompt.exe'
@@ -362,14 +361,10 @@ try {
             }
         }
         # Stage and back up every deliverable before replacing the previous release.
-        $firmwareDirectory=Get-WorkspaceDestination $firmwareDirectory
         $bestResultDirectory=Get-WorkspaceDestination $bestResultDirectory
         $reportDirectory=Get-WorkspaceDestination $reportDirectory
-        New-Item -ItemType Directory -Path $firmwareDirectory -Force | Out-Null
         New-Item -ItemType Directory -Path $bestResultDirectory -Force | Out-Null
         New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
-        $fixedBit=Join-Path $firmwareDirectory 'anlogic_edge_osd.bit'
-        $stagedBit=Join-Path $firmwareDirectory ('.anlogic_edge_osd.'+$buildId+'.tmp')
         $bitHash=(Get-FileHash -LiteralPath $generatedBit -Algorithm SHA256).Hash
         $releaseFiles=@()
         foreach($name in $reportNames) {
@@ -380,15 +375,10 @@ try {
                 DestinationPath=(Join-Path $reportDirectory $name)
             }
         }
-        $releaseFiles+=[pscustomobject]@{
-            SourcePath=$generatedBit
-            StagedPath=$stagedBit
-            DestinationPath=$fixedBit
-        }
         $bestResultReadme=Join-Path $work 'best_result_readme.txt'
         [IO.File]::WriteAllText($bestResultReadme,
             "Verified build $version. Reports: build/release/release_manifest.json`r`n"+
-            "Program anlogic_edge_osd.bit. firmware/anlogic_edge_osd.bit is an identical copy.`r`n",
+            "Program anlogic_edge_osd.bit from this directory.`r`n",
             [Text.UTF8Encoding]::new($false))
         foreach($artifact in @(
             @{Source=$generatedBit; Name='anlogic_edge_osd.bit'},
@@ -414,7 +404,6 @@ try {
             source_manifest='source_sha256.csv'
             bitstream=[ordered]@{
                 path='td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit'
-                mirror='firmware/anlogic_edge_osd.bit'
                 sha256=$bitHash
                 bytes=(Get-Item -LiteralPath $generatedBit).Length
             }
@@ -444,9 +433,8 @@ try {
             DestinationPath=(Join-Path $reportDirectory 'release_manifest.json')
         }
         Publish-ReleaseFiles $releaseFiles (Join-Path $work 'release_backup')
-        Write-Output "FIRMWARE_RELEASE_PASS version=$version"
+        Write-Output "BEST_RESULT_RELEASE_PASS version=$version"
         Write-Output "Programming file (fixed path): $(Join-Path $bestResultDirectory 'anlogic_edge_osd.bit')"
-        Write-Output "Identical firmware copy: $fixedBit"
         Write-Output "Programming file SHA256: $bitHash"
         Write-Output "Release reports: $reportDirectory"
         Write-Output "Release manifest: $(Join-Path $reportDirectory 'release_manifest.json')"

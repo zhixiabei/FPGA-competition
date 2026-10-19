@@ -41,8 +41,7 @@ module tb_multi_target_mixer;
     integer counter_checks=0;
 
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_CNN(0)) dut (
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1)) dut (
         .I_clk(clk),.I_rst_n(rst_n),.I_video_de(de),
         .I_video_user(user),.I_video_last(last),
         .I_video_hsync(hs),.I_video_vsync(vs),
@@ -53,7 +52,6 @@ module tb_multi_target_mixer;
         .I_latency_sample_strobe(1'b0),.I_latency_sample_valid(1'b0),
         .I_latency_total_us(20'd0),.I_latency_isp_us(20'd0),
         .I_latency_buffer_us(20'd0),.I_video_rd_data(rgb),
-        .I_cnn_result_valid(1'b0),.I_cnn_class(3'd1),
         .O_video_rd_en(rd),.O_display_frame_start(),
         .I_target_result_ready(ready),.I_target_found(found),
         .I_target_motion_mode(motion),.I_target_color_mode(color_mode),

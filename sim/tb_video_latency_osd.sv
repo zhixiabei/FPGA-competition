@@ -18,7 +18,7 @@ module tb_video_latency_osd;
     reg [23:0] camera_rgb=0;
     wire out_de, out_hs, out_vs, rd, frame_start;
     wire [23:0] out_rgb;
-    hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(1),.SHOW_CNN(0),
+    hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(1),
         .SHOW_CAMERA_STATUS(1),.SHOW_COLOR_TARGET(1)) mixer(
         .I_clk(clk),.I_rst_n(mix_rst),.I_video_de(de),.I_video_user(user),
         .I_effect_mode(4'd0),.I_effect_param(8'd0),
@@ -30,7 +30,7 @@ module tb_video_latency_osd;
         .I_latency_sample_valid(mix_valid),
         .I_latency_total_us(mix_total),.I_latency_isp_us(mix_isp),
         .I_latency_buffer_us(mix_buffer),
-        .I_cnn_result_valid(1'b0),.I_cnn_class(3'd0),.O_display_frame_start(frame_start),
+        .O_display_frame_start(frame_start),
         .O_video_rd_en(rd),.I_video_rd_data(camera_rgb),
         .I_target_result_ready(1'b1),.I_target_found(1'b1),.I_target_motion_mode(1'b1),
         .I_target_color_mode(2'd0),

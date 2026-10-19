@@ -2,7 +2,7 @@
 
 本工程的 .gitignore 已配置好。默认保留文件，只排除已知生成物；
 `build/` 和所有 `.bit` 不提交，文档位于 `docs/`，烧录文件在本机固定为
-`firmware/anlogic_edge_osd.bit`。克隆后运行根目录 `build_firmware.cmd` 重新生成。
+`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。克隆后运行根目录 `build_firmware.cmd` 重新生成。
 
 普通压缩软件和 GitHub 网页拖拽上传不会执行 .gitignore。使用 Git / GitHub Desktop 提交，或者按下文从 Git 导出干净 ZIP。
 

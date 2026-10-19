@@ -21,9 +21,6 @@ $sources = @(
     'user_source\hdl_source\isp\demosaic_4x_2_0\demosaic.v',
     'user_source\hdl_source\isp\demosaic_4x_2_0\raw_matrix_3x3_buffer.v',
     'user_source\hdl_source\isp\demosaic_4x_2_0\bilinear_interpolation.v',
-    'user_source\hdl_source\cnn\cnn_infer_32.v',
-    'user_source\hdl_source\cnn\cnn_weights.v',
-    'user_source\hdl_source\cnn\cnn_eram_byte_dp.v',
     'sim\tb_video_latency_frame_tag.sv'
 )
 foreach ($tool in @('vsim.exe', 'vlog.exe')) {

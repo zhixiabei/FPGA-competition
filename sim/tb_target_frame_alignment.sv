@@ -702,7 +702,6 @@ module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
     O_target_multi_boxes, O_target_multi_overflow,
     O_edge_mode_active, O_effect_config, I_tready,
     O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count,
-    O_cnn_result_valid, O_cnn_class, O_cnn_busy, O_cnn_overrun,
     O_latency_frame_id,
     output wire [7:0] O_target_multi_shapes);
     assign O_target_multi_shapes = 8'd0;

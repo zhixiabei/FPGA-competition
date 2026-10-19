@@ -51,8 +51,7 @@ K1、K2 仍按原来的方式切换画面和检测算法。
 ## 本版构建
 
 2026-10-16 完成综合、布局布线和 bit 生成，版本为 `src-49a1164317e0`。
-本次脚本生成的文件为 [firmware/anlogic_edge_osd.bit](../firmware/anlogic_edge_osd.bit)，
-可以直接加载烧录。自己在 TD 中重新编译时，继续使用
+本次历史构建的文件已不再单独保留。当前统一使用
 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`；
 下载器需要重新加载本次实际生成的文件。
 

@@ -74,12 +74,6 @@ set_false_path -from [get_regs {u_target_frame_bridge/S_result_ack}] -to [get_re
 set_false_path -from [get_regs {u_target_frame_bridge/S_read_request}] -to [get_regs {u_target_frame_bridge/S_read_req_meta}]
 set_false_path -from [get_regs {u_target_frame_bridge/S_read_ack}] -to [get_regs {u_target_frame_bridge/S_read_ack_meta}]
 
-# CNN result mailbox: the held payload and request toggle cross from the
-# MIPI byte-clock domain to HDMI. Only the first destination synchronizer is
-# asynchronous; the payload remains stable until the toggle is observed.
-set_false_path -from [get_regs {u_cnn_result_cdc/request}] -to [get_regs {u_cnn_result_cdc/req_meta}]
-set_false_path -from [get_regs {u_cnn_result_cdc/payload[*]}] -to [get_regs {u_cnn_result_cdc/class_meta[*]}]
-
 set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_start_nonce[*] u_target_frame_bridge/S_start_frame_id[*] u_target_frame_bridge/S_start_effect_config[*] u_target_frame_bridge/S_start_motion_mode u_target_frame_bridge/S_start_color_mode[*] u_target_frame_bridge/S_start_valid}] -to [get_regs {u_target_frame_bridge/S_slot*}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_result_payload[*]}] -to [get_regs {u_target_frame_bridge/S_slot* u_target_frame_bridge/S_last_result_payload[*]}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_read_payload[*]}] -to [get_regs {u_target_frame_bridge/O_*}] 13.000

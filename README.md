@@ -1,14 +1,16 @@
 # 安路 PH1P35 图像处理工程
 
 **烧录文件固定为 [td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit](td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit)。**
-当前源码为 2026-10-19 掩码清理与形状版，包含原画（含 Gamma）、灰度、Scharr 边缘、
+当前源码为 2026-10-19 形状容差与时间稳定版，已移除 CNN 链路，包含原画（含 Gamma）、灰度、Scharr 边缘、
 反色、灰度浮雕、红绿保色、彩色漫画、Scharr 反色、形态学边缘，
 以及所选颜色的二值掩码、腐蚀、膨胀和清理掩码预览，
 以及红/绿/蓝所选颜色的最多四个独立框、正方形/三角形/圆形识别、
-原有单框运动检测和延迟可视化。固定文件的实际发布身份见构建清单；
+原有单框运动检测和延迟可视化。CNN 推理、权重、专用缓存、结果跨域及 HDMI 手势文字与裁剪框已移除。
+移除的五个 CNN 源文件备份于 [CNN 删除前备份](build/backups/cnn_before_removal_src99b844.zip)，可恢复。
+固定文件的实际发布身份见构建清单；
 烧录前按构建清单核对版本，并在下载器中重新加载上述固定文件。
-脚本构建的副本保存于 [firmware/anlogic_edge_osd.bit](firmware/anlogic_edge_osd.bit)，
-其文件校验值、构建时间及最终时序见 [脚本构建记录](build/release/release_manifest.json)。
+TD 与脚本构建均只更新 `best_result`；构建时间、校验值及最终时序见
+[脚本构建记录](build/release/release_manifest.json)。
 
 ## 使用
 
@@ -22,8 +24,10 @@
    所选颜色检测最多显示四个框，新目标连续两帧匹配后显示，漏检保持两帧；
    标签例如 `1 GRN TRI OK` / `1 GRN TRI H`，左下显示 `RED/GRN/BLU COUNT:0..4`。
    `SQR/TRI/CIR/UNK` 分别表示正方形、三角形、圆形和未知；
-   未知形状仍保留颜色框。形状面向填实、分离的色块，支持画面内旋转，
-   未做透视矫正；算法和输入要求见[形状说明](docs/COLOR_SHAPE.md)。
+   未知形状仍保留颜色框。同类形状连续两次才确认或切换，单帧抖动暂留原类别，
+   连续第三帧仍无原类别支持且未确认新类别时清为 `UNK`。
+   形状面向填实、分离的色块，本版仅放宽质心门槛，支持画面内旋转及有限的偏斜容差，
+   未做透视矫正；近方长方形、低轴比椭圆可能混淆，详见[形状说明](docs/COLOR_SHAPE.md)。
    算法容量溢出时显示 `OVF` 并清框；详见[多目标说明](docs/RED_MULTI_TARGET.md)。
 5. 右上角显示同帧 `TOTAL`、`ISP`、`BUF` 延迟、累计 `MIN/MAX`
    和最近 64 个显示帧的曲线，单位为 ms。无有效记录时显示 `N/A`。
@@ -88,11 +92,13 @@ U 形、环形等复杂区域的空隙内目标仍可能合框，不等于完整
 漫画也有[合成输入](build/verification/cartoon_synthetic_input.png)和
 [RTL 输出](build/verification/cartoon_synthetic_rtl.png)。
 [红绿保色对照图](build/verification/color_keep_rtl_preview.png)可查看保色和灰度区域。
-[形态学 RTL 输出](build/verification/morph_synthetic_rtl.png)来自本轮 720p 回归。
+[形态学 RTL 输出](build/verification/morph_synthetic_rtl.png)来自前版 720p 回归。
 预览均为合成测试场景的 RTL 仿真结果；实拍画质仍需烧录后确认。
-本轮十三模式按键、像素、名称、掩码预览、DDR 帧槽和框补偿回归已通过。
+删除 CNN 前的十三模式按键、像素、名称、掩码预览、DDR 帧槽和框补偿专项回归已通过。
 掩码预览使用独立整图参考，覆盖红、绿、蓝、运动、提前帧首、帧中切换请求和空拍，
-并核对便携 RAM 与安路 ERAM 两种模型。完整范围与历史 720p 图像参考分列于
+并核对便携 RAM 与安路 ERAM 两种模型。前版 CNN 移除重新验证十三项名称、
+颜色/形状标签、DDR 帧槽、ISP 打包和延迟叠加，并通过实际 RAW 六帧运动与帧号短帧/回绕检查。
+这些记录与本次形状容差、稳定性回归及历史 720p 图像参考分列于
 [仿真说明](sim/README.md)。
 新掩码窗口每像素只存一位，Top4 特征移入既有候选 ERAM 的空余地址，
 并去除重复特征寄存器；没有新增 DDR 访问、整帧缓存或独立分类器。
@@ -113,19 +119,44 @@ Gamma 保留在模式 00 的彩色画面，使用 [gamma_lut_rgb888.v](user_sour
 该阶段日志及测试源码身份见[多目标证据包](build/verification/red_multi_target_regression.zip)。
 上述历史资源不代表当前形状版；当前形状回归见
 [多颜色目标说明](docs/RED_MULTI_TARGET.md)和[仿真说明](sim/README.md)。
-当前十三模式与掩码清理版 `src-99b844d4d471` 于 2026-10-19 17:25:45（北京时间）
+删除 CNN 前的十三模式与掩码清理版 `src-99b844d4d471` 于 2026-10-19 17:25:45（北京时间）
 完成综合、最终布局布线和 bit 发布。最终 Slice 19,660/21,216（92.67%）、
 LUT6 18,977、寄存器 18,330、ERAM 84/108、DSP 19/40；
 建立余量 +0.034 ns、保持余量 +0.020 ns，均无违例。
 相对前一形状版 `src-259cc85e48e1`，Slice 减少 370、LUT6 减少 134、
 寄存器减少 914，ERAM 增加 2，DSP 不变；Slice 占用由 94.41% 降至 92.67%。
-没有增加 DDR 图像读写或整帧缓存。当前剩余 1,556 Slice、24 个 ERAM，
-后续扩展仍需关注容量和时序。
-227 个源文件与构建清单一致，两处 bit 的 SHA256 均为
+该历史版没有增加 DDR 图像读写或整帧缓存，剩余 1,556 Slice、24 个 ERAM。
+当时 227 个源文件与构建清单一致，两处 bit 的 SHA256 均为
 `12C57AF945EF7656FFC8998122BB4F21DF527E2DF16EB401239CFA3D1736FD2D`。
-资源与最终时序见
+前版移除 CNN 版 `src-5ad2d432a102` 于 2026-10-19 18:18:49（北京时间）
+完成最终布局布线并发布 bit。最终 Slice 19,046/21,216（89.77%）、
+LUT6 18,292、寄存器 17,863、ERAM 79/108、DSP 15/40；
+建立余量 +0.106 ns、保持余量 +0.020 ns，均无违例。
+相对上述删除前基线减少 614 Slice、685 LUT6、467 个寄存器、5 个 ERAM 和 4 个 DSP。
+该版剩余 2,170 Slice、29 个 ERAM 和 25 个 DSP。
+当时 222 个生产构建输入与发布清单一致，两处 bit 均为 1,789,539 字节，SHA256 为
+`4636F41587B0A571B84B5BE34181FBDC758093668C51F9E795548BC9DADD3CF1`。
+该版 10 个 runner、11 个测试台的日志、实际源码快照与最终报告见
+[CNN 移除回归证据包](build/verification/cnn_removal_regression.zip)。
+
+最新方形像素容差与圆形特征保持修订见 [修订与验收记录](docs/SHAPE_BOUNDARY_FIX.md)。
+当前发布 `src-5d1bd88a50ff`（2026-10-19 20:24:28，北京时间）为
+Slice 19,127（90.15%）、LUT6 18,468、寄存器 17,894、ERAM 79、DSP 15，
+建立/保持余量 +0.101/+0.020 ns。相对直接前版 +83 Slice、+176 LUT6、+8 寄存器。
+
+前版形状容差与时间稳定版 `src-f2960ad79fd7` 于 2026-10-19 19:32:11（北京时间）
+完成最终布局布线并发布 bit。最终 Slice 19,044/21,216（89.76%）、
+LUT6 18,292、寄存器 17,886、ERAM 79/108、DSP 15/40；
+相对前版 Slice 减少 2、寄存器增加 23，LUT6、ERAM、DSP 均不变。
+建立/保持余量仍为 +0.106/+0.020 ns，显示配置和三组目标跨时钟约束均通过覆盖检查。
+该版剩余 2,172 Slice、29 个 ERAM 和 25 个 DSP，222 个生产构建输入与当时发布清单一致。
+两处 bit 均为 1,789,539 字节，SHA256 为
+`0A9663FE1C7DBF1D75CCD65929F6022408F6C5168208B04CEE0D5D4C8FB4B25A`。
+本次空间分类、时间稳定、门槛对照和集成检查的日志、实际执行快照及最终报告见
+[形状容差回归证据包](build/verification/shape_tolerance_regression.zip)。
+固定路径中的实际发布报告见
 [资源报告](build/release/system_phy.area)、[最终时序](build/release/system_pr.timing)
-及[构建清单](build/release/release_manifest.json)；本轮日志和源码快照见
+及[构建清单](build/release/release_manifest.json)；删除前的日志和源码快照见
 [十三模式与掩码回归证据包](build/verification/color_mask_regression.zip)。
 TD 的 `phy_1` 报告仅对应 TD 界面中最近一次编译。Slice、LUT6 和寄存器不能相加计算剩余容量。
 仿真入口与验证范围见 [sim/README.md](sim/README.md)，实拍画质和按键体验需重新烧录后确认。
@@ -148,17 +179,14 @@ TD 的 `phy_1` 报告仅对应 TD 界面中最近一次编译。Slice、LUT6 和
 脚本在独立临时目录完成综合、布局布线和 bit 生成，
 仅在最终建立/保持时序均通过，且显示配置 13 ns、目标元数据 20/20/13 ns
 约束覆盖全部有效路径后更新
-`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`，
-并将同一文件同步到 `firmware/anlogic_edge_osd.bit`，校验 SHA256 一致；
-失败时保留上一份成功的 bit。
-TD 界面编译更新 `best_result`；脚本构建成功则同步两处。统一使用 `best_result` 主路径烧录。
+`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`；
+失败时保留上一份成功的 bit。TD 界面编译和脚本构建均以 `best_result` 为唯一烧录路径。
 每次都重新加载本次实际生成的文件后再烧录。
 
 ## 目录
 
 | 位置 | 内容 |
 |---|---|
-| [firmware/](firmware/) | 脚本构建同步的 bit 副本和说明；TD 界面编译不会更新这里 |
 | [td_project/anlogic_edge_osd.al](td_project/anlogic_edge_osd.al) | 主 TD 工程，顶层 `design_top_wrapper` |
 | [user_source/](user_source/) | HDL、IP、初始化数据和引脚约束 |
 | [sim/README.md](sim/README.md) | 仿真入口与验证范围 |

@@ -4,6 +4,8 @@ param(
     [int] $Width = 320,
     [int] $Height = 240,
     [int] $TimeoutSeconds = 180,
+    [string] $RtlSource = '',
+    [switch] $GeometryProbeOnly,
     [string] $ModelSimBin = 'C:\altera\14.1\modelsim_ase\win32aloem',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p'
 )
@@ -22,7 +24,10 @@ foreach ($tool in @('vsim.exe', 'vlog.exe')) {
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $simulationDir = Join-Path $env:TEMP ('anlogic_color_shape_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $simulationDir | Out-Null
-Copy-Item -LiteralPath (Join-Path $projectRoot 'user_source\hdl_source\isp\red_target_detect_96.v') `
+$selectedRtl = if ($RtlSource) { $RtlSource } else {
+    Join-Path $projectRoot 'user_source\hdl_source\isp\red_target_detect_96.v'
+}
+Copy-Item -LiteralPath $selectedRtl `
     -Destination (Join-Path $simulationDir 'red_target_detect_96.v')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tb_color_shape_target.sv') `
     -Destination (Join-Path $simulationDir 'tb_color_shape_target.sv')
@@ -34,6 +39,7 @@ $sourceHashes=foreach($snapshot in @('red_target_detect_96.v','tb_color_shape_ta
 }
 $sourceHashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv') -NoTypeInformation
 Write-Output "Simulation output: $simulationDir"
+$probeMode=[int]$GeometryProbeOnly.IsPresent
 $variants = if ($Mode -eq 'Both') { @('Portable', 'Vendor') } else { @($Mode) }
 foreach ($variant in $variants) {
     $stem = $variant.ToLowerInvariant()
@@ -54,7 +60,7 @@ onbreak {resume}
 if {[file exists work]} {vdel -all -lib work}
 vlib work
 vlog -sv $compileOptions red_target_detect_96.v tb_color_shape_target.sv $vendorSources
-vsim -t ps -gW=$Width -gH=$Height work.tb_color_shape_target $vendorTop
+vsim -t ps -gW=$Width -gH=$Height -gGEOMETRY_PROBE_ONLY=$probeMode work.tb_color_shape_target $vendorTop
 run -all
 quit -code 0 -force
 "@
@@ -77,12 +83,22 @@ quit -code 0 -force
     }
     $console = [IO.File]::ReadAllText($consolePath) + [IO.File]::ReadAllText($errorPath)
     $failurePattern = '(?im)^\s*(?:#\s*)?(?:\*\*\s*(?:Fatal|Error)\b|(?:Fatal|ERROR):)'
-    $passPattern = '(?m)^\s*(?:#\s*)?COLOR_SHAPE_TARGET_PASS\b.*$'
+    $passName = if ($GeometryProbeOnly) {
+        'COLOR_SHAPE_GEOMETRY_PROBE_PASS'
+    } else { 'COLOR_SHAPE_TARGET_PASS' }
+    $passPattern = "(?m)^\s*(?:#\s*)?$passName\b.*$"
     $noisePattern = '(?m)^\s*(?:#\s*)?COLOR_SHAPE_NOISY_CASE_PASS\b'
+    $expectedNoiseCount = if ($GeometryProbeOnly) { 0 } else { 30 }
+    $probePattern = '(?m)^\s*(?:#\s*)?COLOR_SHAPE_GEOMETRY_PROBE\b.*$'
+    $expectedProbeCount = if ($GeometryProbeOnly) { 6 } else { 3 }
     if ($console -match $failurePattern -or
         [regex]::Matches($console, $passPattern).Count -ne 1 -or
-        [regex]::Matches($console, $noisePattern).Count -ne 30) {
+        [regex]::Matches($console, $noisePattern).Count -ne $expectedNoiseCount -or
+        [regex]::Matches($console, $probePattern).Count -ne $expectedProbeCount) {
         throw "$variant shape simulation failed or pass marker is missing; see $consolePath"
+    }
+    [regex]::Matches($console,$probePattern) | ForEach-Object {
+        $_.Value.Trim() -replace '^#\s*', ''
     }
     ([regex]::Match($console, $passPattern).Value.Trim() -replace '^#\s*', '')
 }

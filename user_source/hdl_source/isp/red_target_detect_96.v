@@ -939,8 +939,10 @@ module red_multi_run_engine #(
     reg [Y_BITS-1:0] top_ymin [0:3], top_ymax [0:3];
     reg [COUNT_BITS-1:0] top_pixels [0:3];
     reg [1:0] top_shape [0:3], track_shape [0:3];
+    reg [3:0] top_circle_support;
     wire shape_ready;
     wire [1:0] shape_result;
+    wire shape_circle_support;
     wire [15:0] class_perimeter;
     wire class_bad;
     wire [MOM_BITS-1:0] class_mx2, class_my2;
@@ -960,16 +962,26 @@ module red_multi_run_engine #(
         .I_mx2(class_mx2),.I_my2(class_my2),
         .I_umin(class_umin),.I_umax(class_umax),
         .I_vmin(class_vmin),.I_vmax(class_vmax),
-        .O_ready(shape_ready),.O_shape(shape_result)
+        .O_ready(shape_ready),.O_shape(shape_result),
+        .O_circle_support(shape_circle_support)
     );
     reg [3:0] track_occupied, track_confirmed, matched_tracks, used_detections;
     reg [X_BITS-1:0] track_xmin [0:3], track_xmax [0:3];
     reg [Y_BITS-1:0] track_ymin [0:3], track_ymax [0:3];
     reg [1:0] track_misses [0:3];
+    // Confirm a shape twice independently of the geometry confirmation.
+    // Count every frame without support for the stable class, so alternating
+    // wrong/unknown classes cannot keep an obsolete label indefinitely.
+    reg [1:0] track_pending_shape [0:3], track_shape_hits [0:3];
+    reg [1:0] track_shape_age [0:3];
     reg [3:0] pair_index;
     reg [1:0] best_track, best_detection, track_index;
     reg best_valid;
     reg [13:0] best_distance;
+    // A confirmed circle may use the weaker, current-frame circle evidence.
+    // This is feature hysteresis, not an unconditional extension of label age.
+    wire [1:0] matched_shape=(track_shape[best_track] == 3 &&
+        top_circle_support[best_detection]) ? 2'd3 : top_shape[best_detection];
     wire [1:0] pair_track=pair_index[3:2];
     wire [1:0] pair_detection=pair_index[1:0];
     wire [X_BITS:0] track_xsum={1'b0,track_xmin[pair_track]}+{1'b0,track_xmax[pair_track]};
@@ -1000,7 +1012,7 @@ module red_multi_run_engine #(
             shared_boundary<=0; boundary_bad<=0; class_index<=0;
             candidate_expired<=0; same_row<=0;
             link_valid<=0; link_min<=0; link_max<=0; candidate_qualified<=0;
-            top_valid<=0;
+            top_valid<=0; top_circle_support<=0;
             minimum_pixels<=0; minimum_slot<=0; minimum_empty<=0; top_index<=0;
             track_occupied<=0; track_confirmed<=0; matched_tracks<=0; used_detections<=0;
             pair_index<=0; best_track<=0; best_detection<=0; track_index<=0;
@@ -1010,14 +1022,20 @@ module red_multi_run_engine #(
                 top_xmin[slot]<=0; top_xmax[slot]<=0; top_ymin[slot]<=0;
                 top_ymax[slot]<=0; top_pixels[slot]<=0;
                 top_shape[slot]<=0; track_shape[slot]<=0;
+                track_pending_shape[slot]<=0; track_shape_hits[slot]<=0;
+                track_shape_age[slot]<=0;
                 track_xmin[slot]<=0; track_xmax[slot]<=0;
                 track_ymin[slot]<=0; track_ymax[slot]<=0; track_misses[slot]<=0;
             end
         end else if (I_clear) begin
             state<=S_FETCH; context_open<=0; context_bad<=0; candidate_valid<=0;
-            top_valid<=0; track_occupied<=0; track_confirmed<=0;
+            top_valid<=0; top_circle_support<=0; track_occupied<=0; track_confirmed<=0;
             matched_tracks<=0; used_detections<=0;
             O_ready<=0; O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0; O_overflow<=0;
+            for (slot=0; slot<4; slot=slot+1) begin
+                track_shape[slot]<=0; track_pending_shape[slot]<=0;
+                track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
+            end
         end else begin
             O_ready<=0;
             case (state)
@@ -1039,6 +1057,10 @@ module red_multi_run_engine #(
                             O_ready<=1; O_frame_id<=token_id; O_overflow<=1;
                             O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0;
                             track_occupied<=0; track_confirmed<=0;
+                            for (slot=0; slot<4; slot=slot+1) begin
+                                track_shape[slot]<=0; track_pending_shape[slot]<=0;
+                                track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
+                            end
                             context_open<=0; candidate_valid<=0; state<=S_FETCH;
                         end
                     end else if (token_kind == TOK_RUN) begin
@@ -1065,6 +1087,10 @@ module red_multi_run_engine #(
                         O_overflow<=context_bad || token_kind == TOK_OVERFLOW;
                         O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0;
                         track_occupied<=0; track_confirmed<=0;
+                        for (slot=0; slot<4; slot=slot+1) begin
+                            track_shape[slot]<=0; track_pending_shape[slot]<=0;
+                            track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
+                        end
                         context_open<=0; candidate_valid<=0; state<=S_FETCH;
                     end else begin
                         scan_index<=0; state<=S_EOF_REQ;
@@ -1165,12 +1191,14 @@ module red_multi_run_engine #(
                     if (top_valid[class_index]) state<=S_CLASS_WAIT;
                     else begin
                         top_shape[class_index]<=0;
+                        top_circle_support[class_index]<=0;
                         if (class_index == 3) state<=S_TRACK_INIT;
                         else begin class_index<=class_index+1'b1; state<=S_CLASS_REQ; end
                     end
                 end
                 S_CLASS_WAIT: if (shape_ready) begin
                     top_shape[class_index]<=shape_result;
+                    top_circle_support[class_index]<=shape_circle_support;
                     if (class_index == 3) state<=S_TRACK_INIT;
                     else begin class_index<=class_index+1'b1; state<=S_CLASS_REQ; end
                 end
@@ -1195,7 +1223,28 @@ module red_multi_run_engine #(
                         track_xmax[best_track]<=top_xmax[best_detection];
                         track_ymin[best_track]<=top_ymin[best_detection];
                         track_ymax[best_track]<=top_ymax[best_detection];
-                        track_shape[best_track]<=top_shape[best_detection];
+                        if (matched_shape != 0 &&
+                            matched_shape == track_shape[best_track]) begin
+                            track_pending_shape[best_track]<=0;
+                            track_shape_hits[best_track]<=0;
+                            track_shape_age[best_track]<=0;
+                        end else if (matched_shape != 0 &&
+                            matched_shape == track_pending_shape[best_track] &&
+                            track_shape_hits[best_track] != 0) begin
+                            track_shape[best_track]<=matched_shape;
+                            track_pending_shape[best_track]<=0;
+                            track_shape_hits[best_track]<=0;
+                            track_shape_age[best_track]<=0;
+                        end else begin
+                            track_pending_shape[best_track]<=matched_shape;
+                            track_shape_hits[best_track]<=matched_shape != 0 ? 1 : 0;
+                            if (track_shape_age[best_track] < 2)
+                                track_shape_age[best_track]<=track_shape_age[best_track]+1'b1;
+                            else begin
+                                track_shape[best_track]<=0;
+                                track_shape_age[best_track]<=2;
+                            end
+                        end
                         best_valid<=0; best_distance<=14'h3fff; pair_index<=0;
                         state<=S_TRACK_SCAN;
                     end else begin track_index<=0; state<=S_MISS; end
@@ -1204,7 +1253,19 @@ module red_multi_run_engine #(
                     if (track_occupied[track_index] && !matched_tracks[track_index]) begin
                         if (!track_confirmed[track_index] || track_misses[track_index] == 2) begin
                             track_occupied[track_index]<=0; track_confirmed[track_index]<=0;
-                        end else track_misses[track_index]<=track_misses[track_index]+1'b1;
+                            track_shape[track_index]<=0; track_pending_shape[track_index]<=0;
+                            track_shape_hits[track_index]<=0; track_shape_age[track_index]<=0;
+                        end else begin
+                            track_misses[track_index]<=track_misses[track_index]+1'b1;
+                            track_pending_shape[track_index]<=0;
+                            track_shape_hits[track_index]<=0;
+                            if (track_shape_age[track_index] < 2)
+                                track_shape_age[track_index]<=track_shape_age[track_index]+1'b1;
+                            else begin
+                                track_shape[track_index]<=0;
+                                track_shape_age[track_index]<=2;
+                            end
+                        end
                     end
                     if (track_index == 3) begin track_index<=0; state<=S_NEW; end
                     else track_index<=track_index+1'b1;
@@ -1217,7 +1278,10 @@ module red_multi_run_engine #(
                         track_xmax[empty_track]<=top_xmax[track_index];
                         track_ymin[empty_track]<=top_ymin[track_index];
                         track_ymax[empty_track]<=top_ymax[track_index];
-                        track_shape[empty_track]<=top_shape[track_index];
+                        track_shape[empty_track]<=0;
+                        track_pending_shape[empty_track]<=top_shape[track_index];
+                        track_shape_hits[empty_track]<=top_shape[track_index] != 0 ? 1 : 0;
+                        track_shape_age[empty_track]<=0;
                     end
                     if (track_index == 3) state<=S_PUBLISH;
                     else track_index<=track_index+1'b1;
@@ -1236,7 +1300,13 @@ module red_multi_run_engine #(
                     end
                     context_open<=0; state<=S_FETCH;
                 end
-                default: begin state<=S_FETCH; context_open<=0; track_occupied<=0; end
+                default: begin
+                    state<=S_FETCH; context_open<=0; track_occupied<=0; track_confirmed<=0;
+                    for (slot=0; slot<4; slot=slot+1) begin
+                        track_shape[slot]<=0; track_pending_shape[slot]<=0;
+                        track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
+                    end
+                end
             endcase
         end
     end
@@ -1259,7 +1329,8 @@ module color_shape_descriptor #(
     input wire [MOM_BITS-1:0] I_mx2,I_my2,
     input wire [COORD_BITS-1:0] I_umin,I_umax,I_vmin,I_vmax,
     output reg O_ready,
-    output reg [1:0] O_shape
+    output reg [1:0] O_shape,
+    output reg O_circle_support
 );
     localparam [3:0] IDLE=0,MULTIPLY=1,METRIC=2,CENTER_START=3,
         CENTER_DONE=4,SPAN_START=5,SPAN_DONE=6,FINISH=7,
@@ -1300,6 +1371,7 @@ module color_shape_descriptor #(
     reg [1:0] projection;
     reg isotropic,centered,skew,circle_metric,square_metric,triangle_metric;
     reg circle_fill;
+    reg circle_support,square_fill,square_spans_ok;
     reg center_negative;
     reg signed [MATH_BITS-1:0] moment;
     reg [COORD_BITS:0] saved_span;
@@ -1310,10 +1382,13 @@ module color_shape_descriptor #(
     wire [MATH_BITS-1:0] area25=(area_wide<<4)+(area_wide<<3)+area_wide;
     wire [MATH_BITS-1:0] area50=(area_wide<<5)+(area_wide<<4)+(area_wide<<1);
     wire [MATH_BITS-1:0] box18=(product<<4)+(product<<1);
+    wire [MATH_BITS-1:0] box17=(product<<4)+product;
     wire [COORD_BITS:0] width={1'b0,xmax}-{1'b0,xmin}+1'b1;
     wire [COORD_BITS:0] height={1'b0,ymax}-{1'b0,ymin}+1'b1;
     wire [COORD_BITS:0] u_span={1'b0,umax}-{1'b0,umin}+1'b1;
     wire [COORD_BITS:0] v_span={1'b0,vmax}-{1'b0,vmin}+1'b1;
+    // Keep 9:8 for circles. Squares may additionally absorb two raster
+    // pixels, but only when a directional coverage gives square evidence.
     wire [COORD_BITS+4:0] w8={width,3'b0},h8={height,3'b0};
     wire [COORD_BITS+4:0] u8={u_span,3'b0},v8={v_span,3'b0};
     reg signed [COORD_BITS+1:0] projection_center;
@@ -1358,15 +1433,16 @@ module color_shape_descriptor #(
             projection<=0; isotropic<=0; centered<=0; skew<=0;
             circle_metric<=0; square_metric<=0; triangle_metric<=0;
             circle_fill<=0;
+            circle_support<=0; square_fill<=0; square_spans_ok<=0;
             moment<=0; center_negative<=0; saved_span<=0;
-            O_ready<=0; O_shape<=0;
+            O_ready<=0; O_shape<=0; O_circle_support<=0;
         end else if (I_clear) begin
-            state<=IDLE; O_ready<=0; O_shape<=0;
+            state<=IDLE; O_ready<=0; O_shape<=0; O_circle_support<=0;
         end else begin
             O_ready<=0;
             case (state)
                 IDLE: if (I_start) begin
-                    O_shape<=0;
+                    O_shape<=0; O_circle_support<=0;
                     if (I_bad || I_area == 0 || I_xmin <= 3 || I_ymin <= 3 ||
                         I_xmax >= IMG_WIDTH-4 || I_ymax >= IMG_HEIGHT-4 ||
                         I_xmax-I_xmin < 11 || I_ymax-I_ymin < 11) O_ready<=1;
@@ -1401,6 +1477,13 @@ module color_shape_descriptor #(
                         product <= (area_wide<<12);
                     isotropic<=w8 <= h8+height && h8 <= w8+width &&
                         u8 <= v8+v_span && v8 <= u8+u_span;
+                    // The old +16 was an absolute two-pixel allowance: enough
+                    // for a 17x15 mask, but only 1.4% of a 141-pixel target.
+                    // Scale the allowance with the target so camera vertical
+                    // compression is not mistaken for a rectangle.
+                    square_spans_ok<=w8 <= h8+height+(height>>2) &&
+                        h8 <= w8+width+(width>>2) &&
+                        u8 <= v8+v_span+16 && v8 <= u8+u_span+16;
                     centered<=1; skew<=0; projection<=0; state<=CIRCLE_X_START;
                 end
                 CIRCLE_X_START: begin
@@ -1410,12 +1493,16 @@ module color_shape_descriptor #(
                 end
                 CIRCLE_X_DONE: begin
                     circle_fill<=area25 >= box18;
+                    circle_support<=area25 >= box17;
+                    square_fill<=area25 <= (product<<4);
                     multiplicand<=u_span; multiplier<=v_span;
                     product<=0; multiply_count<=0; multiply_return<=CIRCLE_U_DONE;
                     state<=MULTIPLY;
                 end
                 CIRCLE_U_DONE: begin
                     circle_fill<=circle_fill && area50 >= box18;
+                    circle_support<=circle_support && area50 >= box17;
+                    square_fill<=square_fill || area50 <= (product<<4);
                     state<=CENTER_START;
                 end
                 CENTER_START: begin
@@ -1436,14 +1523,18 @@ module color_shape_descriptor #(
                     state<=MULTIPLY;
                 end
                 SPAN_DONE: begin
-                    centered<=centered && (deviation<<4) <= product;
+                    // deviation is twice the physical centroid offset:
+                    // 8D <= A*S allows a displacement of S/16.
+                    centered<=centered && (deviation<<3) <= product;
                     skew<=skew || ((deviation<<3)+(deviation<<2)) >= product;
                     if (projection == 3) state<=FINISH;
                     else begin projection<=projection+1'b1; state<=CENTER_START; end
                 end
                 FINISH: begin
+                    O_circle_support<=isotropic && centered && circle_metric && circle_support;
                     if (isotropic && centered && circle_metric && circle_fill) O_shape<=3;
-                    else if (isotropic && centered && square_metric && !circle_fill) O_shape<=1;
+                    else if ((isotropic || (square_spans_ok && square_fill)) &&
+                        centered && square_metric && !circle_fill) O_shape<=1;
                     else if (skew && triangle_metric) O_shape<=2;
                     else O_shape<=0;
                     O_ready<=1; state<=IDLE;

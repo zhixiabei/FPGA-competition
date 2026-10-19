@@ -50,8 +50,7 @@ module tb_display_effects_mixer;
         .I_src_data(source_config), .O_dst_data(requested_config)
     );
     hdmi_mixer #(.IMG_WIDTH(W), .IMG_HEIGHT(H),
-        .SHOW_CAMERA_STATUS(1), .SHOW_COLOR_TARGET(1), .SHOW_EFFECT_LABEL(1),
-        .SHOW_CNN(0)) dut (
+        .SHOW_CAMERA_STATUS(1), .SHOW_COLOR_TARGET(1), .SHOW_EFFECT_LABEL(1)) dut (
         .I_clk(hdmi_clk), .I_rst_n(rst_n),
         .I_video_vsync(vs), .I_video_hsync(hs), .I_video_de(de),
         .I_video_user(user), .I_video_last(last),
@@ -63,7 +62,6 @@ module tb_display_effects_mixer;
         .I_latency_sample_strobe(1'b0), .I_latency_sample_valid(1'b0),
         .I_latency_total_us(20'd0), .I_latency_isp_us(20'd0),
         .I_latency_buffer_us(20'd0),
-        .I_cnn_result_valid(1'b0), .I_cnn_class(3'd1),
         .O_video_rd_en(rd), .O_display_frame_start(frame_start),
         .I_video_rd_data(rgb),
         .I_target_result_ready(1'b1), .I_target_found(1'b1),

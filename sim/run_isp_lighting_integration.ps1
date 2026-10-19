@@ -23,8 +23,7 @@ $sources = @('isp\isp_top.v','isp\lsc_raw10_4x.v','awb.v',
     'isp\rgb_edge_switch_96.v','isp\scharr_edge_detect_96.v',
     'isp\red_target_detect_96.v','isp\motion_target_detect_96.v',
     'isp\target_detect_switch_96.v','isp\data96_128\data96_128.v',
-    'isp\data128_96\data128_96.v',
-    'cnn\cnn_infer_32.v','cnn\cnn_weights.v','cnn\cnn_eram_byte_dp.v')
+    'isp\data128_96\data128_96.v')
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SimBin $tool) -PathType Leaf)) {
         throw "XSim tool is missing: $tool"

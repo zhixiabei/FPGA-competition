@@ -40,7 +40,7 @@ if {[catch {
     bitgen -bit [file join $build_dir ${sc520_project}.bit]
     puts "SC520_BUILD_PASS: $sc520_project"
     puts "Internal build output: $build_dir"
-    puts "Use build_firmware.cmd to update firmware/anlogic_edge_osd.bit."
+    puts "Use build_firmware.cmd to update the TD best_result programming bitstream."
 } detail]} {
     puts stderr "SC520_BUILD_FAIL: $sc520_project: $detail"
     exit 1

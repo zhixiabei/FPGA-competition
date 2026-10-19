@@ -30,7 +30,7 @@ module tb_latency_display_toggle;
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(LATENCY), \
         .LATENCY_SWITCH_ENABLE(TOGGLE),.MULTI_TARGET_ENABLE(1), \
         .SHOW_CAMERA_STATUS(1),.SHOW_COLOR_TARGET(1), \
-        .SHOW_EFFECT_LABEL(1),.SHOW_CNN(0)) NAME ( \
+        .SHOW_EFFECT_LABEL(1)) NAME ( \
         .I_clk(hdmi_clk),.I_rst_n(rst_n),.I_video_de(de), \
         .I_video_user(user),.I_video_last(last),.I_video_hsync(hs), \
         .I_video_vsync(vs),.I_effect_mode(effect_mode),.I_effect_param(8'd0), \
@@ -40,7 +40,6 @@ module tb_latency_display_toggle;
         .I_latency_show(switch_high),.I_latency_sample_strobe(sample_strobe), \
         .I_latency_sample_valid(sample_valid),.I_latency_total_us(total_us), \
         .I_latency_isp_us(isp_us),.I_latency_buffer_us(buffer_us), \
-        .I_cnn_result_valid(1'b0),.I_cnn_class(3'd0), \
         .I_target_result_ready(1'b1),.I_target_found(1'b1), \
         .I_target_motion_mode(1'b0),.I_target_color_mode(2'd0),.I_target_xmin(12'd900), \
         .I_target_xmax(12'd950),.I_target_ymin(12'd110), \

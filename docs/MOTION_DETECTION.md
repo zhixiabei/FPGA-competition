@@ -1,8 +1,8 @@
 # 2026-10-16 K2 运动检测稳定版
 
-在下载器中选择项目根目录下的
-[firmware/anlogic_edge_osd.bit](../firmware/anlogic_edge_osd.bit)，再按原流程烧录。
-它是原稳定版 bit 的固定路径，内容未重新编译或改变。
+本页记录的历史稳定版 SHA256 见下文；当前烧录统一使用
+`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`，
+重新构建后在下载器中重新加载该文件。
 上电默认彩色和红色检测，按 K2 切到 `MOV`。
 固定摄像头，等待曝光稳定后持续移动物体验证。
 

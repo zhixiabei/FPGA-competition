@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 module tb_color_shape_target #(
     parameter integer W=320,
-    parameter integer H=240
+    parameter integer H=240,
+    parameter integer GEOMETRY_PROBE_ONLY=0
 );
     localparam integer GROUPS=W/4;
     localparam [1:0] SH_UNKNOWN=0, SH_SQUARE=1, SH_TRIANGLE=2, SH_CIRCLE=3;
@@ -43,6 +44,66 @@ module tb_color_shape_target #(
     integer noisy_id=64, noisy_cases=0, noisy_phase;
     reg [12:0] noisy_view_modes=0;
     integer multi_slots [0:3];
+    integer raw_unknown=0, raw_hard_bad=0, raw_size_border=0;
+    integer raw_geometry=0, raw_centroid=0, raw_metric=0, geometry_probes=0;
+    integer current_probe=-1;
+
+    // Observe the classifier before track smoothing. A passing held label
+    // must not conceal a persistent contour or geometry rejection.
+    always @(negedge clk) begin
+        if(GEOMETRY_PROBE_ONLY && rst_n &&
+           dut.gen_multi.u_engine.shape_ready && current_probe>=0)
+            $display("COLOR_SHAPE_GEOMETRY_RAW pattern=%0d frame=%0d shape=%0d hard_bad=%b iso=%b centered=%b circle_metric=%b square_metric=%b triangle_metric=%b circle_fill=%b skew=%b",
+                current_probe,dut.gen_multi.u_engine.context_id,
+                dut.gen_multi.u_engine.shape_result,
+                dut.gen_multi.u_engine.class_bad,
+                dut.gen_multi.u_engine.u_shape.isotropic,
+                dut.gen_multi.u_engine.u_shape.centered,
+                dut.gen_multi.u_engine.u_shape.circle_metric,
+                dut.gen_multi.u_engine.u_shape.square_metric,
+                dut.gen_multi.u_engine.u_shape.triangle_metric,
+                dut.gen_multi.u_engine.u_shape.circle_fill,
+                dut.gen_multi.u_engine.u_shape.skew);
+        if(rst_n && dut.gen_multi.u_engine.shape_ready &&
+           dut.gen_multi.u_engine.shape_result==SH_UNKNOWN) begin
+            raw_unknown=raw_unknown+1;
+            if(dut.gen_multi.u_engine.class_bad)
+                raw_hard_bad=raw_hard_bad+1;
+            else if(dut.gen_multi.u_engine.top_xmin[dut.gen_multi.u_engine.class_index]<=3 ||
+                    dut.gen_multi.u_engine.top_ymin[dut.gen_multi.u_engine.class_index]<=3 ||
+                    dut.gen_multi.u_engine.top_xmax[dut.gen_multi.u_engine.class_index]>=W-4 ||
+                    dut.gen_multi.u_engine.top_ymax[dut.gen_multi.u_engine.class_index]>=H-4 ||
+                    dut.gen_multi.u_engine.top_xmax[dut.gen_multi.u_engine.class_index]-
+                        dut.gen_multi.u_engine.top_xmin[dut.gen_multi.u_engine.class_index]<11 ||
+                    dut.gen_multi.u_engine.top_ymax[dut.gen_multi.u_engine.class_index]-
+                        dut.gen_multi.u_engine.top_ymin[dut.gen_multi.u_engine.class_index]<11)
+                raw_size_border=raw_size_border+1;
+            else begin
+                if(!dut.gen_multi.u_engine.u_shape.isotropic)
+                    raw_geometry=raw_geometry+1;
+                if(!dut.gen_multi.u_engine.u_shape.centered ||
+                   (dut.gen_multi.u_engine.u_shape.triangle_metric &&
+                    !dut.gen_multi.u_engine.u_shape.skew))
+                    raw_centroid=raw_centroid+1;
+                if(!(dut.gen_multi.u_engine.u_shape.circle_metric &&
+                     dut.gen_multi.u_engine.u_shape.circle_fill) &&
+                   !(dut.gen_multi.u_engine.u_shape.square_metric &&
+                     !dut.gen_multi.u_engine.u_shape.circle_fill) &&
+                   !dut.gen_multi.u_engine.u_shape.triangle_metric)
+                    raw_metric=raw_metric+1;
+            end
+            $display("COLOR_SHAPE_RAW_UNKNOWN frame=%0d candidate=%0d hard_bad=%b iso=%b centered=%b circle_metric=%b square_metric=%b triangle_metric=%b circle_fill=%b skew=%b",
+                dut.gen_multi.u_engine.context_id,dut.gen_multi.u_engine.class_index,
+                dut.gen_multi.u_engine.class_bad,
+                dut.gen_multi.u_engine.u_shape.isotropic,
+                dut.gen_multi.u_engine.u_shape.centered,
+                dut.gen_multi.u_engine.u_shape.circle_metric,
+                dut.gen_multi.u_engine.u_shape.square_metric,
+                dut.gen_multi.u_engine.u_shape.triangle_metric,
+                dut.gen_multi.u_engine.u_shape.circle_fill,
+                dut.gen_multi.u_engine.u_shape.skew);
+        end
+    end
 
     always @(posedge clk) begin
         #1;
@@ -336,6 +397,55 @@ module tb_color_shape_target #(
                 // square boundaries: high dual-box fill and low raster Q.
                 32: square_quarter((96+offset)*4,96*4,26,980,295);
                 33: square_quarter((96+offset)*4+2,96*4+2,24,779,665);
+                34: begin
+                    // Deliberate ambiguity probe: a 65x55 rectangle is not a
+                    // true square, but resembles a mildly foreshortened one.
+                    for(y=69;y<=123;y=y+1)
+                        for(x=64+offset;x<=128+offset;x=x+1)
+                            image[y*W+x]=foreground;
+                end
+                35: begin
+                    // Deliberate ambiguity probe, not a circular positive.
+                    for(y=1;y<H-1;y=y+1)
+                        for(x=1;x<W-1;x=x+1) begin
+                            dx=x-(96+offset); dy=y-96;
+                            if(dx*dx*30*30+dy*dy*35*35<=35*35*30*30)
+                                image[y*W+x]=foreground;
+                        end
+                end
+                36: begin
+                    // A convex, mildly skewed trapezoid models a projected
+                    // square. It has no holes or scanline topology defect.
+                    for(y=64;y<=128;y=y+1)
+                        for(x=64+offset;x<=116+offset+(y-64)*3/16;x=x+1)
+                            image[y*W+x]=foreground;
+                end
+                37: begin
+                    // Large asymmetric boundary loss is deliberately beyond
+                    // the conservative diagonal-span guard.
+                    square(96+offset,96,32,1024,0);
+                    for(y=64;y<=87;y=y+1)
+                        for(x=112+offset;x<=128+offset;x=x+1)
+                            image[y*W+x]=24'h101010;
+                end
+                38: begin
+                    // Missing a nine-pixel cap must not turn a circle into
+                    // a square when only centroid tolerance is relaxed.
+                    disk(96+offset,96,32);
+                    for(y=1;y<H-1;y=y+1)
+                        for(x=120+offset;x<W-1;x=x+1)
+                            image[y*W+x]=24'h101010;
+                end
+                39: begin
+                    // Centered trapezoid: 35-pixel top, 65-pixel bottom,
+                    // 65 rows. It exercises centroid tolerance without
+                    // introducing holes or disconnected scanline runs.
+                    for(y=64;y<=128;y=y+1) begin
+                        row_shift=17+(y-64)*15/64;
+                        for(x=96+offset-row_shift;x<=96+offset+row_shift;x=x+1)
+                            image[y*W+x]=foreground;
+                    end
+                end
                 default: $fatal(1,"Unknown shape pattern kind=%0d",kind);
             endcase
         end
@@ -467,6 +577,32 @@ module tb_color_shape_target #(
             noisy_cases=noisy_cases+1;
         end
     endtask
+    task geometry_probe;
+        input integer id,kind;
+        integer s;
+        reg [1:0] expected;
+        begin
+            clear_tracking();
+            current_probe=kind;
+            pattern(kind,0);
+            send_frame(id,H,96); count_is(id,0,0);
+            send_frame(id+1,H,96); count_is(id+1,1,0);
+            // The diagnostic-only mode compares deliberately different RTL
+            // variants. The normal regression locks down the final policy.
+            expected=(kind==36 || kind==39) ? SH_SQUARE : SH_UNKNOWN;
+            for(s=0;s<4;s=s+1)
+                if(seen_found[id+1][s]) begin
+                    $display("COLOR_SHAPE_GEOMETRY_PROBE pattern=%0d shape=%0d box=%0d,%0d,%0d,%0d",
+                        kind,result_shape(id+1,s),bxmin(id+1,s),bxmax(id+1,s),
+                        bymin(id+1,s),bymax(id+1,s));
+                    if(!GEOMETRY_PROBE_ONLY && result_shape(id+1,s)!==expected)
+                        $fatal(1,"Conservative geometry policy changed pattern=%0d expected=%0d got=%0d",
+                            kind,expected,result_shape(id+1,s));
+                end
+            geometry_probes=geometry_probes+1;
+            current_probe=-1;
+        end
+    endtask
 
     initial begin
         if(W<288 || H<224 || W%4 != 0)
@@ -483,21 +619,36 @@ module tb_color_shape_target #(
         end
         blank(4); @(negedge clk); rst_n=1;
 
+        if(GEOMETRY_PROBE_ONLY) begin
+            geometry_probe(1,34);
+            geometry_probe(3,35);
+            geometry_probe(5,36);
+            geometry_probe(7,37);
+            geometry_probe(9,38);
+            geometry_probe(11,39);
+            $display("COLOR_SHAPE_GEOMETRY_PROBE_PASS probes=%0d raw_unknown=%0d hard_bad=%0d size_border=%0d geometry=%0d centroid=%0d metric=%0d",
+                geometry_probes,raw_unknown,raw_hard_bad,raw_size_border,
+                raw_geometry,raw_centroid,raw_metric);
+            $finish;
+        end
+
         pattern(0,0);
         send_frame(1,H,96); count_is(1,0,0);
         send_frame(2,H,96); single_shape_is(2,SH_SQUARE);
         locate_shape(2,96,96,SH_SQUARE,previous_slot);
         pattern(3,0);
-        send_frame(3,H,96); single_shape_is(3,SH_CIRCLE);
-        locate_shape(3,96,96,SH_CIRCLE,slot);
+        send_frame(3,H,96); single_shape_is(3,SH_SQUARE);
+        send_frame(4,H,96); single_shape_is(4,SH_CIRCLE);
+        locate_shape(4,96,96,SH_CIRCLE,slot);
         if(slot != previous_slot) $fatal(1,"Shape change unnecessarily changed track identity");
         pattern(11,0);
-        send_frame(4,H,96); count_is(4,1,1);
         send_frame(5,H,96); count_is(5,1,1);
-        if(result_shape(4,slot) !== SH_CIRCLE || result_shape(5,slot) !== SH_CIRCLE)
+        send_frame(6,H,96); count_is(6,1,1);
+        if(result_shape(5,slot) !== SH_CIRCLE || result_shape(6,slot) !== SH_CIRCLE)
             $fatal(1,"Hold lost the confirmed shape");
-        send_frame(6,H,96); count_is(6,0,0);
+        send_frame(7,H,96); count_is(7,0,0);
 
+        isolated_case(8,36,SH_SQUARE);
         isolated_case(10,1,SH_SQUARE);
         isolated_case(12,2,SH_SQUARE);
         isolated_case(14,4,SH_TRIANGLE);
@@ -506,6 +657,13 @@ module tb_color_shape_target #(
         isolated_case(20,7,SH_UNKNOWN);
         isolated_case(22,8,SH_UNKNOWN);
         isolated_case(24,9,SH_UNKNOWN);
+        isolated_case(26,37,SH_UNKNOWN);
+        // Keep the conservative span guard on these deliberate ambiguity
+        // cases. Reopening it would newly accept all three as shape codes.
+        geometry_probe(28,34);
+        geometry_probe(56,35);
+        geometry_probe(58,38);
+        isolated_case(62,39,SH_SQUARE);
 
         // Exercise the same shared feature pipeline in all selected colors,
         // including the yellow-green camera color from the green regression.
@@ -622,12 +780,13 @@ module tb_color_shape_target #(
             $fatal(1,"Incomplete real-mask robustness coverage: %0d views=%h",
                 noisy_cases,noisy_view_modes);
 
-        $display("COLOR_SHAPE_TARGET_PASS W=%0d H=%0d results=%0d checks=%0d colors=RED,GRN,BLU shapes=SQR,TRI,CIR,UNK noisy_cases=%0d",
-            W,H,results,checks,noisy_cases);
+        $display("COLOR_SHAPE_TARGET_PASS W=%0d H=%0d results=%0d checks=%0d colors=RED,GRN,BLU shapes=SQR,TRI,CIR,UNK noisy_cases=%0d probes=%0d raw_unknown=%0d hard_bad=%0d size_border=%0d geometry=%0d centroid=%0d metric=%0d",
+            W,H,results,checks,noisy_cases,geometry_probes,raw_unknown,
+            raw_hard_bad,raw_size_border,raw_geometry,raw_centroid,raw_metric);
         $finish;
     end
     initial begin
-        #(64'd100000000+64'd112*H*(W/4+96)*10);
+        #(64'd100000000+64'd116*H*(W/4+96)*10);
         $fatal(1,"Shape regression watchdog");
     end
 endmodule

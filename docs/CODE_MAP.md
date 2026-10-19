@@ -18,17 +18,28 @@
 实际操作与限制见[多颜色目标说明](RED_MULTI_TARGET.md)及[形状算法说明](COLOR_SHAPE.md)。
 形状分类器在 `isp/red_target_detect_96.v` 同文件内，Top4 共用串行乘法器；
 形状随轨迹、DDR 槽和 HDMI 帧首锁存，不新增整幅边缘图或 DDR 图像访问。
-支持图像平面内旋转和普通不等边三角形；未做透视矫正。
+同类形状连续两次才确认或切换，单帧波动保留旧类，连续第三帧仍不稳定时清为 `UNK`。
+新轨迹第一帧同时记录待确认形状，干净目标第二帧出框时即可显示类别。
+支持图像平面内旋转和普通不等边三角形；圆形保持 `9/8` 投影限制，方形有条件增加两像素跨度容差。
+已确认圆可通过 68% 的双方向覆盖保持类别，新圆仍要求 72%；质心容差为跨度的 `1/16`。
+未做透视矫正，近方长方形和低轴比椭圆可能分别混淆为 `SQR`、`CIR`。
+当前已移除 CNN 推理、权重、专用 RAM、结果跨域，以及 HDMI 手势标签与中心裁剪框；
+颜色形状、运动检测、K1 十三项显示算法及延迟监测继续使用原有通路。
 
-当前十三模式与掩码清理版 `src-99b844d4d471` 于 2026-10-19 17:25:45（北京时间）
-通过最终布局布线并生成 bit：Slice 19,660/21,216（92.67%）、LUT6 18,977、
-寄存器 18,330、ERAM 84/108、DSP 19/40，建立/保持余量 +0.034/+0.020 ns。
-相对前一形状版 `src-259cc85e48e1`，减少 370 Slice、134 LUT6 和 914 个寄存器，
-增加 2 个 ERAM，DSP 不变；当前剩余 1,556 Slice、24 个 ERAM。
-两份 bit SHA256 均为
-`12C57AF945EF7656FFC8998122BB4F21DF527E2DF16EB401239CFA3D1736FD2D`，
-身份见 [发布清单](../build/release/release_manifest.json)。
-227 个生产输入与当前工作区及构建清单逐项一致；实物效果仍需烧录后确认。
+最新资源与验证见 [方形像素容差与圆形特征保持修订](SHAPE_BOUNDARY_FIX.md)。
+以下为前版形状容差与时间稳定版 `src-f2960ad79fd7`，于 2026-10-19 19:32:11（北京时间）
+通过最终布局布线并发布 bit：Slice 19,044/21,216（89.76%）、LUT6 18,292、
+寄存器 17,886、ERAM 79/108、DSP 15/40，建立/保持余量 +0.106/+0.020 ns。
+前版 CNN 移除版 `src-5ad2d432a102` 为 19,046 Slice、18,292 LUT6、17,863 寄存器、
+79 ERAM、15 DSP；本次 Slice 减少 2、寄存器增加 23，其他三项不变。
+该版剩余 2,172 Slice、29 ERAM 和 25 DSP。
+222 个生产输入与发布清单逐项一致，源码指纹为
+`F2960AD79FD7AB257B863F26E3A97F6F0E0E893159DACB5A7DC946CC0DFB34E7`。
+两份 bit 均为 1,789,539 字节，SHA256 为
+`0A9663FE1C7DBF1D75CCD65929F6022408F6C5168208B04CEE0D5D4C8FB4B25A`。
+完整身份见 [发布清单](../build/release/release_manifest.json)，本次验证见
+[形状容差证据包](../build/verification/shape_tolerance_regression.zip)；
+前版保存在 [CNN 移除证据包](../build/verification/cnn_removal_regression.zip)，实物效果仍需烧录后确认。
 
 ## 十三项显示模式
 
@@ -82,10 +93,10 @@ MOV 下预览默认红色掩码。当前与历史验证分列于 [仿真说明](
 颜色通道先平滑，再取八级色阶并扩展回 8 位，最后将原 NMS 轮廓置黑。
 红绿保色不使用该邻域缓存，在 HDMI 端按 RGB 通道条件处理。
 新增 Scharr 反色与形态学复用已有正边缘和第一层灰度窗口，不增加行缓存、DSP 或 DDR 图像访问。
-本轮十三模式控制器通过 632 项检查，像素模块通过 972,815 次参考对照，
-名称/mixer 核对 40 帧、5,160,960 个像素；DDR 对齐覆盖全部十三项模式。
-新掩码逐像素参考覆盖便携和厂商 RAM、红/绿/蓝/运动及帧中配置请求；
-此前九模式 720p 图像参考作为历史保留，分别见 [仿真说明](../sim/README.md)。
+删除 CNN 前版的十三模式控制器通过 632 项检查，像素模块通过 972,815 次参考对照，
+掩码逐像素参考覆盖便携和厂商 RAM、红/绿/蓝/运动及帧中配置请求。
+前版 CNN 移除重新核对名称/mixer 的 40 帧、5,160,960 个像素；
+DDR 对齐覆盖全部十三项模式。历史专项、CNN 移除集成与本次形状回归分别见 [仿真说明](../sim/README.md)。
 浮雕[合成输入](../build/verification/emboss_synthetic_input.png)与
 [RTL 输出](../build/verification/emboss_synthetic_rtl.png)可对照；它们不是实物摄像头画面。
 漫画[合成输入](../build/verification/cartoon_synthetic_input.png)与
@@ -101,9 +112,9 @@ ERAM 69/108、DSP 13/40，建立/保持余量 +0.128/+0.020 ns。
 
 资源和时序报告位于 [资源报告](../build/release/system_phy.area) 与
 [最终时序](../build/release/system_pr.timing)，需结合清单的源码指纹判断版本。
-根目录构建入口成功后更新 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`
-和 `firmware` 副本。固定报告路径随成功构建更新，需按
-[构建清单](../build/release/release_manifest.json) 核对源码身份。本轮回归日志和源码校验值见
+根目录构建入口成功后只更新 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。
+固定报告路径随成功构建更新，需按
+[构建清单](../build/release/release_manifest.json) 核对源码身份。删除 CNN 前版的回归日志和源码校验值见
 [十三模式与掩码回归证据包](../build/verification/color_mask_regression.zip)；
 [九模式验证证据包](../build/verification/algorithm_regression.zip)保留为历史。
 Scharr 反色与形态学在红色/运动两种检测配置的旧 ISP 选择与打包检查属于历史回归；
@@ -144,7 +155,7 @@ ERAM 62/108、DSP 13/40；现有约束下建立余量 +0.181 ns、保持 +0.020 
 Gate 增量不能与 Routed 占用混算。
 报告和源哈希保存在
 `%TEMP%/anlogic_image_quality_55b224aa056449fda19b046578ca1771/`；
-该次检查未更新 `build/release`、`firmware` 和 TD 的 `best_result`。
+该次检查未更新 `build/release` 或 TD 的 `best_result`。
 
 ## 2026-10-16 处理延迟可视化
 

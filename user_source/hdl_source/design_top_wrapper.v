@@ -129,12 +129,6 @@ module design_top_wrapper #(
     wire [1:0]  S_ISP_color_mode_active;
     wire        S_ISP_edge_mode_active;
     wire [11:0] S_ISP_effect_config;
-    wire        S_ISP_cnn_result_valid;
-    wire [2:0]  S_ISP_cnn_class;
-    wire        S_ISP_cnn_busy;
-    wire        S_ISP_cnn_overrun;
-    wire        S_cnn_result_valid_hdmi;
-    wire [2:0]  S_cnn_class_hdmi;
     reg [11:0]  S_target_frame_effect_config;
     wire        S_ISP_ae_stats_valid;
     wire [31:0] S_ISP_ae_sum_y;
@@ -1082,24 +1076,9 @@ isp_top #(
 .O_ae_sum_y            (S_ISP_ae_sum_y),
 .O_ae_sample_count     (S_ISP_ae_sample_count),
 .O_ae_bright_count     (S_ISP_ae_bright_count),
-.O_cnn_result_valid    (S_ISP_cnn_result_valid),
-.O_cnn_class           (S_ISP_cnn_class),
-.O_cnn_busy            (S_ISP_cnn_busy),
-.O_cnn_overrun         (S_ISP_cnn_overrun),
 .O_latency_frame_id   (S_isp_frame_id),
 .I_tready        ()
   );
-
-    cnn_result_cdc u_cnn_result_cdc (
-        .I_src_clk(S_csi_rx_clk),
-        .I_dst_clk(S_hdmi_pixel_clk),
-        .I_rst_n(S_rst_n),
-        .I_src_valid(S_ISP_cnn_result_valid),
-        .I_src_class(S_ISP_cnn_class),
-        .O_dst_valid(S_cnn_result_valid_hdmi),
-        .O_dst_class(S_cnn_class_hdmi)
-    );
-
 
     video_in u_video_in(
         .I_rst_n              (  S_rst_n             ),
@@ -1283,8 +1262,6 @@ isp_top #(
         .I_latency_total_us(S_latency_total_us),
         .I_latency_isp_us(S_latency_isp_us),
         .I_latency_buffer_us(S_latency_buffer_us),
-        .I_cnn_result_valid(S_cnn_result_valid_hdmi),
-        .I_cnn_class(S_cnn_class_hdmi),
         .O_display_frame_start(S_display_frame_start),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),
