@@ -68,6 +68,13 @@ module tb_color_target_modes;
         send_case(2'd0,24'hf02020,1'b1);
         send_case(2'd0,24'h20f020,1'b0);
         send_case(2'd1,24'h20f020,1'b1);
+        // Camera/AWB greens are often shifted away from pure green.
+        send_case(2'd1,24'h50961e,1'b1); // Yellow-green: (80,150,30).
+        send_case(2'd1,24'h1e7850,1'b1); // Cyan-green: (30,120,80).
+        send_case(2'd1,24'h64782d,1'b0); // Too little green saturation.
+        send_case(2'd1,24'hb4c814,1'b0); // Yellow, not green.
+        send_case(2'd1,24'h14c8b4,1'b0); // Cyan, not green.
+        send_case(2'd1,24'h646e64,1'b0); // Near-gray AWB noise.
         send_case(2'd1,24'h2020f0,1'b0);
         send_case(2'd2,24'h2020f0,1'b1);
         send_case(2'd2,24'hf02020,1'b0);

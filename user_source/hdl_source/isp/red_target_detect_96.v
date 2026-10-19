@@ -60,13 +60,15 @@ module red_target_detect_96 #(
     // data128_96 puts the earliest pixel in bits 95:72, and AWB preserves
     // that order. video_out displays the most-significant bytes first.
     //
-    // Use normalized chroma/hue bounds instead of a large absolute channel
-    // difference, so dim red retains the same color decision as bright red.
-    // For red as the largest channel these integer comparisons require:
+    // Red and blue use normalized chroma/hue bounds instead of a large
+    // absolute channel difference. For a selected primary as the largest
+    // channel these integer comparisons require:
     //   max(G,B) <= 2R/3 and |G-B| <= (R-min(G,B))/3.
-    // The latter is the +/-20 degree red HSV hue interval. No divider, DSP,
-    // hue conversion or maximum/minimum datapath is needed. RED_MIN and the
-    // small RED_DELTA remain as a floor against dark channel noise.
+    // Green objects from the camera are commonly shifted toward yellow-green
+    // or cyan-green by the illuminant and AWB. Green therefore keeps the same
+    // floor/delta checks but uses max(R,B) <= 4G/5 without requiring R and B
+    // to be balanced around pure green. No divider or DSP is needed.
+    // RED_MIN and RED_DELTA remain as a floor against dark channel noise.
     // Low-saturation pink/white and orange/purple are outside these bounds;
     // genuinely clipped pixels cannot recover their original color here.
     wire [3:0] red_mask;
@@ -87,6 +89,11 @@ module red_target_detect_96 #(
             wire [9:0] triple_blue;
             wire [9:0] hue_green_limit;
             wire [9:0] hue_blue_limit;
+            wire [10:0] four_dominant;
+            wire [10:0] five_secondary_a;
+            wire [10:0] five_secondary_b;
+            wire strict_primary_mask;
+            wire relaxed_green_mask;
             always @(*) begin
                 case (I_color_mode)
                     2'd1: begin dominant=green_in; secondary_a=red_in; secondary_b=blue_in; end
@@ -101,12 +108,23 @@ module red_target_detect_96 #(
             assign triple_blue = {2'b0,blue} + {1'b0,blue,1'b0};
             assign hue_green_limit = {1'b0,red} + {1'b0,blue,1'b0};
             assign hue_blue_limit = {1'b0,red} + {1'b0,green,1'b0};
-            assign red_mask[p] = (red >= RED_MIN_9) &&
-                                (red >= green_limit) && (red >= blue_limit) &&
-                                (twice_red >= triple_green) &&
-                                (twice_red >= triple_blue) &&
-                                (triple_green <= hue_green_limit) &&
-                                (triple_blue <= hue_blue_limit);
+            assign four_dominant = {red,2'b0};
+            assign five_secondary_a = {1'b0,green,2'b0} + {3'b0,green};
+            assign five_secondary_b = {1'b0,blue,2'b0} + {3'b0,blue};
+            assign strict_primary_mask =
+                (red >= RED_MIN_9) &&
+                (red >= green_limit) && (red >= blue_limit) &&
+                (twice_red >= triple_green) &&
+                (twice_red >= triple_blue) &&
+                (triple_green <= hue_green_limit) &&
+                (triple_blue <= hue_blue_limit);
+            assign relaxed_green_mask =
+                (red >= RED_MIN_9) &&
+                (red >= green_limit) && (red >= blue_limit) &&
+                (four_dominant >= five_secondary_a) &&
+                (four_dominant >= five_secondary_b);
+            assign red_mask[p] = I_color_mode == 2'd1 ?
+                                 relaxed_green_mask : strict_primary_mask;
         end
     endgenerate
 

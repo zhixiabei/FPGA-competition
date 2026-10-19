@@ -10,7 +10,7 @@
 
 ## 怎么用
 
-1. 当前红/绿/蓝/运动版 `src-226b3d8abb02` 已完成回归、布局布线和 bit 发布。在下载器中重新加载 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit` 并烧录。
+1. 当前红/绿/蓝/运动版 `src-01db79ce9d0f` 已完成回归、布局布线和 bit 发布。在下载器中重新加载 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit` 并烧录。
 2. `firmware/anlogic_edge_osd.bit` 是同内容副本；版本、时序和 SHA256 见 `build/release/release_manifest.json`。
 3. 上电默认显示 `00 COLOR GAMMA`。**K1** 按 `00 原画+Gamma → 01 灰度 → 02 Scharr → 03 反色 → 04 浮雕 → 05 红绿保色 → 06 漫画 → 07 Scharr反色 → 08 形态学边缘 → 00` 单向循环；默认按四次 K1 到 `04 EMBOSS`。
 4. 上电默认红色目标检测。每按一下 **K2** 按 `红色 → 绿色 → 蓝色 → 帧差运动 → 红色` 循环。
@@ -51,18 +51,18 @@ bit 生成，成功后更新 `best_result/anlogic_edge_osd.bit` 和 `firmware/an
 
 ## 当前构建状态
 
-当前颜色切换生产版本 `src-226b3d8abb02` 于 2026-10-19 10:23:04（北京时间）
-完成综合、最终布局布线和 bit 发布。最终 Slice 18,341/21,216（86.45%）、
-LUT6 17,562、寄存器 17,822、ERAM 79/108、DSP 17/40；
-建立余量 +0.021 ns，保持余量 +0.020 ns，均无违例。
+当前颜色切换生产版本 `src-01db79ce9d0f` 于 2026-10-19 11:12:00（北京时间）
+完成综合、最终布局布线和 bit 发布。最终 Slice 18,463/21,216（87.02%）、
+LUT6 17,654、寄存器 17,826、ERAM 79/108、DSP 17/40；
+建立余量 +0.100 ns，保持余量 +0.016 ns，均无违例。
 显示配置 13 ns 约束和目标帧 20/20/13 ns 约束均通过健康检查，
 不存在无效约束或无路径约束。
 
-相对上一发布版 `src-ba01b507ce95`，本轮增加 235 Slice 和 140 LUT6，
-寄存器减少 66，ERAM 与 DSP 不变。说明红、绿、蓝共用颜色检测链没有复制三套
+相对上一发布版 `src-226b3d8abb02`，本轮增加 122 Slice、92 LUT6 和 4 个寄存器，
+ERAM 与 DSP 不变。说明红、绿、蓝共用颜色检测链没有复制三套
 滤波、区域连接和跟踪硬件，但当前芯片整体 Slice 余量仍较紧。
 两份 bit 内容一致，SHA256 为
-`EED6860A0D9C6AB5D16CB846A090E40A82DB0EFE5D89B5A787B4AA80E237CCFC`；
+`375D915059D44436EFB5F17A06AB82DF6BF142521A91DBEB983CACE3D06952F0`；
 完整身份见 [发布清单](../build/release/release_manifest.json)。
 
 ## 工程检查

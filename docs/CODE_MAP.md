@@ -15,11 +15,11 @@
 左下显示 `RED/GRN/BLU COUNT:0..4` 或 `MOV COUNT:0..1`。
 实际操作与限制见[红色多目标说明](RED_MULTI_TARGET.md)。
 
-当前发布 `src-226b3d8abb02` 已通过最终布局布线并生成 bit：Slice 18,341/21,216（86.45%）、
-LUT6 17,562、寄存器 17,822、ERAM 79/108、DSP 17/40，
-建立/保持余量 +0.021/+0.020 ns。相对上一已发布版增加 235 Slice 和 140 LUT6，
+当前发布 `src-01db79ce9d0f` 已通过最终布局布线并生成 bit：Slice 18,463/21,216（87.02%）、
+LUT6 17,654、寄存器 17,826、ERAM 79/108、DSP 17/40，
+建立/保持余量 +0.100/+0.016 ns。相对上一已发布版增加 122 Slice、92 LUT6 和 4 个寄存器，
 ERAM/DSP 不变。两份 bit SHA256 均为
-`EED6860A0D9C6AB5D16CB846A090E40A82DB0EFE5D89B5A787B4AA80E237CCFC`，
+`375D915059D44436EFB5F17A06AB82DF6BF142521A91DBEB983CACE3D06952F0`，
 身份见 [发布清单](../build/release/release_manifest.json)。
 
 ## 2026-10-17 九项显示模式
@@ -339,7 +339,7 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
 | 改边缘阈值 | [isp_top.v](../user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 单阈值 20；原始 Scharr 幅值门槛为 320 |
-| 改颜色判定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v)、[red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | u_red、I_color_mode、gen_red | 主通道最小 24、领先至少 6、MIN_PIXELS=128；红绿蓝共用比例及主色色相范围 |
+| 改颜色判定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v)、[red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | u_red、I_color_mode、gen_red | 主通道最小 24、领先至少 6、MIN_PIXELS=128；红蓝使用严格主色色相，绿色允许红蓝分量分别达到 G 的 80% |
 | 改运动检测门槛 | [isp_top.v](../user_source/hdl_source/isp/isp_top.v)、[target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | DIFF_THRESHOLD、MIN_BLOCKS、GLOBAL_CHANGE_PERCENT、motion_result_stabilizer 参数 | 生产均值差≥10、至少12变化块；3帧确认、8像素死区、四分之一平滑及支持/光照过滤 |
 | 改自动曝光参数 | [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v)、[design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | TARGET_LOW/HIGH、DARK/BRIGHT_FAST、GAIN_MAX、AVERAGE_FRAMES | 当前目标96..120、范围E4..1991/G16..176、六帧平均；改后必须重跑曝光闭环和完整构建 |
 | 改白平衡 | [awb.v](../user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
