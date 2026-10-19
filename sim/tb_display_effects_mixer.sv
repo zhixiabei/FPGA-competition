@@ -66,7 +66,7 @@ module tb_display_effects_mixer;
         .O_video_rd_en(rd), .O_display_frame_start(frame_start),
         .I_video_rd_data(rgb),
         .I_target_result_ready(1'b1), .I_target_found(1'b1),
-        .I_target_motion_mode(1'b1),
+        .I_target_motion_mode(1'b1), .I_target_color_mode(2'd0),
         .I_target_xmin(12'd180), .I_target_xmax(12'd279),
         .I_target_ymin(12'd170), .I_target_ymax(12'd189),
         .I_target_center_x(12'd229), .I_target_center_y(12'd179),

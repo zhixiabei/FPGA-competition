@@ -12,10 +12,12 @@ module target_frame_bridge #(
     input wire [9:0] I_frame_id,
     input wire [11:0] I_effect_config,
     input wire I_motion_mode,
+    input wire [1:0] I_color_mode,
     input wire I_result_ready,
     input wire [9:0] I_result_frame_id,
     input wire I_result_found,
     input wire I_result_motion_mode,
+    input wire [1:0] I_result_color_mode,
     input wire [11:0] I_result_xmin,
     input wire [11:0] I_result_xmax,
     input wire [11:0] I_result_ymin,
@@ -34,6 +36,7 @@ module target_frame_bridge #(
     output reg O_ready,
     output reg [11:0] O_effect_config,
     output reg O_motion_mode,
+    output reg [1:0] O_color_mode,
     output reg O_found,
     output reg [11:0] O_xmin,
     output reg [11:0] O_xmax,
@@ -49,9 +52,9 @@ module target_frame_bridge #(
     // Clipped 720p coordinates need 11 x bits and 10 y bits. Keep the
     // external 12-bit ports while storing only significant payload bits.
     localparam integer BOX_WIDTH = 42;
-    localparam integer BODY_WIDTH = 242;
+    localparam integer BODY_WIDTH = 244;
     localparam integer RESULT_WIDTH = 16+10+BODY_WIDTH;
-    localparam integer READ_WIDTH = 1+12+BODY_WIDTH;
+    localparam integer READ_WIDTH = BODY_WIDTH+13;
     localparam integer COUNT_WIDTH = (FRAME_WORDS < 2) ? 1 : $clog2(FRAME_WORDS+1);
 
     function [1:0] F_offset;
@@ -113,11 +116,11 @@ module target_frame_bridge #(
                                1'b0,coordinates[20:10],2'b0,coordinates[9:0]};
         end
     endfunction
-    function [274:0] F_expand_body;
+    function [276:0] F_expand_body;
         input [BODY_WIDTH-1:0] body;
         integer index;
         begin
-            F_expand_body = {body[241:240],F_expand_single(body[239:177]),
+            F_expand_body = {body[243:240],F_expand_single(body[239:177]),
                              body[176:169],192'b0,body[0]};
             for (index=0; index<4; index=index+1)
                 F_expand_body[1+48*index +: 48] =
@@ -132,17 +135,20 @@ module target_frame_bridge #(
     reg [9:0] S_start_frame_id;
     reg [11:0] S_start_effect_config;
     reg S_start_motion_mode, S_start_valid;
+    reg [1:0] S_start_color_mode;
     reg [3:0] S_context_valid;
     reg [9:0] S_context_id [0:3];
     reg [15:0] S_context_nonce [0:3];
     reg [11:0] S_context_config [0:3];
     reg S_context_motion [0:3];
+    reg [1:0] S_context_color [0:3];
 
     wire [1:0] S_context_index = I_result_frame_id[1:0];
     // A replaced context is unusable on the replacement edge too.
     wire S_context_match = S_context_valid[S_context_index] &&
         S_context_id[S_context_index] == I_result_frame_id &&
         S_context_motion[S_context_index] == I_result_motion_mode &&
+        S_context_color[S_context_index] == I_result_color_mode &&
         !(I_frame_start && I_frame_id[1:0] == S_context_index);
     wire [1:0] S_result_offset = F_offset(S_context_config[S_context_index]);
     wire [4*BOX_WIDTH-1:0] S_adjusted_boxes;
@@ -159,7 +165,7 @@ module target_frame_bridge #(
     endgenerate
     wire [RESULT_WIDTH-1:0] S_new_result = {
         S_context_nonce[S_context_index],I_result_frame_id,
-        I_result_motion_mode,I_result_found,
+        I_result_motion_mode,I_result_color_mode,I_result_found,
         F_pack_single({
         F_clip_x(I_result_xmin,S_result_offset),
         F_clip_x(I_result_xmax,S_result_offset),
@@ -180,6 +186,7 @@ module target_frame_bridge #(
             S_nonce_counter <= 0; S_start_nonce <= 0; S_start_frame_id <= 0;
             S_start_effect_config <= DEFAULT_EFFECT_CONFIG;
             S_start_motion_mode <= 0; S_start_valid <= 0; S_context_valid <= 0;
+            S_start_color_mode <= 0;
             S_result_payload <= 0; S_result_pending_payload <= 0;
             S_result_request <= 0; S_result_pending_valid <= 0;
             S_result_ack_meta <= 0; S_result_ack_sync <= 0; S_result_dropped <= 0;
@@ -188,6 +195,7 @@ module target_frame_bridge #(
                 S_context_nonce[context_index] <= 0;
                 S_context_config[context_index] <= DEFAULT_EFFECT_CONFIG;
                 S_context_motion[context_index] <= 0;
+                S_context_color[context_index] <= 0;
             end
         end else begin
             S_result_ack_meta <= S_result_ack;
@@ -199,12 +207,14 @@ module target_frame_bridge #(
                 S_start_frame_id <= I_frame_id;
                 S_start_effect_config <= I_effect_config;
                 S_start_motion_mode <= I_motion_mode;
+                S_start_color_mode <= I_color_mode;
                 S_start_valid <= 1'b1;
                 S_context_valid[I_frame_id[1:0]] <= 1'b1;
                 S_context_id[I_frame_id[1:0]] <= I_frame_id;
                 S_context_nonce[I_frame_id[1:0]] <= S_nonce_counter+16'd1;
                 S_context_config[I_frame_id[1:0]] <= I_effect_config;
                 S_context_motion[I_frame_id[1:0]] <= I_motion_mode;
+                S_context_color[I_frame_id[1:0]] <= I_color_mode;
             end
             if (S_result_request == S_result_ack_sync) begin
                 if (S_result_pending_valid) begin
@@ -235,6 +245,7 @@ module target_frame_bridge #(
     reg [9:0] S_slot_frame_id [0:3];
     reg [11:0] S_slot_effect_config [0:3];
     reg [3:0] S_slot_motion_mode, S_slot_started, S_slot_complete, S_slot_result_valid;
+    reg [1:0] S_slot_color_mode [0:3];
     reg [BODY_WIDTH-1:0] S_slot_result [0:3];
     reg [1:0] S_active_write_slot;
     reg [COUNT_WIDTH-1:0] S_write_count;
@@ -246,22 +257,26 @@ module target_frame_bridge #(
     wire [15:0] S_message_nonce = S_result_payload[BODY_WIDTH+10 +: 16];
     wire [9:0] S_message_id = S_result_payload[BODY_WIDTH +: 10];
     wire S_message_motion = S_result_payload[BODY_WIDTH-1];
+    wire [1:0] S_message_color = S_result_payload[BODY_WIDTH-2 -: 2];
     wire S_message_matches_start = S_result_message && S_start_valid &&
         S_message_nonce == S_start_nonce && S_message_id == S_start_frame_id &&
-        S_message_motion == S_start_motion_mode;
+        S_message_motion == S_start_motion_mode &&
+        S_message_color == S_start_color_mode;
     wire S_last_matches_start = S_last_result_valid && S_start_valid &&
         S_last_result_payload[BODY_WIDTH+10 +: 16] == S_start_nonce &&
         S_last_result_payload[BODY_WIDTH +: 10] == S_start_frame_id &&
-        S_last_result_payload[BODY_WIDTH-1] == S_start_motion_mode;
+        S_last_result_payload[BODY_WIDTH-1] == S_start_motion_mode &&
+        S_last_result_payload[BODY_WIDTH-2 -: 2] == S_start_color_mode;
 
     wire S_read_valid = S_slot_started[I_read_slot] &&
         S_slot_complete[I_read_slot] && S_slot_result_valid[I_read_slot] &&
         !(I_write_start && I_write_slot == I_read_slot);
     wire [READ_WIDTH-1:0] S_read_snapshot = S_read_valid ?
-        {1'b1,S_slot_effect_config[I_read_slot],S_slot_motion_mode[I_read_slot],
-         S_slot_result[I_read_slot][BODY_WIDTH-2:0]} :
+        {1'b1,S_slot_effect_config[I_read_slot],
+         S_slot_result[I_read_slot][BODY_WIDTH-1 -: 3],
+         S_slot_result[I_read_slot][BODY_WIDTH-4:0]} :
         {1'b0,S_slot_effect_config[I_read_slot],S_slot_motion_mode[I_read_slot],
-         {(BODY_WIDTH-1){1'b0}}};
+         S_slot_color_mode[I_read_slot],{(BODY_WIDTH-3){1'b0}}};
     reg [READ_WIDTH-1:0] S_read_payload, S_read_pending_payload;
     reg S_read_request, S_read_ack, S_read_pending_valid;
     (* async_reg = "true" *) reg S_read_ack_meta, S_read_ack_sync;
@@ -279,6 +294,7 @@ module target_frame_bridge #(
             for (slot_index=0; slot_index<4; slot_index=slot_index+1) begin
                 S_slot_nonce[slot_index] <= 0; S_slot_frame_id[slot_index] <= 0;
                 S_slot_effect_config[slot_index] <= DEFAULT_EFFECT_CONFIG;
+                S_slot_color_mode[slot_index] <= 0;
                 S_slot_result[slot_index] <= 0;
             end
         end else begin
@@ -295,6 +311,7 @@ module target_frame_bridge #(
                         S_slot_nonce[slot_index] == S_message_nonce &&
                         S_slot_frame_id[slot_index] == S_message_id &&
                         S_slot_motion_mode[slot_index] == S_message_motion &&
+                        S_slot_color_mode[slot_index] == S_message_color &&
                         !(I_write_start && I_write_slot == slot_index)) begin
                         S_slot_result[slot_index] <= S_result_payload[BODY_WIDTH-1:0];
                         S_slot_result_valid[slot_index] <= 1'b1;
@@ -309,6 +326,7 @@ module target_frame_bridge #(
                 S_slot_frame_id[I_write_slot] <= S_start_frame_id;
                 S_slot_effect_config[I_write_slot] <= S_start_effect_config;
                 S_slot_motion_mode[I_write_slot] <= S_start_motion_mode;
+                S_slot_color_mode[I_write_slot] <= S_start_color_mode;
                 S_slot_started[I_write_slot] <= S_start_valid;
                 S_slot_complete[I_write_slot] <= FRAME_WORDS == 1 && I_write_word;
                 if (S_message_matches_start) begin
@@ -351,7 +369,7 @@ module target_frame_bridge #(
         if (!I_rst_n) begin
             S_read_req_meta <= 0; S_read_req_sync <= 0; S_read_ack <= 0;
             O_ready <= 0; O_effect_config <= DEFAULT_EFFECT_CONFIG;
-            O_motion_mode <= 0; O_found <= 0;
+            O_motion_mode <= 0; O_color_mode <= 0; O_found <= 0;
             O_xmin <= 0; O_xmax <= 0; O_ymin <= 0; O_ymax <= 0;
             O_center_x <= 0; O_center_y <= 0;
             O_multi_valid <= 0; O_multi_hold <= 0;
@@ -360,7 +378,7 @@ module target_frame_bridge #(
             S_read_req_meta <= S_read_request;
             S_read_req_sync <= S_read_req_meta;
             if (S_read_req_sync != S_read_ack) begin
-                {O_ready,O_effect_config,O_motion_mode,O_found,
+                {O_ready,O_effect_config,O_motion_mode,O_color_mode,O_found,
                  O_xmin,O_xmax,O_ymin,O_ymax,O_center_x,O_center_y,
                  O_multi_valid,O_multi_hold,O_multi_boxes,O_multi_overflow} <=
                     {S_read_payload[READ_WIDTH-1 -: 13],

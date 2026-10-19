@@ -18,6 +18,7 @@ module tb_red_multi_target #(
         .MIN_WIDTH(4), .MIN_HEIGHT(4), .MULTI_ENABLE(1)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user), .I_tvalid(valid), .I_tdata(data),
+        .I_color_mode(2'd0),
         .I_frame_id(frame_id), .I_multi_clear(clear),
         .O_result_ready(), .O_found(), .O_xmin(), .O_xmax(), .O_ymin(), .O_ymax(),
         .O_center_x(), .O_center_y(), .O_pixels(), .O_frame_toggle(),

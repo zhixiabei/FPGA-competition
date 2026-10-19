@@ -19,7 +19,7 @@ module tb_isp_red_multi;
     wire [11:0] effect_config;
     isp_top #(.ENABLE_EDGE(0), .RED_MULTI_ENABLE(1)) dut (
         .axi4s_video_aclk(clk), .I_rst_n(rst_n),
-        .I_effect_config(12'd0), .I_motion_mode_async(1'b0),
+        .I_effect_config(12'd0), .I_motion_mode_async(1'b0), .I_color_mode_async(2'd0),
         .I_tlast(source_last), .I_tuser(source_user),
         .I_tdata(source_valid ? {4{10'd512}} : 40'd0),
         .I_tvalid(source_valid), .I_tdest(injected_id), .O_tready(1'b1),

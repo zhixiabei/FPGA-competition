@@ -57,7 +57,9 @@ module design_top_wrapper #(
 		
 	wire        	S_pll_lock;
     wire        	S_rst_n;
-    wire        S_motion_mode_requested;
+    wire [1:0]  S_detection_mode_requested;
+    wire        S_motion_mode_requested = S_detection_mode_requested == 2'b11;
+    wire [1:0]  S_color_mode_requested = S_detection_mode_requested;
 	reg  [17:0] 	S_cam_power_cnt;
 	reg         	S_cam_pwdnb;
 	reg         	S_cam_i2c_ready;
@@ -117,11 +119,13 @@ module design_top_wrapper #(
     wire [23:0] S_ISP_target_pixels;
     wire        S_ISP_target_frame_toggle;
     wire        S_ISP_target_motion_mode;
+    wire [1:0]  S_ISP_target_color_mode;
     wire [9:0]  S_ISP_target_result_frame_id;
     wire [3:0]  S_ISP_target_multi_valid, S_ISP_target_multi_hold;
     wire [191:0] S_ISP_target_multi_boxes;
     wire        S_ISP_target_multi_overflow;
     wire        S_ISP_motion_mode_active;
+    wire [1:0]  S_ISP_color_mode_active;
     wire        S_ISP_edge_mode_active;
     wire [11:0] S_ISP_effect_config;
     wire        S_ISP_cnn_result_valid;
@@ -192,6 +196,7 @@ module design_top_wrapper #(
     reg [3:0] S_target_slots_valid;
     integer S_target_slot_index;
     wire S_bridge_ready, S_bridge_motion, S_bridge_found;
+    wire [1:0] S_bridge_color_mode;
     wire [11:0] S_bridge_effect_config;
     wire [11:0] S_bridge_xmin, S_bridge_xmax, S_bridge_ymin, S_bridge_ymax;
     wire [11:0] S_bridge_center_x, S_bridge_center_y;
@@ -205,6 +210,8 @@ module design_top_wrapper #(
         S_bridge_effect_config : S_target_display_result[85:74];
     wire S_target_motion_mode_hdmi = RED_MULTI_ENABLE ?
         S_bridge_motion : S_target_display_result[73];
+    wire [1:0] S_target_color_mode_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_color_mode : 2'b00;
     wire S_target_found_hdmi = RED_MULTI_ENABLE ?
         S_bridge_found : S_target_display_result[72];
     wire [11:0] S_target_xmin_hdmi = RED_MULTI_ENABLE ?
@@ -700,12 +707,13 @@ module design_top_wrapper #(
   
     video_mode_control #(
         .DEBOUNCE_CYCLES(1000000),
-        .DEFAULT_EDGE_MODE(0)
+        .DEFAULT_MODE(0)
     ) u_detection_mode_control (
         .I_clk(I_sys_clk),
         .I_rst_n(S_rst_n),
         .I_key_n(I_detect_key_n),
-        .O_edge_mode(S_motion_mode_requested)
+        .O_detection_mode(S_detection_mode_requested),
+        .O_edge_mode()
     );
 
     wire [3:0] S_effect_mode_requested;
@@ -996,9 +1004,11 @@ end endgenerate
         .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
         .I_frame_start(S_ISP_O_tuser), .I_frame_id(S_isp_frame_id),
         .I_effect_config(S_ISP_effect_config), .I_motion_mode(S_ISP_motion_mode_active),
+        .I_color_mode(S_ISP_color_mode_active),
         .I_result_ready(S_ISP_target_result_ready),
         .I_result_frame_id(S_ISP_target_result_frame_id),
         .I_result_found(S_ISP_target_found), .I_result_motion_mode(S_ISP_target_motion_mode),
+        .I_result_color_mode(S_ISP_target_color_mode),
         .I_result_xmin(S_ISP_target_xmin), .I_result_xmax(S_ISP_target_xmax),
         .I_result_ymin(S_ISP_target_ymin), .I_result_ymax(S_ISP_target_ymax),
         .I_result_center_x(S_ISP_target_center_x), .I_result_center_y(S_ISP_target_center_y),
@@ -1008,7 +1018,8 @@ end endgenerate
         .I_write_word(S_vi_ddr_wr_en),
         .I_read_start(S_read_frame_start), .I_read_slot(S_video_out_rp),
         .O_ready(S_bridge_ready), .O_effect_config(S_bridge_effect_config),
-        .O_motion_mode(S_bridge_motion), .O_found(S_bridge_found),
+        .O_motion_mode(S_bridge_motion), .O_color_mode(S_bridge_color_mode),
+        .O_found(S_bridge_found),
         .O_xmin(S_bridge_xmin), .O_xmax(S_bridge_xmax),
         .O_ymin(S_bridge_ymin), .O_ymax(S_bridge_ymax),
         .O_center_x(S_bridge_center_x), .O_center_y(S_bridge_center_y),
@@ -1025,6 +1036,7 @@ isp_top #(
 .I_rst_n         (S_rst_n),
 .I_effect_config (S_effect_config_csi),
 .I_motion_mode_async(S_motion_mode_requested),
+.I_color_mode_async(S_color_mode_requested),
 .I_tlast         (S_raw_tlast	),
 .I_tuser         (S_raw_tuser	),
 .I_tdata         (S_raw_tdata	),
@@ -1046,7 +1058,9 @@ isp_top #(
 .O_target_pixels       (S_ISP_target_pixels),
 .O_target_frame_toggle (S_ISP_target_frame_toggle),
 .O_target_motion_mode  (S_ISP_target_motion_mode),
+.O_target_color_mode   (S_ISP_target_color_mode),
 .O_motion_mode_active  (S_ISP_motion_mode_active),
+.O_color_mode_active   (S_ISP_color_mode_active),
 .O_target_result_frame_id(S_ISP_target_result_frame_id),
 .O_target_multi_valid  (S_ISP_target_multi_valid),
 .O_target_multi_hold   (S_ISP_target_multi_hold),
@@ -1267,6 +1281,7 @@ isp_top #(
         .I_target_result_ready ( S_target_result_valid_hdmi ),
         .I_target_found        ( S_target_found_hdmi ),
         .I_target_motion_mode  ( S_target_motion_mode_hdmi ),
+        .I_target_color_mode   ( S_target_color_mode_hdmi ),
         .I_target_xmin         ( S_target_xmin_hdmi ),
         .I_target_xmax         ( S_target_xmax_hdmi ),
         .I_target_ymin         ( S_target_ymin_hdmi ),

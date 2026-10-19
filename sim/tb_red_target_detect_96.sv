@@ -30,7 +30,7 @@ module tb_red_target_detect_96 #(
         .MIN_PIXELS(MIN_PIXELS), .MIN_WIDTH(MIN_WIDTH), .MIN_HEIGHT(MIN_HEIGHT)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user),
-        .I_tvalid(valid), .I_tdata(data),
+        .I_tvalid(valid), .I_tdata(data), .I_color_mode(2'd0),
         .O_result_ready(ready), .O_found(found),
         .O_xmin(xmin), .O_xmax(xmax), .O_ymin(ymin), .O_ymax(ymax),
         .O_center_x(center_x), .O_center_y(center_y),

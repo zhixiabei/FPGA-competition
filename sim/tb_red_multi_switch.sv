@@ -16,6 +16,7 @@ module tb_red_multi_switch;
         .MIN_BLOCKS(8), .DIFF_THRESHOLD(6), .MOTION_STABLE_ENABLE(1), .RED_MULTI_ENABLE(1)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_motion_mode_async(request_motion),
+        .I_color_mode_async(request_motion ? 2'd3 : 2'd0),
         .I_tuser(user), .I_tlast(last), .I_tvalid(valid), .I_tdata(data), .I_frame_id(frame_id),
         .O_result_ready(ready), .O_found(found), .O_xmin(xmin), .O_xmax(xmax),
         .O_ymin(ymin), .O_ymax(ymax), .O_center_x(cx), .O_center_y(cy), .O_pixels(pixels),

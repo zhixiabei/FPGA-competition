@@ -16,6 +16,7 @@ module red_target_detect_96 #(
     input wire I_tuser,
     input wire I_tvalid,
     input wire [95:0] I_tdata,
+    input wire [1:0] I_color_mode,
     output reg O_result_ready,
     output reg O_found,
     output reg [11:0] O_xmin,
@@ -72,9 +73,13 @@ module red_target_detect_96 #(
     genvar p;
     generate
         for (p = 0; p < 4; p = p + 1) begin : gen_red
-            wire [8:0] red;
-            wire [7:0] green;
-            wire [7:0] blue;
+            wire [7:0] red_in = I_tdata[95-p*24-:8];
+            wire [7:0] green_in = I_tdata[87-p*24-:8];
+            wire [7:0] blue_in = I_tdata[79-p*24-:8];
+            reg [7:0] dominant, secondary_a, secondary_b;
+            wire [8:0] red = {1'b0,dominant};
+            wire [7:0] green = secondary_a;
+            wire [7:0] blue = secondary_b;
             wire [8:0] green_limit;
             wire [8:0] blue_limit;
             wire [9:0] twice_red;
@@ -82,9 +87,13 @@ module red_target_detect_96 #(
             wire [9:0] triple_blue;
             wire [9:0] hue_green_limit;
             wire [9:0] hue_blue_limit;
-            assign red = {1'b0,I_tdata[95-p*24-:8]};
-            assign green = I_tdata[87-p*24-:8];
-            assign blue = I_tdata[79-p*24-:8];
+            always @(*) begin
+                case (I_color_mode)
+                    2'd1: begin dominant=green_in; secondary_a=red_in; secondary_b=blue_in; end
+                    2'd2: begin dominant=blue_in; secondary_a=red_in; secondary_b=green_in; end
+                    default: begin dominant=red_in; secondary_a=green_in; secondary_b=blue_in; end
+                endcase
+            end
             assign green_limit = {1'b0,green} + RED_DELTA_9;
             assign blue_limit = {1'b0,blue} + RED_DELTA_9;
             assign twice_red = {1'b0,red[7:0],1'b0};

@@ -1,19 +1,19 @@
 # 算法选择与检测模式切换
 
-更新日期：2026-10-17。
+更新日期：2026-10-19。
 
 当前源码包含九项显示模式：原画加 Gamma、灰度、原 Scharr 边缘、反色、
 灰度浮雕、红绿保色、彩色漫画、Scharr 反色和形态学边缘。
 屏幕显示编号与名称，上电默认原画加 Gamma。
-**K2** 独立切换红色/帧差运动检测。
-当前红色模式最多显示 4 个独立区域及跟随标签；运动模式保留 1 个总框。
+**K2** 独立循环红色、绿色、蓝色和帧差运动检测。
+颜色模式最多显示 4 个独立区域及跟随标签；运动模式保留 1 个总框。
 
 ## 怎么用
 
-1. 红色多目标版 `src-9e019affb36a` 已完成回归和完整构建。在下载器中重新加载 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit` 并烧录。
-2. 使用原来的下载流程烧录。根目录 `build_firmware.cmd` 成功后同时更新上述路径和 `firmware/anlogic_edge_osd.bit`；文件身份见 `build/release/release_manifest.json`。
+1. 当前红/绿/蓝/运动版 `src-226b3d8abb02` 已完成回归、布局布线和 bit 发布。在下载器中重新加载 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit` 并烧录。
+2. `firmware/anlogic_edge_osd.bit` 是同内容副本；版本、时序和 SHA256 见 `build/release/release_manifest.json`。
 3. 上电默认显示 `00 COLOR GAMMA`。**K1** 按 `00 原画+Gamma → 01 灰度 → 02 Scharr → 03 反色 → 04 浮雕 → 05 红绿保色 → 06 漫画 → 07 Scharr反色 → 08 形态学边缘 → 00` 单向循环；默认按四次 K1 到 `04 EMBOSS`。
-4. 上电默认红色目标检测。按一下 **K2** 切换到帧差运动检测，再按一下切回红色检测。
+4. 上电默认红色目标检测。每按一下 **K2** 按 `红色 → 绿色 → 蓝色 → 帧差运动 → 红色` 循环。
 5. **K3、K4** 保留引脚但不执行操作；九项显示模式均无按键调参。
 6. K1、K2 按下和松开均需稳定至少 20 ms；正常按一下即可。长按只触发一次。
 
@@ -23,8 +23,8 @@
 左上方 `(192,80)` 显示 `00..08` 和英文名称：`COLOR GAMMA`、`GRAYSCALE`、
 `SCHARR EDGE`、`NEGATIVE`、`EMBOSS`、`COLOR KEEP`、`CARTOON`、
 `SCHARR INV`、`MORPH EDGE`。不再显示参数。
-左下角显示 `RED COUNT:0..4` 或 `MOV COUNT:0..1`，表示当前显示帧的检测算法和框数。
-红色框的完整跟随标签为 `1 RED OK` / `1 RED H`（编号 1..4），
+左下角显示 `RED/GRN/BLU COUNT:0..4` 或 `MOV COUNT:0..1`，表示当前显示帧的检测算法和框数。
+颜色框的完整跟随标签为 `1 RED/GRN/BLU OK` 或保持状态 `H`（编号 1..4），
 空间不足时使用 `1 OK` / `1 H`；运动完整标签为 `1 MOV OK`。
 红色新目标连续匹配两帧确认，漏检保持两帧，第 3 帧清除；
 队列或候选表容量溢出时显示 `OVF`、清除整组框，不退回总框。
@@ -51,17 +51,19 @@ bit 生成，成功后更新 `best_result/anlogic_edge_osd.bit` 和 `firmware/an
 
 ## 当前构建状态
 
-红色多目标版 `src-9e019affb36a` 于 2026-10-17 21:44:57（北京时间）完成综合、布局布线和 bit 生成。
-最终 Slice 17,483/21,216（82.40%）、LUT6 16,707、寄存器 17,555、
-ERAM 80/108、DSP 13/40；建立余量 +0.108 ns，保持余量 +0.020 ns。
-相对九模式单框基线增加 1,448 Slice、1,934 LUT6、3,982 个寄存器和 11 个 ERAM，DSP 不变。
-显示配置 13 ns 约束覆盖 4 条路径；目标帧上下文、检测结果和显示快照分别由
-20 ns / 20 ns / 13 ns 约束覆盖 7,872 / 4,132 / 247 条路径。
-222 个生产构建输入与发布快照 SHA256 一致。
-两处 bit 内容一致，SHA256 为 `E78CB4E2CCF3F3C5F74F19A1FB27036996B95D1A46510A3D8D69BD9E4D9C87E9`。
-构建身份见 [发布清单](../build/release/release_manifest.json)，本轮回归证据见
-[red_multi_target_regression.zip](../build/verification/red_multi_target_regression.zip)。
-本轮仍需重新烧录验证真实摄像头画质和按键操作。
+当前颜色切换生产版本 `src-226b3d8abb02` 于 2026-10-19 10:23:04（北京时间）
+完成综合、最终布局布线和 bit 发布。最终 Slice 18,341/21,216（86.45%）、
+LUT6 17,562、寄存器 17,822、ERAM 79/108、DSP 17/40；
+建立余量 +0.021 ns，保持余量 +0.020 ns，均无违例。
+显示配置 13 ns 约束和目标帧 20/20/13 ns 约束均通过健康检查，
+不存在无效约束或无路径约束。
+
+相对上一发布版 `src-ba01b507ce95`，本轮增加 235 Slice 和 140 LUT6，
+寄存器减少 66，ERAM 与 DSP 不变。说明红、绿、蓝共用颜色检测链没有复制三套
+滤波、区域连接和跟踪硬件，但当前芯片整体 Slice 余量仍较紧。
+两份 bit 内容一致，SHA256 为
+`EED6860A0D9C6AB5D16CB846A090E40A82DB0EFE5D89B5A787B4AA80E237CCFC`；
+完整身份见 [发布清单](../build/release/release_manifest.json)。
 
 ## 工程检查
 
@@ -98,7 +100,7 @@ ERAM 80/108、DSP 13/40；建立余量 +0.108 ns，保持余量 +0.020 ns。
 | 板上按键 | FPGA 引脚 | 本次功能 |
 |---|---|---|
 | K1 / KEY1 | D5 | 单向循环下一个显示算法 |
-| K2 / KEY2 | A9 | 红色/帧差运动检测切换 |
+| K2 / KEY2 | A9 | 红色/绿色/蓝色/帧差运动循环 |
 | K3 / KEY3 | B9 | 保留引脚，无操作 |
 | K4 / KEY4 | C7 | 保留引脚，无操作 |
 
@@ -110,14 +112,14 @@ ERAM 80/108、DSP 13/40；建立余量 +0.108 ns，保持余量 +0.020 ns。
 ## 实现位置
 
 - `user_source/hdl_source/display_effect_control.v`：在 50 MHz 板载时钟下完成 K1 的两级同步、20 ms 按下/释放消抖，生成 0..8 单向循环模式请求；K3/K4 不参与控制，兼容参数接口固定为 0。
-- `user_source/hdl_source/video_mode_control.v`：独立处理 K2，选择红色/运动检测。
+- `user_source/hdl_source/video_mode_control.v`：独立处理 K2，生成红、绿、蓝、运动四态循环请求。
 - `user_source/hdl_source/isp/rgb_edge_switch_96.v`：帧首锁存显示配置；RGB、Scharr、浮雕、漫画和形态学像素、标记、配置统一延迟 **11 拍**，模式 2/7 选择原 Scharr、4 选择浮雕、6 选择漫画、8 选择形态学，其余选择 RGB。兼容信号 `O_edge_mode` 仅在模式 2 置位。
 - `user_source/hdl_source/isp/scharr_edge_detect_96.v`：保留原高斯、Scharr、NMS 和固定阈值通路；浮雕与形态学共享第一层灰度窗口；漫画另建低位宽彩色行缓存，与原 NMS 轮廓对齐后合成。
 - `user_source/hdl_source/display_effects_rgb888.v`：DDR 读出后完成模式 0 原画 Gamma、1 灰度、3 反色、5 红绿保色、7 Scharr 取反，模式 2/4/6/8 直通；固定两拍，与原 mixer 像素延迟相同。
-- `user_source/hdl_source/hdmi_mixer.v`：按当前显示帧锁存配置，共用原字库显示九项名称，再叠加原 OSD、最多四个红色框、跟随标签及 COUNT/OVF。
-- `user_source/hdl_source/isp/red_target_detect_96.v`：复用全分辨率红色判定与多数滤波，新增有界行段连接、Top4 和四槽确认/保持；不是完整 CCL。
+- `user_source/hdl_source/hdmi_mixer.v`：按当前显示帧锁存配置，共用原字库显示九项名称，再叠加原 OSD、最多四个颜色目标框、跟随标签及 COUNT/OVF。
+- `user_source/hdl_source/isp/red_target_detect_96.v`：在同一套全分辨率颜色判定前选择主通道，复用多数滤波、有界行段连接、Top4 和四槽确认/保持；不是完整 CCL。
 - `user_source/hdl_source/isp/motion_target_detect_96.v`：使用片上历史灰度数据进行帧差运动检测，输出单个合并外接框。
-- `user_source/hdl_source/isp/target_detect_switch_96.v`：将 K2 请求同步到摄像头时钟域，在帧首锁存检测算法；按完成结果携带的原帧号选择该帧模式，保留运动稳定器与单个待发运动结果寄存。
+- `user_source/hdl_source/isp/target_detect_switch_96.v`：将 K2 的 2 位请求整体同步到摄像头时钟域，在帧首锁存颜色/运动模式；换色清除旧颜色轨迹，结果按原帧号选择模式。
 - `user_source/hdl_source/isp/isp_top.v`：集成两个检测分支，保持原来的 96/128 位图像打包通路。
 - `user_source/hdl_source/design_top_wrapper.v`：默认 `RED_MULTI_ENABLE=1`，实例化按键控制器与帧桥，将实际生效配置、四框和检测模式随真实 DDR 帧槽保存给 HDMI。
 - `user_source/hdl_source/target_frame_bridge.v`：原始 10 位帧号、16 位代次与配置绑定实际写槽；完整写帧后方可显示，按实际读槽冻结整组结果，握手传往 HDMI。
@@ -275,10 +277,10 @@ DDR 帧槽/算法/框的元数据对齐由独立顶层测试覆盖。
 - 在保色画面放置红、绿、蓝及灰色物体，检查红绿保色，其余变灰；暗色和低饱和色可能不满足颜色门槛。
 - 在漫画画面检查彩色色块、减少的色阶和黑色轮廓，核对前六行、前六列填黑，红绿蓝物体仍可区分。
 - 在 Scharr 反色画面检查轮廓与模式 02 一致但黑白相反；在形态学画面检查亮边、不同灰度强度以及前两行、前两列填黑。
-- 逐次按 K2，确认 `RED` 和 `MOV` 交替显示；用红色静物和任意颜色的运动物体区分两种算法。
-- 分开放置 2..4 个足够大的红色物体，检查第二帧确认后分别出框、编号跟随，短暂遮挡保持两帧；拥挤、交叉和合并可能交换编号。
-- 检查红色 COUNT 与框数一致；大量碎片导致容量溢出时应显示 OVF 并清框。切到运动后仍只显示一个运动总框。
-- 在全部九项画面分别测试 K2，核对目标框位置及 RED/MOV 标签；浮雕与形态学各补偿 1 像素，Scharr、Scharr 反色与漫画各补偿 3 像素。
+- 逐次按 K2，确认 `RED → GRN → BLU → MOV → RED` 循环；分别用对应颜色静物和运动物体区分四种模式。
+- 在红、绿、蓝模式分别放置 2..4 个足够大的对应颜色物体，检查第二帧确认后分别出框、编号跟随，短暂遮挡保持两帧；拥挤、交叉和合并可能交换编号。
+- 检查当前颜色的 COUNT 与框数一致；大量碎片导致容量溢出时应显示 OVF 并清框。切到运动后仍只显示一个运动总框。
+- 在全部九项画面分别测试 K2，核对目标框位置及 RED/GRN/BLU/MOV 标签；浮雕与形态学各补偿 1 像素，Scharr、Scharr 反色与漫画各补偿 3 像素。
 - 长按 K1、K2，确认只触发一次；松开后再按才能再次触发。
 - 固定摄像头，等待曝光稳定后持续移动物体，检查连续 3 帧候选后出框、小抖动不会不断换位置、停止后第 3 帧清框。
 - 分别测试普通室内光、低照度、灯光切换与远近物体，记录漏检和误框；本版没有摄像头防抖。

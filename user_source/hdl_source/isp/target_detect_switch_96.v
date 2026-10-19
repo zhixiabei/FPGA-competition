@@ -14,6 +14,7 @@ module target_detect_switch_96 #(
     input wire I_clk,
     input wire I_rst_n,
     input wire I_motion_mode_async,
+    input wire [1:0] I_color_mode_async,
     input wire I_tuser,
     input wire I_tlast,
     input wire I_tvalid,
@@ -30,7 +31,9 @@ module target_detect_switch_96 #(
     output wire [23:0] O_pixels,
     output wire O_frame_toggle,
     output wire O_target_motion_mode,
+    output wire [1:0] O_target_color_mode,
     output wire O_motion_mode_active,
+    output wire [1:0] O_color_mode_active,
     output wire [9:0] O_result_frame_id,
     output wire [3:0] O_multi_valid,
     output wire [3:0] O_multi_hold,
@@ -39,26 +42,32 @@ module target_detect_switch_96 #(
 );
     localparam integer FRAME_BEATS = IMG_WIDTH * IMG_HEIGHT / 4;
     localparam integer COUNT_BITS = $clog2(FRAME_BEATS);
-    (* keep="true" *) reg mode_meta;
-    (* keep="true" *) reg mode_sync;
+    (* keep="true" *) reg [1:0] color_meta, color_sync;
+    reg [1:0] color_sync_d;
     reg active_motion, completion_motion;
+    reg [1:0] active_color, completion_color;
     reg user_d, frame_pending, frame_open;
     reg [COUNT_BITS-1:0] beat_count;
     wire frame_marker = I_tuser && !user_d;
+    wire [1:0] active_mode = active_motion ? 2'b11 : active_color;
+    wire [1:0] frame_mode = color_sync == color_sync_d ? color_sync : active_mode;
     wire first_beat = frame_marker || frame_pending;
     wire accept_beat = I_tvalid && (frame_open || first_beat);
     wire final_beat = !first_beat && beat_count == FRAME_BEATS-1;
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
-            mode_meta <= 0; mode_sync <= 0;
+            color_meta <= 0; color_sync <= 0; color_sync_d <= 0;
             active_motion <= 0; completion_motion <= 0;
+            active_color <= 0; completion_color <= 0;
             user_d <= 0; frame_pending <= 0; frame_open <= 0; beat_count <= 0;
         end else begin
-            mode_meta <= I_motion_mode_async;
-            mode_sync <= mode_meta;
+            color_meta <= I_color_mode_async;
+            color_sync <= color_meta;
+            color_sync_d <= color_sync;
             user_d <= I_tuser;
             if (frame_marker) begin
-                active_motion <= mode_sync;
+                active_motion <= frame_mode == 2'b11;
+                active_color <= frame_mode == 2'b11 ? 2'b00 : frame_mode;
                 frame_pending <= 1;
                 frame_open <= 0;
             end
@@ -67,7 +76,7 @@ module target_detect_switch_96 #(
                 frame_open <= !final_beat;
                 beat_count <= first_beat ? 1 : beat_count + 1'b1;
                 if (final_beat)
-                    completion_motion <= active_motion;
+                    begin completion_motion <= active_motion; completion_color <= active_color; end
             end
         end
     end
@@ -86,12 +95,16 @@ module target_detect_switch_96 #(
     ) u_red (
         .I_clk(I_clk), .I_rst_n(I_rst_n),
         .I_tuser(I_tuser), .I_tvalid(I_tvalid), .I_tdata(I_tdata),
+        .I_color_mode(frame_marker ?
+            (frame_mode == 2'b11 ? 2'b00 : frame_mode) : active_color),
         .O_result_ready(red_ready), .O_found(red_found),
         .O_xmin(red_xmin), .O_xmax(red_xmax), .O_ymin(red_ymin), .O_ymax(red_ymax),
         .O_center_x(red_cx), .O_center_y(red_cy), .O_pixels(red_pixels),
         .O_frame_toggle(red_toggle),
         .I_frame_id(I_frame_id),
-        .I_multi_clear(frame_marker && mode_sync != active_motion),
+        .I_multi_clear(frame_marker &&
+            (((frame_mode == 2'b11) != active_motion) ||
+             ((frame_mode == 2'b11 ? 2'b00 : frame_mode) != active_color))),
         .O_multi_ready(multi_ready), .O_multi_valid(multi_valid),
         .O_multi_hold(multi_hold), .O_multi_boxes(multi_boxes),
         .O_multi_frame_id(multi_frame_id), .O_multi_overflow(multi_overflow)
@@ -149,9 +162,11 @@ module target_detect_switch_96 #(
     endgenerate
 
     assign O_motion_mode_active = active_motion;
+    assign O_color_mode_active = active_color;
     generate
         if (!RED_MULTI_ENABLE) begin : gen_legacy_result
             assign O_target_motion_mode = completion_motion;
+            assign O_target_color_mode = completion_color;
             assign O_result_ready = completion_motion ? motion_ready : red_ready;
             assign O_found = completion_motion ? motion_found : red_found;
             assign O_xmin = completion_motion ? motion_xmin : red_xmin;
@@ -171,6 +186,7 @@ module target_detect_switch_96 #(
             reg [9:0] active_id, completion_id, motion_id_1d, motion_id_2d;
             reg [9:0] context_id [0:3];
             reg [3:0] context_valid, context_motion;
+            reg [1:0] context_color [0:3];
             integer ci;
             // Motion's stabilizer publishes two clocks after its raw result.
             // Red carries its own ID through its variable-length run queue.
@@ -179,13 +195,15 @@ module target_detect_switch_96 #(
                     active_id<=0; completion_id<=0;
                     motion_id_1d<=0; motion_id_2d<=0;
                     context_valid<=0; context_motion<=0;
-                    for (ci=0; ci<4; ci=ci+1) context_id[ci]<=0;
+                    for (ci=0; ci<4; ci=ci+1) begin context_id[ci]<=0; context_color[ci]<=0; end
                 end else begin
                     if (frame_marker) begin
                         active_id<=I_frame_id;
                         context_id[I_frame_id[1:0]]<=I_frame_id;
                         context_valid[I_frame_id[1:0]]<=1'b1;
-                        context_motion[I_frame_id[1:0]]<=mode_sync;
+                        context_motion[I_frame_id[1:0]]<=frame_mode == 2'b11;
+                        context_color[I_frame_id[1:0]]<=
+                            frame_mode == 2'b11 ? 2'b00 : frame_mode;
                     end
                     if (accept_beat && final_beat) completion_id<=active_id;
                     if (raw_motion_ready) motion_id_1d<=completion_id;
@@ -216,6 +234,7 @@ module target_detect_switch_96 #(
             reg [106:0] pending_motion;
             reg pending_valid;
             reg ready, found, result_motion, result_toggle, overflow;
+            reg [1:0] result_color;
             reg [9:0] result_id;
             reg [11:0] xmin,xmax,ymin,ymax,cx,cy;
             reg [23:0] pixels;
@@ -224,13 +243,13 @@ module target_detect_switch_96 #(
             always @(posedge I_clk or negedge I_rst_n) begin
                 if (!I_rst_n) begin
                     pending_motion<=0; pending_valid<=0;
-                    ready<=0; found<=0; result_motion<=0; result_toggle<=0;
+                    ready<=0; found<=0; result_motion<=0; result_color<=0; result_toggle<=0;
                     result_id<=0; xmin<=0; xmax<=0; ymin<=0; ymax<=0;
                     cx<=0; cy<=0; pixels<=0; valid<=0; hold<=0; boxes<=0; overflow<=0;
                 end else begin
                     ready<=0;
                     if (red_selected) begin
-                        ready<=1; result_motion<=0; result_id<=multi_frame_id;
+                        ready<=1; result_motion<=0; result_color<=context_color[multi_frame_id[1:0]]; result_id<=multi_frame_id;
                         found<=|multi_valid; valid<=multi_valid; hold<=multi_hold;
                         boxes<=multi_boxes; overflow<=multi_overflow; pixels<=0;
                         xmin<=first_box[11:0]; xmax<=first_box[23:12];
@@ -241,7 +260,7 @@ module target_detect_switch_96 #(
                             pending_motion<=new_motion; pending_valid<=1;
                         end
                     end else if (pending_valid || motion_selected) begin
-                        ready<=1; result_motion<=1;
+                        ready<=1; result_motion<=1; result_color<=0;
                         {result_id,found,xmin,xmax,ymin,ymax,cx,cy,pixels}<=
                             pending_valid ? pending_motion : new_motion;
                         valid<=0; hold<=0; boxes<=0; overflow<=0;
@@ -254,6 +273,7 @@ module target_detect_switch_96 #(
             assign O_result_ready=ready;
             assign O_found=found;
             assign O_target_motion_mode=result_motion;
+            assign O_target_color_mode=result_color;
             assign O_frame_toggle=result_toggle;
             assign O_result_frame_id=result_id;
             assign O_xmin=xmin; assign O_xmax=xmax;

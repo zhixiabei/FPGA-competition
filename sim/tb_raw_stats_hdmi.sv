@@ -36,7 +36,7 @@ module tb_raw_stats_hdmi;
         .I_ae_readout_valid(ae_dst_valid),.I_ae_readout_data(ae_dst_data),
         .I_video_rd_data(video),.O_video_rd_en(rd),
         .I_target_result_ready(1'b0),.I_target_found(1'b0),
-        .I_target_motion_mode(1'b0),
+        .I_target_motion_mode(1'b0),.I_target_color_mode(2'd0),
         .I_target_xmin(12'd0),.I_target_xmax(12'd0),.I_target_ymin(12'd0),.I_target_ymax(12'd0),
         .I_target_center_x(12'd0),.I_target_center_y(12'd0),
         .O_hdmi_de(ode),.O_hdmi_hsync(ohs),.O_hdmi_vsync(ovs),.O_hdmi_data(rgb));

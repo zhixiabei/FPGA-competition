@@ -6,31 +6,27 @@
 
 本说明依据当前的 [TD 工程文件](../td_project/anlogic_edge_osd.al)、[系统顶层](../user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](../user_source/hdl_source/isp/isp_top.v) 整理。
 
-## 当前红色多目标版
+## 当前多颜色目标版
 
-主工程默认 `RED_MULTI_ENABLE=1`。K2 红色模式最多 4 框，保留九项显示算法；
-运动仍为单总框。红色使用全分辨率多数滤波后的有界行段连接、Top4 和四槽跟踪，
+主工程默认 `RED_MULTI_ENABLE=1`。K2 的红、绿、蓝模式最多 4 框，保留九项显示算法；
+运动仍为单总框。颜色检测使用全分辨率多数滤波后的有界行段连接、Top4 和四槽跟踪，
 不是完整 CCL。两帧确认、漏检保持两帧，容量溢出整帧无效并显示 OVF。
-跟随标签为 `1 RED OK` / `1 RED H`，紧凑标签为 `1 OK` / `1 H`；
-左下显示 `RED COUNT:0..4` 或 `MOV COUNT:0..1`。
+跟随标签为 `1 RED/GRN/BLU OK` / `H`，紧凑标签为 `1 OK` / `1 H`；
+左下显示 `RED/GRN/BLU COUNT:0..4` 或 `MOV COUNT:0..1`。
 实际操作与限制见[红色多目标说明](RED_MULTI_TARGET.md)。
 
-当前发布 `src-9e019affb36a` 于 2026-10-17 21:44:57（北京时间）完成 bit：
-Slice 17,483/21,216（82.40%）、LUT6 16,707、寄存器 17,555、
-ERAM 80/108、DSP 13/40，建立/保持余量 +0.108/+0.020 ns。
-显示配置 13 ns 覆盖 4 条路径；目标帧上下文/结果/显示快照的
-20/20/13 ns 分别覆盖 7,872/4,132/247 条路径。
-222 个生产输入与发布快照一致。烧录入口固定为
-`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`，
-脚本副本位于 `firmware/anlogic_edge_osd.bit`，两者身份见[发布清单](../build/release/release_manifest.json)。
-本轮结果见[仿真说明](../sim/README.md#当前多目标结果与边界)和
-[唯一回归证据包](../build/verification/red_multi_target_regression.zip)。
+当前发布 `src-226b3d8abb02` 已通过最终布局布线并生成 bit：Slice 18,341/21,216（86.45%）、
+LUT6 17,562、寄存器 17,822、ERAM 79/108、DSP 17/40，
+建立/保持余量 +0.021/+0.020 ns。相对上一已发布版增加 235 Slice 和 140 LUT6，
+ERAM/DSP 不变。两份 bit SHA256 均为
+`EED6860A0D9C6AB5D16CB846A090E40A82DB0EFE5D89B5A787B4AA80E237CCFC`，
+身份见 [发布清单](../build/release/release_manifest.json)。
 
 ## 2026-10-17 九项显示模式
 
 K1（D5）按 0..8 单向循环选择模式，按下/释放均消抖 20 ms。
 K3（B9）与 K4（C7）保留引脚但不执行操作。
-K2（A9）独立选择红色/运动检测，仍按原逻辑消抖。
+K2（A9）独立按红色、绿色、蓝色、运动循环，仍按原逻辑消抖。
 屏幕在 (192,80) 显示编号和名称；默认原画带 Gamma，无参数显示。
 
 | 模式 | 算法 | 说明 |
@@ -321,11 +317,11 @@ flowchart TD
 | 彩色漫画 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | RGB5 高斯、RGB3 色阶和 Scharr 黑轮廓，统一 11 拍与 3 像素偏移 |
 | 形态学边缘 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 第一层灰度 3×3 最大减最小、四倍饱和增强，统一 11 拍与 1 像素偏移 |
 | 红绿保色 | [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | DDR 读出后保留红绿像素，其他转灰，固定两拍 |
-| 红色目标检测 | [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 与边缘支路共享 AWB RGB 输入，不依赖显示模式 |
+| 颜色目标检测 | [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 红/绿/蓝选择主通道，复用同一掩码、滤波和区域硬件，不依赖显示模式 |
 | 运动目标检测 | [motion_target_detect_96.v](../user_source/hdl_source/isp/motion_target_detect_96.v) | 生产差值门槛 10、最少 12 个变化块；3×3 至少 3 票支持细边，输出原始总框及支持/光照指标 |
-| K2 检测选择与运动稳定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | 两种检测持续运行；3 帧确认、短暂保持与框平滑后，按该帧模式转发结果 |
+| K2 检测选择与运动稳定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | 红/绿/蓝复用颜色通路，运动持续运行；2 位模式逐帧提交并随结果转发 |
 | 模式切换 | [rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | 边缘/浮雕/漫画/形态学持续运行；彩色数据、模式和标志对齐为 11 拍，在帧首选择输出 |
-| 板载 K2 控制 | [video_mode_control.v](../user_source/hdl_source/video_mode_control.v) | 50 MHz 时钟下同步并消抖 20 ms，每次按下翻转检测模式 |
+| 板载 K2 控制 | [video_mode_control.v](../user_source/hdl_source/video_mode_control.v) | 50 MHz 时钟下同步并消抖 20 ms，每次按下按红/绿/蓝/运动循环 |
 | DDR 数据打包 | [data96_128.v](../user_source/hdl_source/isp/data96_128/data96_128.v) | 文件内的 data_96bit_to_128bit 模块把 96 位像素流重新打包为 128 位 |
 | 板载 K1 控制 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v) | 九项单向循环请求在系统时钟域产生，经顶层握手邮箱整组跨域；K3/K4 无操作 |
 | DDR 读出后的显示效果 | [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v)、[hdmi_mixer.v](../user_source/hdl_source/hdmi_mixer.v) | 使用实际 DDR 槽配置，固定两拍像素处理后叠加 OSD，默认彩色加 Gamma |
@@ -343,7 +339,7 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 | 想做的修改 | 修改入口 | 参数或关键词 | 当前设置 / 注意事项 |
 |---|---|---|---|
 | 改边缘阈值 | [isp_top.v](../user_source/hdl_source/isp/isp_top.v) | u_rgb_edge_switch、EDGE_TH | 单阈值 20；原始 Scharr 幅值门槛为 320 |
-| 改红色判定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v)、[red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | u_red、gen_red | RED_MIN=24、RED_DELTA=6、MIN_PIXELS=128，另有通道比例及红色色相 ±20° 条件 |
+| 改颜色判定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v)、[red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | u_red、I_color_mode、gen_red | 主通道最小 24、领先至少 6、MIN_PIXELS=128；红绿蓝共用比例及主色色相范围 |
 | 改运动检测门槛 | [isp_top.v](../user_source/hdl_source/isp/isp_top.v)、[target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | DIFF_THRESHOLD、MIN_BLOCKS、GLOBAL_CHANGE_PERCENT、motion_result_stabilizer 参数 | 生产均值差≥10、至少12变化块；3帧确认、8像素死区、四分之一平滑及支持/光照过滤 |
 | 改自动曝光参数 | [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v)、[design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | TARGET_LOW/HIGH、DARK/BRIGHT_FAST、GAIN_MAX、AVERAGE_FRAMES | 当前目标96..120、范围E4..1991/G16..176、六帧平均；改后必须重跑曝光闭环和完整构建 |
 | 改白平衡 | [awb.v](../user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
@@ -515,9 +511,9 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/isp/edge_detect_96.v](../user_source/hdl_source/isp/edge_detect_96.v) | 历史 Sobel 边缘检测 | AutoExcluded=true |
 | [user_source/hdl_source/isp/scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 原高斯、Scharr、NMS、共享灰度窗口浮雕/形态学和低位宽彩色漫画 | 已登记 |
 | [user_source/hdl_source/isp/color_edge_detect_96.v](../user_source/hdl_source/isp/color_edge_detect_96.v) | 旧彩色色差边缘；未在当前通路实例化 | AutoExcluded=true |
-| [user_source/hdl_source/isp/red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 当前独立 RGB 红色目标检测 | 已登记 |
+| [user_source/hdl_source/isp/red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 当前红/绿/蓝主通道复用的 RGB 颜色目标检测 | 已登记 |
 | [user_source/hdl_source/isp/motion_target_detect_96.v](../user_source/hdl_source/isp/motion_target_detect_96.v) | 8×8 灰度均值帧差及运动支持统计 | 已登记 |
-| [user_source/hdl_source/isp/target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | K2 红色/运动选择及运动结果稳定器 | 已登记 |
+| [user_source/hdl_source/isp/target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | K2 红/绿/蓝/运动逐帧选择及运动结果稳定器 | 已登记 |
 | [user_source/hdl_source/color_target_detect.v](../user_source/hdl_source/color_target_detect.v) | 旧目标检测；未在当前通路实例化 | AutoExcluded=true |
 | [user_source/hdl_source/isp/rgb_edge_switch_96.v](../user_source/hdl_source/isp/rgb_edge_switch_96.v) | RGB/Scharr/浮雕/漫画/形态学对齐及帧边界选择 | 已登记 |
 | [user_source/hdl_source/video_mode_control.v](../user_source/hdl_source/video_mode_control.v) | K2 输入同步、消抖与检测模式请求 | 已登记 |
@@ -543,7 +539,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 
 </details>
 
-当前 Scharr、红色多目标/运动检测、帧桥、K1/K2 控制、九项显示效果、延迟和 AE 模块均已登记到两个工程，K3/K4 引脚保留但无操作。主工程现有 77 个登记入口；上表的 AutoExcluded 状态按主工程记录。
+当前 Scharr、多颜色目标/运动检测、帧桥、K1/K2 控制、九项显示效果、延迟和 AE 模块均已登记到两个工程，K3/K4 引脚保留但无操作。主工程现有 77 个登记入口；上表的 AutoExcluded 状态按主工程记录。
 
 彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 78 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数仅指定复位默认值；运行中均由 K1 单向循环选择算法。
 

@@ -31,7 +31,7 @@ module tb_color_target_mixer;
         .I_cnn_result_valid(1'b0),.I_cnn_class(3'd1),
         .I_video_rd_data(rgb),.O_video_rd_en(rd),
         .I_target_result_ready(target_ready),.I_target_found(target_found),
-        .I_target_motion_mode(1'b0),
+        .I_target_motion_mode(1'b0),.I_target_color_mode(2'd0),
         .I_target_xmin(tx0),.I_target_xmax(tx1),
         .I_target_ymin(ty0),.I_target_ymax(ty1),
         .I_target_center_x(tcx),.I_target_center_y(tcy),

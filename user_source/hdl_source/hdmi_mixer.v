@@ -53,6 +53,7 @@ module hdmi_mixer #(
     input wire        I_target_result_ready,
     input wire        I_target_found,
     input wire        I_target_motion_mode,
+    input wire [1:0]  I_target_color_mode,
     input wire [11:0] I_target_xmin,
     input wire [11:0] I_target_xmax,
     input wire [11:0] I_target_ymin,
@@ -230,6 +231,7 @@ module hdmi_mixer #(
     wire [11:0] S_result_center_y = I_target_center_y;
     reg S_target_found;
     reg S_target_motion_mode;
+    reg [1:0] S_target_color_mode;
     reg [11:0] S_target_xmin, S_target_xmax, S_target_ymin, S_target_ymax;
     reg [11:0] S_target_center_x, S_target_center_y;
     // Double-dabble conversion runs once per frame, during the first scan
@@ -280,6 +282,7 @@ module hdmi_mixer #(
         if (!I_rst_n) begin
             S_target_found <= 1'b0;
             S_target_motion_mode <= 1'b0;
+            S_target_color_mode <= 2'd0;
             S_target_xmin <= 12'd0; S_target_xmax <= 12'd0;
             S_target_ymin <= 12'd0; S_target_ymax <= 12'd0;
             S_target_center_x <= 12'd0; S_target_center_y <= 12'd0;
@@ -291,6 +294,7 @@ module hdmi_mixer #(
                      ((MULTI_TARGET_ENABLE != 0) && I_video_user)) begin
             S_target_found <= S_target_result_ready && S_target_result_found;
             S_target_motion_mode <= I_target_motion_mode;
+            S_target_color_mode <= I_target_color_mode;
             S_target_xmin <= S_result_xmin; S_target_xmax <= S_result_xmax;
             S_target_ymin <= S_result_ymin; S_target_ymax <= S_result_ymax;
             S_target_center_x <= S_result_center_x;
@@ -360,6 +364,45 @@ module hdmi_mixer #(
                 2: F_target_color = 24'hfff200;
                 default: F_target_color = 24'h40ff70;
             endcase
+        end
+    endfunction
+
+    function [7:0] F_target_mode_char;
+        input motion_mode;
+        input [1:0] color_mode;
+        input [1:0] char_index;
+        begin
+            if (motion_mode) begin
+                case (char_index)
+                    0: F_target_mode_char = "M";
+                    1: F_target_mode_char = "O";
+                    default: F_target_mode_char = "V";
+                endcase
+            end else begin
+                case (color_mode)
+                    2'd1: begin
+                        case (char_index)
+                            0: F_target_mode_char = "G";
+                            1: F_target_mode_char = "R";
+                            default: F_target_mode_char = "N";
+                        endcase
+                    end
+                    2'd2: begin
+                        case (char_index)
+                            0: F_target_mode_char = "B";
+                            1: F_target_mode_char = "L";
+                            default: F_target_mode_char = "U";
+                        endcase
+                    end
+                    default: begin
+                        case (char_index)
+                            0: F_target_mode_char = "R";
+                            1: F_target_mode_char = "E";
+                            default: F_target_mode_char = "D";
+                        endcase
+                    end
+                endcase
+            end
         end
     endfunction
 
@@ -583,9 +626,9 @@ module hdmi_mixer #(
             end else begin
                 case (label_local_x[6:4])
                     0: label_char = 8'h31+{6'd0,label_slot};
-                    2: label_char = S_target_motion_mode ? "M" : "R";
-                    3: label_char = S_target_motion_mode ? "O" : "E";
-                    4: label_char = S_target_motion_mode ? "V" : "D";
+                    2: label_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
+                    3: label_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);
+                    4: label_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,2);
                     6: label_char = held[label_slot] ? "H" : "O";
                     7: label_char = held[label_slot] ? " " : "K";
                     default: label_char = " ";
@@ -604,7 +647,7 @@ module hdmi_mixer #(
         assign S_follow_col = 4'd0;
     end endgenerate
 
-    // Bottom-left panel: RED/MOV:FOUND X:0000 Y:0000, or RED/MOV:NONE.
+    // Bottom-left panel: RED/GRN/BLU/MOV plus target status.
     // Uses the existing character ROM; coordinates are zero-based decimals.
     wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && S_video_de_2d &&
         (S_x_2d >= TARGET_TEXT_X) &&
@@ -619,9 +662,9 @@ module hdmi_mixer #(
         S_target_char = 8'h20;
         if (MULTI_TARGET_ENABLE != 0) begin
             case (S_target_char_index)
-                0: S_target_char = S_target_motion_mode ? "M" : "R";
-                1: S_target_char = S_target_motion_mode ? "O" : "E";
-                2: S_target_char = S_target_motion_mode ? "V" : "D";
+                0: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
+                1: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);
+                2: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,2);
                 4: S_target_char = "C";
                 5: S_target_char = "O";
                 6: S_target_char = "U";
@@ -635,9 +678,9 @@ module hdmi_mixer #(
                 default: S_target_char = " ";
             endcase
         end else case (S_target_char_index)
-            0: S_target_char = S_target_motion_mode ? "M" : "R";
-            1: S_target_char = S_target_motion_mode ? "O" : "E";
-            2: S_target_char = S_target_motion_mode ? "V" : "D";
+            0: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
+            1: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);
+            2: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,2);
             3: S_target_char = ":";
             4: S_target_char = S_target_found ? "F" : "N";
             5: S_target_char = "O";

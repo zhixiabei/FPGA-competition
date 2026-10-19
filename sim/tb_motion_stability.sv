@@ -29,6 +29,7 @@ module tb_motion_stability #(
         if (STABLE_PIPELINE) begin : stable
             target_detect_switch_96 #(.IMG_WIDTH(W), .IMG_HEIGHT(H)) dut (
                 .I_clk(clk), .I_rst_n(rst_n), .I_motion_mode_async(1'b1),
+                .I_color_mode_async(2'd3),
                 .I_tuser(tuser), .I_tlast(tlast), .I_tvalid(tvalid), .I_tdata(tdata),
                 .O_result_ready(ready), .O_found(found),
                 .O_xmin(xmin), .O_xmax(xmax), .O_ymin(ymin), .O_ymax(ymax),

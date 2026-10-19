@@ -9,6 +9,7 @@ module tb_multi_target_mixer;
     reg [23:0] rgb=0;
     reg [3:0] effect_mode=2;
     reg ready=0, found=0, motion=0, overflow=0;
+    reg [1:0] color_mode=0;
     reg [3:0] multi_valid=0, multi_hold=0;
     reg [191:0] multi_boxes=0;
     reg [11:0] tx0=0,tx1=0,ty0=0,ty1=0,tcx=0,tcy=0;
@@ -17,6 +18,7 @@ module tb_multi_target_mixer;
 
     reg [3:0] ref_valid=0, ref_hold=0, ref_label_valid=0, ref_compact=0;
     reg ref_motion=0, ref_overflow=0;
+    reg [1:0] ref_color=0;
     integer bx0[0:3], bx1[0:3], by0[0:3], by1[0:3];
     integer lx[0:3], ly[0:3];
     integer ref_cx=0, ref_cy=0;
@@ -53,7 +55,7 @@ module tb_multi_target_mixer;
         .I_cnn_result_valid(1'b0),.I_cnn_class(3'd1),
         .O_video_rd_en(rd),.O_display_frame_start(),
         .I_target_result_ready(ready),.I_target_found(found),
-        .I_target_motion_mode(motion),
+        .I_target_motion_mode(motion),.I_target_color_mode(color_mode),
         .I_target_xmin(tx0),.I_target_xmax(tx1),
         .I_target_ymin(ty0),.I_target_ymax(ty1),
         .I_target_center_x(tcx),.I_target_center_y(tcy),
@@ -85,6 +87,36 @@ module tb_multi_target_mixer;
         target_count=integer'(mask[0])+integer'(mask[1])+
                      integer'(mask[2])+integer'(mask[3]);
     endfunction
+    function automatic [7:0] target_mode_char(input integer column);
+        begin
+            target_mode_char=" ";
+            if (ref_motion) begin
+                case (column)
+                    0: target_mode_char="M";
+                    1: target_mode_char="O";
+                    2: target_mode_char="V";
+                endcase
+            end else begin
+                case (ref_color)
+                    1: case (column)
+                        0: target_mode_char="G";
+                        1: target_mode_char="R";
+                        2: target_mode_char="N";
+                    endcase
+                    2: case (column)
+                        0: target_mode_char="B";
+                        1: target_mode_char="L";
+                        2: target_mode_char="U";
+                    endcase
+                    default: case (column)
+                        0: target_mode_char="R";
+                        1: target_mode_char="E";
+                        2: target_mode_char="D";
+                    endcase
+                endcase
+            end
+        end
+    endfunction
     function automatic [23:0] camera_pixel(input integer f, xx, yy);
         camera_pixel={8'((xx+f*11)%256),8'((yy*3+31)%256),
                       8'((xx+yy+83)%256)};
@@ -97,9 +129,8 @@ module tb_multi_target_mixer;
                 if (column==2) following_char=ref_hold[slot] ? "H" : "O";
                 if (column==3) following_char=ref_hold[slot] ? " " : "K";
             end else begin
-                if (column==2) following_char=ref_motion ? "M" : "R";
-                if (column==3) following_char=ref_motion ? "O" : "E";
-                if (column==4) following_char=ref_motion ? "V" : "D";
+                if (column>=2 && column<=4)
+                    following_char=target_mode_char(column-2);
                 if (column==6) following_char=ref_hold[slot] ? "H" : "O";
                 if (column==7) following_char=ref_hold[slot] ? " " : "K";
             end
@@ -109,9 +140,7 @@ module tb_multi_target_mixer;
         begin
             panel_char=" ";
             case (column)
-                0: panel_char=ref_motion ? "M" : "R";
-                1: panel_char=ref_motion ? "O" : "E";
-                2: panel_char=ref_motion ? "V" : "D";
+                0,1,2: panel_char=target_mode_char(column);
                 4: panel_char="C";
                 5: panel_char="O";
                 6: panel_char="U";
@@ -244,6 +273,7 @@ module tb_multi_target_mixer;
                 if (dut.multi_target.valid!==ref_valid ||
                     dut.multi_target.held!==ref_hold ||
                     dut.S_target_motion_mode!==ref_motion ||
+                    dut.S_target_color_mode!==ref_color ||
                     dut.S_multi_count!==3'(target_count(ref_valid)) ||
                     dut.S_multi_overflow!==ref_overflow)
                     $fatal(1,"Metadata changed inside frame=%0d x=%0d y=%0d",
@@ -350,10 +380,10 @@ module tb_multi_target_mixer;
     endtask
     task automatic configure_frame(input integer f);
         begin
-            ready=1; found=1; motion=0; overflow=0; effect_mode=2;
+            ready=1; found=1; motion=0; color_mode=0; overflow=0; effect_mode=2;
             multi_valid=15; multi_hold=0; multi_boxes=0;
             tx0=320; tx1=450; ty0=200; ty1=300; tcx=385; tcy=250;
-            ref_valid=15; ref_hold=0; ref_motion=0; ref_overflow=0;
+            ref_valid=15; ref_hold=0; ref_motion=0; ref_color=0; ref_overflow=0;
             ref_label_valid=0; ref_compact=0; ref_cx=385; ref_cy=250;
             for (integer slot=0;slot<4;slot=slot+1) begin
                 set_box(slot,0,0,0,0); lx[slot]=0; ly[slot]=0;
@@ -367,6 +397,7 @@ module tb_multi_target_mixer;
                     set_box(3,430,520,280,310); set_label(3,430,262,0);
                 end
                 2: begin
+                    color_mode=1; ref_color=1;
                     multi_hold=10; ref_hold=10; overflow=1; ref_overflow=1;
                     set_box(0,200,270,210,240); set_label(0,200,192,0);
                     set_box(1,450,530,210,240); set_label(1,450,192,0);
@@ -374,6 +405,7 @@ module tb_multi_target_mixer;
                     set_box(3,450,530,300,320); set_label(3,450,282,0);
                 end
                 3: begin
+                    color_mode=2; ref_color=2;
                     set_box(0,290,350,0,20); set_label(0,290,23,0);
                     set_box(1,620,700,0,20); set_label(1,512,23,0);
                     set_box(2,0,20,340,500);
@@ -396,6 +428,7 @@ module tb_multi_target_mixer;
                     multi_hold=15; overflow=1;
                 end
                 7: begin
+                    color_mode=1; ref_color=1;
                     multi_hold=2; ref_hold=2;
                     for (integer slot=0;slot<4;slot=slot+1)
                         set_box(slot,512,512,110,110);
@@ -448,6 +481,7 @@ module tb_multi_target_mixer;
                     if (f==1 && yy==100 && xx==300) begin
                         // No result/configuration input may tear this frame.
                         ready=0; found=0; motion=1; multi_valid=0;
+                        color_mode=2;
                         multi_hold=15; multi_boxes={192{1'b1}}; overflow=1;
                         tx0=4095; tx1=4095; ty0=4095; ty1=4095;
                         tcx=4095; tcy=4095; effect_mode=3;

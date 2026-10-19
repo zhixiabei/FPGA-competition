@@ -526,7 +526,9 @@ module tb_target_frame_alignment;
         force dut.S_ISP_target_center_x = result_cx;
         force dut.S_ISP_target_center_y = result_cy;
         force dut.S_ISP_target_motion_mode = result_motion_mode;
+        force dut.S_ISP_target_color_mode = 2'd0;
         force dut.S_ISP_motion_mode_active = motion_mode;
+        force dut.S_ISP_color_mode_active = 2'd0;
         force dut.S_motion_mode_requested = detection_request;
         force dut.S_ISP_edge_mode_active = edge_mode;
         force dut.S_ISP_effect_config = effect_config;
@@ -633,8 +635,8 @@ endmodule
 module PLL(input wire [127:0] refclk, reset, clk0_out, clk1_out,
     clk4_out, clk5_out, lock);
 endmodule
-module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0)
-    (input wire [127:0] I_clk, I_rst_n, I_key_n, O_edge_mode);
+module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0, DEFAULT_MODE=0)
+    (input wire [127:0] I_clk, I_rst_n, I_key_n, O_detection_mode, O_edge_mode);
 endmodule
 module auto_exposure_control #(
     parameter TARGET_LOW=0, TARGET_HIGH=0, DARK_FAST=0, BRIGHT_FAST=0,
@@ -674,11 +676,13 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
 endmodule
 module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
     (input wire [127:0] axi4s_video_aclk, I_rst_n, I_effect_config, I_motion_mode_async,
+    I_color_mode_async,
     I_tlast, I_tuser, I_tdata, I_tvalid, I_tdest, O_tready, O_tdata,
     O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
     O_target_center_x, O_target_center_y, O_target_pixels,
-    O_target_frame_toggle, O_target_motion_mode, O_motion_mode_active,
+    O_target_frame_toggle, O_target_motion_mode, O_target_color_mode,
+    O_motion_mode_active, O_color_mode_active,
     O_target_result_frame_id, O_target_multi_valid, O_target_multi_hold,
     O_target_multi_boxes, O_target_multi_overflow,
     O_edge_mode_active, O_effect_config, I_tready,

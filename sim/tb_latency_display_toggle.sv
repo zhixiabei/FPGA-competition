@@ -42,7 +42,7 @@ module tb_latency_display_toggle;
         .I_latency_isp_us(isp_us),.I_latency_buffer_us(buffer_us), \
         .I_cnn_result_valid(1'b0),.I_cnn_class(3'd0), \
         .I_target_result_ready(1'b1),.I_target_found(1'b1), \
-        .I_target_motion_mode(1'b0),.I_target_xmin(12'd900), \
+        .I_target_motion_mode(1'b0),.I_target_color_mode(2'd0),.I_target_xmin(12'd900), \
         .I_target_xmax(12'd950),.I_target_ymin(12'd110), \
         .I_target_ymax(12'd150),.I_target_center_x(12'd925), \
         .I_target_center_y(12'd130),.I_target_multi_valid(4'b0001), \

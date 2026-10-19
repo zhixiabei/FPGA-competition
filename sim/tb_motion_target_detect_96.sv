@@ -485,6 +485,7 @@ module tb_target_detect_switch_96;
         .MOTION_STABLE_ENABLE(0)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_motion_mode_async(request_motion),
+        .I_color_mode_async(request_motion ? 2'd3 : 2'd0),
         .I_tuser(tuser), .I_tlast(tlast), .I_tvalid(tvalid), .I_tdata(tdata),
         .O_result_ready(ready), .O_found(found),
         .O_xmin(xmin), .O_xmax(xmax), .O_ymin(ymin), .O_ymax(ymax),

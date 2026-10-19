@@ -37,6 +37,7 @@ module tb_isp_lighting_integration #(
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),
         .I_effect_config({request_mode,8'd0}),
         .I_motion_mode_async(MOTION_MODE!=0),
+        .I_color_mode_async(MOTION_MODE!=0 ? 2'd3 : 2'd0),
         .I_tlast(raw_last),.I_tuser(raw_user),.I_tdata(raw_data),.I_tvalid(raw_valid),
         .I_tdest(10'd0),.O_tready(1'b1),.O_tdata(output_data),
         .O_tlast(output_last),.O_tuser(output_user),.O_tvalid(output_valid),

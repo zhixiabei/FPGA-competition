@@ -20,7 +20,7 @@ module tb_isp_motion_camera #(
     wire [23:0] target_pixels;
     isp_top #(.ENABLE_EDGE(0)) dut (
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),
-        .I_effect_config({4'd0,8'd0}),.I_motion_mode_async(1'b1),
+        .I_effect_config({4'd0,8'd0}),.I_motion_mode_async(1'b1),.I_color_mode_async(2'd3),
         .I_tlast(raw_last),.I_tuser(raw_user),.I_tdata(raw_data),
         .I_tvalid(raw_valid),.I_tdest(10'd0),.O_tready(1'b1),
         .O_tdata(output_data),.O_tlast(output_last),.O_tuser(output_user),

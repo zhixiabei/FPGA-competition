@@ -7,6 +7,7 @@ module tb_target_frame_bridge;
     always #3 if (ddr_running) ddr_clk = ~ddr_clk;
     always #5.5 if (hdmi_running) hdmi_clk = ~hdmi_clk;
     reg rst_n = 0, frame_start = 0, motion_mode = 0;
+    reg [1:0] color_mode = 0, result_color = 0;
     reg [9:0] frame_id = 0;
     reg [11:0] effect_config = 0;
     reg result_ready = 0, result_found = 0, result_motion = 0;
@@ -18,6 +19,7 @@ module tb_target_frame_bridge;
     reg production_word = 0;
     reg [1:0] write_slot = 0, read_slot = 0;
     wire ready, found, out_motion, out_overflow, production_ready;
+    wire [1:0] out_color;
     wire [11:0] out_config, out_xmin, out_xmax, out_ymin, out_ymax, out_cx, out_cy;
     wire [3:0] out_valid, out_hold;
     wire [191:0] out_boxes;
@@ -28,9 +30,10 @@ module tb_target_frame_bridge;
     target_frame_bridge #(.FRAME_WORDS(4), .DEFAULT_EFFECT_CONFIG(12'h123)) dut (
         .I_csi_clk(csi_clk), .I_ddr_clk(ddr_clk), .I_hdmi_clk(hdmi_clk), .I_rst_n(rst_n),
         .I_frame_start(frame_start), .I_frame_id(frame_id),
-        .I_effect_config(effect_config), .I_motion_mode(motion_mode),
+        .I_effect_config(effect_config), .I_motion_mode(motion_mode), .I_color_mode(color_mode),
         .I_result_ready(result_ready), .I_result_frame_id(result_id),
         .I_result_found(result_found), .I_result_motion_mode(result_motion),
+        .I_result_color_mode(result_color),
         .I_result_xmin(xmin), .I_result_xmax(xmax),
         .I_result_ymin(ymin), .I_result_ymax(ymax),
         .I_result_center_x(cx), .I_result_center_y(cy),
@@ -39,6 +42,7 @@ module tb_target_frame_bridge;
         .I_write_start(write_start), .I_write_slot(write_slot), .I_write_word(write_word),
         .I_read_start(read_start), .I_read_slot(read_slot),
         .O_ready(ready), .O_effect_config(out_config), .O_motion_mode(out_motion),
+        .O_color_mode(out_color),
         .O_found(found), .O_xmin(out_xmin), .O_xmax(out_xmax),
         .O_ymin(out_ymin), .O_ymax(out_ymax), .O_center_x(out_cx), .O_center_y(out_cy),
         .O_multi_valid(out_valid), .O_multi_hold(out_hold),
@@ -49,9 +53,10 @@ module tb_target_frame_bridge;
     target_frame_bridge production_dut (
         .I_csi_clk(csi_clk), .I_ddr_clk(ddr_clk), .I_hdmi_clk(hdmi_clk), .I_rst_n(rst_n),
         .I_frame_start(frame_start), .I_frame_id(frame_id),
-        .I_effect_config(effect_config), .I_motion_mode(motion_mode),
+        .I_effect_config(effect_config), .I_motion_mode(motion_mode), .I_color_mode(color_mode),
         .I_result_ready(result_ready), .I_result_frame_id(result_id),
         .I_result_found(result_found), .I_result_motion_mode(result_motion),
+        .I_result_color_mode(result_color),
         .I_result_xmin(xmin), .I_result_xmax(xmax),
         .I_result_ymin(ymin), .I_result_ymax(ymax),
         .I_result_center_x(cx), .I_result_center_y(cy),
@@ -336,6 +341,18 @@ module tb_target_frame_bridge;
         source_frame(604,12'h400,0);
         send_result(600,0,700,1,1,0,0); drain(); select_read(0);
         check_output(0,12'h000,0,0,0,0,0,0,"overwritten source context drops stale result");
+
+        // Color selection is part of the same frame identity as detector mode.
+        color_mode=2'd1; result_color=2'd2;
+        source_frame(605,12'h000,0); start_write(2); words(4);
+        send_result(605,0,720,1,1,0,0); drain(); select_read(2);
+        check_output(0,12'h000,0,0,0,0,0,0,"wrong source color mode rejected");
+        result_color=2'd1;
+        send_result(605,0,720,1,1,0,0); drain(); select_read(2);
+        check_output(1,12'h000,0,720,1,1,0,0,"selected color mode follows buffered frame");
+        if (out_color!==2'd1)
+            $fatal(1,"Buffered color mode expected green, got %0d",out_color);
+        color_mode=2'd0; result_color=2'd0;
 
         source_frame(610,12'h800,0); start_write(3);
         send_result(610,0,200,1,3,0,0); drain();

@@ -67,11 +67,11 @@ set_false_path -from [get_regs {u_video/u_target_frame_bridge/S_result_request}]
 set_false_path -from [get_regs {u_video/u_target_frame_bridge/S_result_ack}] -to [get_regs {u_video/u_target_frame_bridge/S_result_ack_meta}]
 set_false_path -from [get_regs {u_video/u_target_frame_bridge/S_read_request}] -to [get_regs {u_video/u_target_frame_bridge/S_read_req_meta}]
 set_false_path -from [get_regs {u_video/u_target_frame_bridge/S_read_ack}] -to [get_regs {u_video/u_target_frame_bridge/S_read_ack_meta}]
-set_max_delay -datapath_only -from [get_regs {u_video/u_target_frame_bridge/S_start_nonce[*] u_video/u_target_frame_bridge/S_start_frame_id[*] u_video/u_target_frame_bridge/S_start_effect_config[*] u_video/u_target_frame_bridge/S_start_motion_mode u_video/u_target_frame_bridge/S_start_valid}] -to [get_regs {u_video/u_target_frame_bridge/S_slot*}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_video/u_target_frame_bridge/S_start_nonce[*] u_video/u_target_frame_bridge/S_start_frame_id[*] u_video/u_target_frame_bridge/S_start_effect_config[*] u_video/u_target_frame_bridge/S_start_motion_mode u_video/u_target_frame_bridge/S_start_color_mode[*] u_video/u_target_frame_bridge/S_start_valid}] -to [get_regs {u_video/u_target_frame_bridge/S_slot*}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_video/u_target_frame_bridge/S_result_payload[*]}] -to [get_regs {u_video/u_target_frame_bridge/S_slot* u_video/u_target_frame_bridge/S_last_result_payload[*]}] 20.000
 set_max_delay -datapath_only -from [get_regs {u_video/u_target_frame_bridge/S_read_payload[*]}] -to [get_regs {u_video/u_target_frame_bridge/O_*}] 13.000
 
 # K2 selects detection only at a camera frame boundary.
-set_false_path -from [get_regs {u_video/u_detection_mode_control/O_edge_mode}] -to [get_regs {u_video/u_isp_top/u_target_detect_switch/mode_meta}]
+set_false_path -from [get_regs {u_video/u_detection_mode_control/O_detection_mode[*]}] -to [get_regs {u_video/u_isp_top/u_target_detect_switch/color_meta[*]}]
 # SW1 is sampled by the first HDMI synchronizer; the second stage remains timed.
 set_false_path -from [get_ports {I_latency_switch}] -to [get_regs {u_video/u_hdmi_mixer/latency_switch$show_meta}]
