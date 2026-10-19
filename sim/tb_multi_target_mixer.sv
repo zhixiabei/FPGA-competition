@@ -12,6 +12,7 @@ module tb_multi_target_mixer;
     reg [1:0] color_mode=0;
     reg [3:0] multi_valid=0, multi_hold=0;
     reg [191:0] multi_boxes=0;
+    reg [7:0] multi_shapes=0, ref_shapes=0;
     reg [11:0] tx0=0,tx1=0,ty0=0,ty1=0,tcx=0,tcy=0;
     wire rd, out_de, out_hs, out_vs;
     wire [23:0] out_rgb;
@@ -61,6 +62,7 @@ module tb_multi_target_mixer;
         .I_target_center_x(tcx),.I_target_center_y(tcy),
         .I_target_multi_valid(multi_valid),.I_target_multi_hold(multi_hold),
         .I_target_multi_boxes(multi_boxes),.I_target_multi_overflow(overflow),
+        .I_target_multi_shapes(multi_shapes),
         .O_hdmi_de(out_de),.O_hdmi_hsync(out_hs),
         .O_hdmi_vsync(out_vs),.O_hdmi_data(out_rgb)
     );
@@ -79,6 +81,18 @@ module tb_multi_target_mixer;
             2: slot_color=24'hfff200;
             default: slot_color=24'h40ff70;
         endcase
+    endfunction
+    function automatic [7:0] shape_char(input integer slot, column);
+        reg [23:0] name;
+        begin
+            case (ref_shapes[2*slot+:2])
+                1: name="SQR";
+                2: name="TRI";
+                3: name="CIR";
+                default: name="UNK";
+            endcase
+            shape_char=name[23-8*column-:8];
+        end
     endfunction
     function automatic integer abs_value(input integer value);
         abs_value=(value<0) ? -value : value;
@@ -125,14 +139,26 @@ module tb_multi_target_mixer;
         begin
             following_char=" ";
             if (column==0) following_char="1"+slot;
-            if (ref_compact[slot]) begin
+            if (ref_motion && ref_compact[slot]) begin
                 if (column==2) following_char=ref_hold[slot] ? "H" : "O";
                 if (column==3) following_char=ref_hold[slot] ? " " : "K";
-            end else begin
+            end else if (ref_motion) begin
                 if (column>=2 && column<=4)
                     following_char=target_mode_char(column-2);
                 if (column==6) following_char=ref_hold[slot] ? "H" : "O";
                 if (column==7) following_char=ref_hold[slot] ? " " : "K";
+            end else if (ref_compact[slot]) begin
+                if (column>=2 && column<=4)
+                    following_char=shape_char(slot,column-2);
+                if (column==6) following_char=ref_hold[slot] ? "H" : "O";
+                if (column==7) following_char=ref_hold[slot] ? " " : "K";
+            end else begin
+                if (column>=2 && column<=4)
+                    following_char=target_mode_char(column-2);
+                if (column>=6 && column<=8)
+                    following_char=shape_char(slot,column-6);
+                if (column==10) following_char=ref_hold[slot] ? "H" : "O";
+                if (column==11) following_char=ref_hold[slot] ? " " : "K";
             end
         end
     endfunction
@@ -170,7 +196,9 @@ module tb_multi_target_mixer;
         ref_label_hit=0; ref_label_slot=0; ref_lx=0; ref_ly=0;
         for (slot=3;slot>=0;slot=slot-1) begin
             if (ref_label_valid[slot] && xx>=lx[slot] &&
-                xx<lx[slot]+(ref_compact[slot] ? 64 : 128) &&
+                xx<lx[slot]+(ref_motion ?
+                    (ref_compact[slot] ? 64 : 128) :
+                    (ref_compact[slot] ? 128 : 192)) &&
                 yy>=ly[slot] && yy<ly[slot]+16) begin
                 ref_label_hit=1; ref_label_slot=slot;
                 ref_lx=xx-lx[slot]; ref_ly=yy-ly[slot];
@@ -272,6 +300,7 @@ module tb_multi_target_mixer;
                 end
                 if (dut.multi_target.valid!==ref_valid ||
                     dut.multi_target.held!==ref_hold ||
+                    dut.multi_target.shapes!==ref_shapes ||
                     dut.S_target_motion_mode!==ref_motion ||
                     dut.S_target_color_mode!==ref_color ||
                     dut.S_multi_count!==3'(target_count(ref_valid)) ||
@@ -382,6 +411,7 @@ module tb_multi_target_mixer;
         begin
             ready=1; found=1; motion=0; color_mode=0; overflow=0; effect_mode=2;
             multi_valid=15; multi_hold=0; multi_boxes=0;
+            multi_shapes=8'b00_11_10_01; ref_shapes=multi_shapes;
             tx0=320; tx1=450; ty0=200; ty1=300; tcx=385; tcy=250;
             ref_valid=15; ref_hold=0; ref_motion=0; ref_color=0; ref_overflow=0;
             ref_label_valid=0; ref_compact=0; ref_cx=385; ref_cy=250;
@@ -400,16 +430,16 @@ module tb_multi_target_mixer;
                     color_mode=1; ref_color=1;
                     multi_hold=10; ref_hold=10; overflow=1; ref_overflow=1;
                     set_box(0,200,270,210,240); set_label(0,200,192,0);
-                    set_box(1,450,530,210,240); set_label(1,450,192,0);
+                    set_box(1,450,530,210,240); set_label(1,448,192,0);
                     set_box(2,200,270,300,320); set_label(2,200,282,0);
-                    set_box(3,450,530,300,320); set_label(3,450,282,0);
+                    set_box(3,450,530,300,320); set_label(3,448,282,0);
                 end
                 3: begin
                     color_mode=2; ref_color=2;
                     set_box(0,290,350,0,20); set_label(0,290,23,0);
-                    set_box(1,620,700,0,20); set_label(1,512,23,0);
+                    set_box(1,620,700,0,20); set_label(1,512,23,1);
                     set_box(2,0,20,340,500);
-                    set_box(3,620,999,340,999); set_label(3,512,322,0);
+                    set_box(3,620,999,340,999); set_label(3,448,322,0);
                 end
                 4: begin
                     ref_valid=0;
@@ -420,11 +450,13 @@ module tb_multi_target_mixer;
                 end
                 5: begin
                     motion=1; ref_motion=1; ref_valid=1;
+                    ref_shapes=0;
                     overflow=1; multi_hold=15;
                     set_box(0,320,450,200,300); set_label(0,320,182,0);
                 end
                 6: begin
                     motion=1; ref_motion=1; found=0; ref_valid=0;
+                    ref_shapes=0;
                     multi_hold=15; overflow=1;
                 end
                 7: begin
@@ -432,16 +464,19 @@ module tb_multi_target_mixer;
                     multi_hold=2; ref_hold=2;
                     for (integer slot=0;slot<4;slot=slot+1)
                         set_box(slot,512,512,110,110);
-                    set_label(0,512,92,0); set_label(1,446,92,1);
+                    set_label(0,448,92,0);
                 end
                 8: begin
-                    set_box(0,0,639,0,359); set_label(0,512,341,0);
+                    set_box(0,0,639,0,359); set_label(0,448,341,0);
                     set_box(1,192,431,16,95); set_label(1,192,98,0);
-                    set_box(2,375,574,120,143); set_label(2,375,102,0);
+                    set_box(2,375,574,120,143); set_label(2,375,146,0);
                     set_box(3,16,255,328,343); set_label(3,16,310,0);
                 end
                 10: begin
                     multi_valid=1; ref_valid=1;
+                    // A legacy instance with an unconnected shape field
+                    // must display UNK using deterministic glyphs.
+                    multi_shapes[1:0]=2'bzz; ref_shapes=multi_shapes;
                     set_box(0,300,350,34,80); set_label(0,300,16,0);
                 end
                 11: begin
@@ -483,6 +518,7 @@ module tb_multi_target_mixer;
                         ready=0; found=0; motion=1; multi_valid=0;
                         color_mode=2;
                         multi_hold=15; multi_boxes={192{1'b1}}; overflow=1;
+                        multi_shapes=8'hff;
                         tx0=4095; tx1=4095; ty0=4095; ty1=4095;
                         tcx=4095; tcy=4095; effect_mode=3;
                     end

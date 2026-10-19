@@ -13,11 +13,13 @@ module tb_red_multi_frame_alignment;
     reg [9:0] camera_id = 0, result_id = 0;
     reg [11:0] effect_config = 0;
     reg motion_mode = 0, detection_request = 0;
+    reg [1:0] color_mode = 0, result_color = 0;
     reg result_ready = 0, result_found = 0, result_motion = 0;
     reg [11:0] result_xmin = 0, result_xmax = 0, result_ymin = 0, result_ymax = 0;
     reg [11:0] result_cx = 0, result_cy = 0;
     reg [3:0] result_valid = 0, result_hold = 0;
     reg [191:0] result_boxes = 0;
+    reg [7:0] result_shapes = 0;
     reg result_overflow = 0;
     reg hdmi_vs = 1, hdmi_de = 0, hdmi_user = 0, hdmi_last = 0;
 
@@ -26,11 +28,16 @@ module tb_red_multi_frame_alignment;
     integer red_four_checks = 0, motion_checks = 0, buffered_mode_checks = 0;
     integer missing_checks = 0, partial_checks = 0, late_checks = 0;
     integer rollback_checks = 0, freeze_checks = 0, geometry_checks = 0;
+    integer green_checks = 0, blue_checks = 0, shape_checks = 0;
+    integer mask_checks [9:12];
     reg [11:0] source_config [0:1023];
     bit source_motion [0:1023];
+    reg [1:0] source_color [0:1023];
     integer ref_id [0:3], ref_words [0:3];
     reg [11:0] ref_config [0:3];
     bit ref_motion [0:3], ref_result [0:3], ref_found [0:3];
+    reg [1:0] ref_color [0:3];
+    reg [7:0] ref_shapes [0:3];
     reg [3:0] ref_valid [0:3], ref_hold [0:3];
     bit ref_overflow [0:3];
     integer snapshot_id = -1, snapshot_words = 0;
@@ -38,6 +45,8 @@ module tb_red_multi_frame_alignment;
     bit snapshot_ready = 0, snapshot_motion = 0, snapshot_found = 0;
     reg [3:0] snapshot_valid = 0, snapshot_hold = 0;
     bit snapshot_overflow = 0;
+    reg [1:0] snapshot_color = 0;
+    reg [7:0] snapshot_shapes = 0;
 
     design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(1)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
@@ -57,7 +66,8 @@ module tb_red_multi_frame_alignment;
     function automatic integer offset_of(input [11:0] config_value);
         case (config_value[11:8])
             2, 6, 7: offset_of = 3;
-            4, 8: offset_of = 1;
+            4, 8, 10, 11: offset_of = 1;
+            12: offset_of = 3;
             default: offset_of = 0;
         endcase
     endfunction
@@ -86,6 +96,14 @@ module tb_red_multi_frame_alignment;
         end
     endfunction
 
+    function automatic [7:0] packed_shapes(input integer id);
+        integer b;
+        begin
+            for (b=0; b<4; b=b+1)
+                packed_shapes[2*b +: 2] = 2'((id+b)%4);
+        end
+    endfunction
+
     // Decode actual base addresses after the production address registers
     // update. Never derive the reference from bridge/slot metadata registers.
     always @(posedge ddr_clk) begin
@@ -99,6 +117,8 @@ module tb_red_multi_frame_alignment;
             ref_words[current_write_slot] = 0;
             ref_config[current_write_slot] = source_config[source_frame_id];
             ref_motion[current_write_slot] = source_motion[source_frame_id];
+            ref_color[current_write_slot] = source_color[source_frame_id];
+            ref_shapes[current_write_slot] = 0;
             ref_result[current_write_slot] = 0;
             ref_found[current_write_slot] = 0;
             ref_valid[current_write_slot] = 0;
@@ -121,10 +141,12 @@ module tb_red_multi_frame_alignment;
             snapshot_words = ref_words[current_read_slot];
             snapshot_config = ref_config[current_read_slot];
             snapshot_motion = ref_motion[current_read_slot];
+            snapshot_color = ref_color[current_read_slot];
             snapshot_ready = snapshot_words == FRAME_WORDS && ref_result[current_read_slot];
             snapshot_found = snapshot_ready && ref_found[current_read_slot];
             snapshot_valid = snapshot_ready ? ref_valid[current_read_slot] : 0;
             snapshot_hold = snapshot_ready ? ref_hold[current_read_slot] : 0;
+            snapshot_shapes = snapshot_ready ? ref_shapes[current_read_slot] : 0;
             snapshot_overflow = snapshot_ready && ref_overflow[current_read_slot];
             read_events = read_events+1;
         end
@@ -137,6 +159,8 @@ module tb_red_multi_frame_alignment;
             @(negedge csi_clk);
             source_frame_id = id; camera_id = id;
             source_config[id] = config_value; source_motion[id] = motion;
+            color_mode = motion ? 2'd0 : 2'(id%3);
+            source_color[id] = color_mode;
             effect_config = config_value; motion_mode = motion;
             detection_request = motion; camera_error = rx_error;
             before_count = write_events;
@@ -167,18 +191,22 @@ module tb_red_multi_frame_alignment;
         begin
             @(negedge csi_clk);
             result_ready = 1; result_id = id; result_motion = motion; result_found = found_value;
+            result_color = source_color[id];
             result_xmin = box_x(id,0); result_xmax = box_x(id,0)+96;
             result_ymin = box_y(id,0); result_ymax = box_y(id,0)+48;
             result_cx = box_x(id,0)+48; result_cy = box_y(id,0)+24;
             result_boxes = packed_boxes(id,0);
+            result_shapes = motion ? 8'd0 : packed_shapes(id);
             result_valid = valid_value; result_hold = held_value; result_overflow = overflow_value;
             @(negedge csi_clk);
             result_ready = 0;
             for (s=0; s<4; s=s+1)
-                if (ref_id[s] == id && ref_motion[s] == motion) begin
+                if (ref_id[s] == id && ref_motion[s] == motion &&
+                    ref_color[s] == result_color) begin
                     ref_result[s] = 1; ref_found[s] = found_value;
                     ref_valid[s] = valid_value; ref_hold[s] = held_value;
                     ref_overflow[s] = overflow_value;
+                    ref_shapes[s] = result_shapes;
                 end
             repeat (18) @(negedge csi_clk);
         end
@@ -190,9 +218,11 @@ module tb_red_multi_frame_alignment;
             if (dut.u_hdmi_mixer.I_target_result_ready !== snapshot_ready ||
                 {dut.u_hdmi_mixer.I_effect_mode,dut.u_hdmi_mixer.I_effect_param} !== snapshot_config ||
                 dut.u_hdmi_mixer.I_target_motion_mode !== snapshot_motion ||
+                dut.u_hdmi_mixer.I_target_color_mode !== snapshot_color ||
                 dut.u_hdmi_mixer.I_target_found !== snapshot_found ||
                 dut.u_hdmi_mixer.I_target_multi_valid !== snapshot_valid ||
                 dut.u_hdmi_mixer.I_target_multi_hold !== snapshot_hold ||
+                dut.u_hdmi_mixer.I_target_multi_shapes !== snapshot_shapes ||
                 dut.u_hdmi_mixer.I_target_multi_overflow !== snapshot_overflow)
                 $fatal(1,"%s selected metadata mismatch slot=%0d frame=%0d ready=%b/%b config=%h/%h mode=%b/%b",
                     scenario,current_read_slot,snapshot_id,
@@ -228,9 +258,11 @@ module tb_red_multi_frame_alignment;
             repeat (150) @(negedge hdmi_clk);
             if (dut.u_hdmi_mixer.multi_target.valid !== expected_valid ||
                 dut.u_hdmi_mixer.multi_target.held !== expected_hold ||
+                dut.u_hdmi_mixer.multi_target.shapes !== snapshot_shapes ||
                 dut.u_hdmi_mixer.multi_target.overflow !==
                     (snapshot_overflow && !snapshot_motion) ||
                 dut.u_hdmi_mixer.S_target_motion_mode !== snapshot_motion ||
+                dut.u_hdmi_mixer.S_target_color_mode !== snapshot_color ||
                 dut.u_hdmi_mixer.S_target_found !== snapshot_found ||
                 dut.u_hdmi_mixer.S_effect_mode !== snapshot_config[11:8])
                 $fatal(1,"Mixer frame latch mismatch frame=%0d valid=%b/%b held=%b/%b",
@@ -244,6 +276,7 @@ module tb_red_multi_frame_alignment;
                         dut.u_hdmi_mixer.multi_target.ymax[b] !== expected_boxes[b*48+36 +: 12])
                         $fatal(1,"Mixer box belongs to another source frame=%0d box=%0d",snapshot_id,b);
                     geometry_checks = geometry_checks+1;
+                    shape_checks = shape_checks+1;
                 end
             hdmi_last = 1;
             @(negedge hdmi_clk);
@@ -251,8 +284,14 @@ module tb_red_multi_frame_alignment;
             repeat (5) @(negedge hdmi_clk);
             display_checks = display_checks+1;
             if (!snapshot_motion && expected_valid == 15) red_four_checks = red_four_checks+1;
+            if (!snapshot_motion && snapshot_ready && snapshot_color == 1)
+                green_checks = green_checks+1;
+            if (!snapshot_motion && snapshot_ready && snapshot_color == 2)
+                blue_checks = blue_checks+1;
             if (snapshot_motion && snapshot_ready) motion_checks = motion_checks+1;
             if (snapshot_motion != motion_mode) buffered_mode_checks = buffered_mode_checks+1;
+            if(snapshot_ready && snapshot_config[11:8]>=9 && snapshot_config[11:8]<=12)
+                mask_checks[snapshot_config[11:8]]=mask_checks[snapshot_config[11:8]]+1;
             if (!snapshot_ready) missing_checks = missing_checks+1;
             if (snapshot_words > 0 && snapshot_words < FRAME_WORDS) partial_checks = partial_checks+1;
         end
@@ -288,13 +327,13 @@ module tb_red_multi_frame_alignment;
         force dut.S_isp_frame_id = camera_id;
         force dut.S_ISP_effect_config = effect_config;
         force dut.S_ISP_motion_mode_active = motion_mode;
-        force dut.S_ISP_color_mode_active = 2'd0;
+        force dut.S_ISP_color_mode_active = color_mode;
         force dut.S_motion_mode_requested = detection_request;
         force dut.S_ISP_target_result_ready = result_ready;
         force dut.S_ISP_target_result_frame_id = result_id;
         force dut.S_ISP_target_found = result_found;
         force dut.S_ISP_target_motion_mode = result_motion;
-        force dut.S_ISP_target_color_mode = 2'd0;
+        force dut.S_ISP_target_color_mode = result_color;
         force dut.S_ISP_target_xmin = result_xmin;
         force dut.S_ISP_target_xmax = result_xmax;
         force dut.S_ISP_target_ymin = result_ymin;
@@ -304,6 +343,7 @@ module tb_red_multi_frame_alignment;
         force dut.S_ISP_target_multi_valid = result_valid;
         force dut.S_ISP_target_multi_hold = result_hold;
         force dut.S_ISP_target_multi_boxes = result_boxes;
+        force dut.S_ISP_target_multi_shapes = result_shapes;
         force dut.S_ISP_target_multi_overflow = result_overflow;
         force dut.S_hdmi_vsync = hdmi_vs;
         force dut.S_hdmi_hsync = 1'b0;
@@ -322,10 +362,13 @@ module tb_red_multi_frame_alignment;
             ref_id[s] = -1; ref_words[s] = 0; ref_config[s] = 0;
             ref_motion[s] = 0; ref_result[s] = 0; ref_found[s] = 0;
             ref_valid[s] = 0; ref_hold[s] = 0; ref_overflow[s] = 0;
+            ref_color[s] = 0; ref_shapes[s] = 0;
         end
         repeat (12) @(negedge csi_clk);
         rst_n = 1;
         repeat (10) @(negedge csi_clk);
+        for(integer mask_mode=9;mask_mode<=12;mask_mode=mask_mode+1)
+            mask_checks[mask_mode]=0;
 
         start_camera(0,12'h2a5,0,0); write_words(FRAME_WORDS); publish(0,0,1,15,4,0);
         start_camera(1,12'h4b6,0,0); write_words(FRAME_WORDS); publish(1,0,1,15,2,1);
@@ -384,14 +427,29 @@ module tb_red_multi_frame_alignment;
         if (snapshot_id != 14 || !snapshot_ready)
             $fatal(1,"Reused slot source frame mismatch");
         check_bridge_snapshot("old replaced frame never restores its four boxes");
-        if (write_events != 17 || red_four_checks < 8 || motion_checks < 2 ||
+        start_camera(17,12'h95a,0,0); write_words(FRAME_WORDS); publish(17,0,1,15,4,0);
+        start_camera(18,12'ha6b,0,0); write_words(FRAME_WORDS); publish(18,0,1,15,2,0);
+        display_frame();
+        start_camera(19,12'hb7c,0,0); write_words(FRAME_WORDS); publish(19,0,1,15,1,0);
+        display_frame();
+        start_camera(20,12'hc8d,0,0); write_words(FRAME_WORDS); publish(20,0,1,15,8,0);
+        display_frame();
+        start_camera(21,12'h000,0,0); write_words(FRAME_WORDS); publish(21,0,1,15,4,0);
+        display_frame();
+        start_camera(22,12'h000,0,0); write_words(FRAME_WORDS); publish(22,0,1,15,2,0);
+        display_frame();
+        for(integer mask_mode=9;mask_mode<=12;mask_mode=mask_mode+1)
+            if(mask_checks[mask_mode]==0)
+                $fatal(1,"Missing production mask-mode frame/shape alignment mode=%0d",mask_mode);
+        if (write_events != 23 || red_four_checks < 8 || motion_checks < 2 ||
             buffered_mode_checks < 2 || partial_checks != 1 || late_checks != 1 ||
-            rollback_checks != 1 || freeze_checks != 1 || geometry_checks < 30)
+            rollback_checks != 1 || freeze_checks != 1 || geometry_checks < 30 ||
+            green_checks == 0 || blue_checks == 0 || shape_checks < 30)
             $fatal(1,"Production multi-frame integration coverage incomplete");
-        $display("RED_MULTI_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d red_four=%0d motion=%0d buffered_mode=%0d partial=%0d late=%0d rollback=%0d freeze=%0d geometry=%0d words=%0d",
+        $display("RED_MULTI_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d red_four=%0d motion=%0d buffered_mode=%0d partial=%0d late=%0d rollback=%0d freeze=%0d geometry=%0d green=%0d blue=%0d shapes=%0d words=%0d mask_modes=9..12",
             write_events,read_events,display_checks,red_four_checks,motion_checks,
             buffered_mode_checks,partial_checks,late_checks,rollback_checks,
-            freeze_checks,geometry_checks,FRAME_WORDS);
+            freeze_checks,geometry_checks,green_checks,blue_checks,shape_checks,FRAME_WORDS);
         $finish;
     end
     initial begin

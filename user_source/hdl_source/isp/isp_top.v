@@ -45,6 +45,7 @@ module isp_top #(
     output [3:0]    O_target_multi_valid,
     output [3:0]    O_target_multi_hold,
     output [191:0]  O_target_multi_boxes,
+    output [7:0]    O_target_multi_shapes,
     output          O_target_multi_overflow,
     output          O_edge_mode_active,
     output [11:0]   O_effect_config,
@@ -89,6 +90,7 @@ wire         m_aixs_tvalid;  //synthesis keep
     wire         edge_O_tuser;  //synthesis keep
     wire [ 95:0] edge_O_tdata;  //synthesis keep
     wire         edge_O_tvalid;  //synthesis keep
+    wire [3:0]   target_mask_pixels;
     assign awb_O_tready = O_tready;
   assign O_tdata  = awb_O_tdata_128;
   assign O_tlast  = awb_O_tlast    ;
@@ -241,6 +243,7 @@ rgb_edge_switch_96 #(
     .I_tuser (awb_O_tuser),
     .I_tdata (awb_O_tdata),
     .I_tvalid(awb_O_tvalid),
+    .I_mask_pixels(target_mask_pixels),
     .O_tlast (edge_O_tlast),
     .O_tuser (edge_O_tuser),
     .O_tdata (edge_O_tdata),
@@ -262,6 +265,7 @@ target_detect_switch_96 #(
     .I_rst_n(I_rst_n),
     .I_motion_mode_async(I_motion_mode_async),
     .I_color_mode_async(I_color_mode_async),
+    .I_effect_config(I_effect_config),
     .I_tuser(awb_O_tuser),
     .I_tlast(awb_O_tlast),
     .I_tvalid(awb_O_tvalid),
@@ -285,6 +289,8 @@ target_detect_switch_96 #(
     .O_multi_valid(O_target_multi_valid),
     .O_multi_hold(O_target_multi_hold),
     .O_multi_boxes(O_target_multi_boxes),
+    .O_multi_shapes(O_target_multi_shapes),
+    .O_mask_pixels(target_mask_pixels),
     .O_multi_overflow(O_target_multi_overflow)
 );
 

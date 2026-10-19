@@ -7,14 +7,19 @@ module tb_isp_lighting_integration #(
     parameter integer EMBOSS_MODE=0,
     parameter integer CARTOON_MODE=0,
     parameter integer MORPH_MODE=0,
-    parameter integer SCHARR_INV_MODE=0
+    parameter integer SCHARR_INV_MODE=0,
+    parameter integer MASK_MODE=0
 );
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
     localparam integer AWB_LATENCY=54;
-    localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 6;
+    // The color result uses three shared binary windows: majority, dilation,
+    // erosion. Its nine registered clocks are observed one edge later here.
+    // Motion retains its existing thirteen-clock publication contract.
+    localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 10;
     localparam [3:0] THIRD_FRAME_MODE=EMBOSS_MODE ? 4'd4 :
-        CARTOON_MODE ? 4'd6 : SCHARR_INV_MODE ? 4'd7 : MORPH_MODE ? 4'd8 : 4'd0;
+        CARTOON_MODE ? 4'd6 : SCHARR_INV_MODE ? 4'd7 : MORPH_MODE ? 4'd8 :
+        MASK_MODE>=9 && MASK_MODE<=12 ? 4'(MASK_MODE) : 4'd0;
     reg clk=0;
     always #5 clk=~clk;
     reg rst_n=0;
@@ -62,6 +67,9 @@ module tb_isp_lighting_integration #(
     integer cartoon_pixels=0,cartoon_black=0,cartoon_color=0,cartoon_nonblack=0;
     integer morph_pixels=0,morph_black=0,morph_white=0,morph_intermediate=0;
     integer inverse_pixels=0,inverse_black=0,inverse_white=0;
+    integer mask_pixels=0,mask_black=0,mask_white=0;
+    reg mask_raw [0:W*H-1],mask_majority [0:W*H-1],mask_dilated [0:W*H-1];
+    reg mask_expected [0:W*H-1];
     integer cartoon_gray[0:W*H-1],cartoon_smooth[0:W*H-1];
     integer cartoon_magnitude[0:W*H-1],cartoon_direction[0:W*H-1];
     reg [23:0] cartoon_expected[0:W*H-1];
@@ -93,7 +101,11 @@ module tb_isp_lighting_integration #(
                            24'hc8231e : 24'h8c6e64;
                 1: scene = x>=700 && x<=859 && y>=400 && y<=519 ?
                            24'h320f0c : 24'hffaaBE;
-                default: scene = (x<128 && y<80) ||
+                default: scene = MASK_MODE!=0 && x>=200 && x<=359 &&
+                    y>=180 && y<=299 &&
+                    !((x==241 || x==242) && (y==225 || y==226)) ?
+                    24'hc8231e :
+                    (x<128 && y<80) ||
                     ((EMBOSS_MODE || CARTOON_MODE || MORPH_MODE || SCHARR_INV_MODE) &&
                      x>=256 && x<384 && y>=160 && y<240) ?
                     24'hffffff :
@@ -101,6 +113,53 @@ module tb_isp_lighting_integration #(
                     24'h888888 : 24'h646e8c;
             endcase
     endfunction
+    task automatic build_mask_reference;
+        integer x,y,dx,dy,votes,index,r,g,b;
+        reg [23:0] original;
+        begin
+            for(y=0;y<H;y=y+1) for(x=0;x<W;x=x+1) begin
+                original=scene(2,x,y);
+                r=original[23:16]*(MOTION_MODE ? 256 : 249)/256;
+                g=original[15:8];
+                b=original[7:0]*(MOTION_MODE ? 256 : 260)/256;
+                if(r>255) r=255;
+                if(b>255) b=255;
+                index=y*W+x;
+                mask_raw[index]=r>=24 && r-g>=6 && r-b>=6 &&
+                    2*r>=3*g && 2*r>=3*b && 3*g<=r+2*b && 3*b<=r+2*g;
+                mask_majority[index]=0;mask_dilated[index]=0;mask_expected[index]=0;
+            end
+            if(MASK_MODE==9)
+                for(index=0;index<W*H;index=index+1)
+                    mask_expected[index]=mask_raw[index];
+            else begin
+                // Full-image centred operations, shifted into their public
+                // causal display position. No DUT window taps are consulted.
+                for(y=1;y<H-1;y=y+1) for(x=1;x<W-1;x=x+1) begin
+                    votes=0;
+                    for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1)
+                        votes=votes+mask_raw[(y+dy)*W+x+dx];
+                    mask_majority[y*W+x]=votes>=5;
+                    if(MASK_MODE==10) mask_expected[(y+1)*W+x+1]=votes==9;
+                    if(MASK_MODE==11) mask_expected[(y+1)*W+x+1]=votes!=0;
+                end
+                if(MASK_MODE==12) begin
+                    for(y=2;y<H-2;y=y+1) for(x=2;x<W-2;x=x+1) begin
+                        votes=0;
+                        for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1)
+                            votes=votes+mask_majority[(y+dy)*W+x+dx];
+                        mask_dilated[y*W+x]=votes!=0;
+                    end
+                    for(y=3;y<H-3;y=y+1) for(x=3;x<W-3;x=x+1) begin
+                        votes=0;
+                        for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1)
+                            votes=votes+mask_dilated[(y+dy)*W+x+dx];
+                        mask_expected[(y+3)*W+x+3]=votes==9;
+                    end
+                end
+            end
+        end
+    endtask
     task automatic build_cartoon_reference;
         integer x,y,i,dx,dy,ch,sum,gx,gy,ax,ay,a,b,m,q,expanded,value,weight;
         reg [23:0] original,color;
@@ -359,6 +418,19 @@ module tb_isp_lighting_integration #(
                         if(expected_emboss==0) inverse_black=inverse_black+1;
                         else inverse_white=inverse_white+1;
                     end
+                if(MASK_MODE!=0 && edge_frame==2)
+                    for(lane=0;lane<4;lane=lane+1) begin
+                        emboss_x=((edge_count[edge_frame]%GROUPS)*4)+lane;
+                        emboss_y=edge_count[edge_frame]/GROUPS;
+                        expected_emboss={24{mask_expected[emboss_y*W+emboss_x]}};
+                        if(sampled_edge_data[95-lane*24 -:24]!==expected_emboss)
+                            $fatal(1,"Color mask ISP pixel mismatch mode=%0d x/y=%0d/%0d got=%h expected=%h",
+                                MASK_MODE,emboss_x,emboss_y,
+                                sampled_edge_data[95-lane*24 -:24],expected_emboss);
+                        mask_pixels=mask_pixels+1;
+                        if(expected_emboss==0) mask_black=mask_black+1;
+                        else mask_white=mask_white+1;
+                    end
                 edge_count[edge_frame]=edge_count[edge_frame]+1;
                 for(byte_index=0;byte_index<12;byte_index=byte_index+1) begin
                     byte_queue[byte_write%128]=sampled_edge_data[95-byte_index*8 -:8];
@@ -443,14 +515,14 @@ module tb_isp_lighting_integration #(
                         xmin!==0 || xmax!==0 || ymin!==0 || ymax!==0 || cx!==0 || cy!==0)
                         $fatal(1,"Unconfirmed motion candidate was displayed frame=%0d pixels=%0d box=%0d,%0d,%0d,%0d center=%0d,%0d",
                             target_results,target_pixels,xmin,xmax,ymin,ymax,cx,cy);
-                end else if(target_results<2) begin
+                end else if(target_results<2 || MASK_MODE!=0) begin
                     if(!target_found || target_pixels!=19196 ||
-                        xmin!=(target_results==0?200:700) ||
-                        xmax!=(target_results==0?359:859) ||
-                        ymin!=(target_results==0?180:400) ||
-                        ymax!=(target_results==0?299:519) ||
-                        cx!=(target_results==0?279:779) ||
-                        cy!=(target_results==0?239:459))
+                        xmin!=(target_results==1?700:200) ||
+                        xmax!=(target_results==1?859:359) ||
+                        ymin!=(target_results==1?400:180) ||
+                        ymax!=(target_results==1?519:299) ||
+                        cx!=(target_results==1?779:279) ||
+                        cy!=(target_results==1?459:239))
                         $fatal(1,"Red rectangle result wrong frame=%0d pixels=%0d box=%0d,%0d,%0d,%0d",
                             target_results,target_pixels,xmin,xmax,ymin,ymax);
                 end else if(target_found || target_pixels!=0 ||
@@ -493,9 +565,11 @@ module tb_isp_lighting_integration #(
     integer f,y,g,i,raw_value,scaled;
     reg [39:0] metered_raw;
     initial begin
-        if(EMBOSS_MODE+CARTOON_MODE+MORPH_MODE+SCHARR_INV_MODE>1)
+        if(EMBOSS_MODE+CARTOON_MODE+MORPH_MODE+SCHARR_INV_MODE+(MASK_MODE!=0)>1 ||
+            (MASK_MODE!=0 && (MASK_MODE<9 || MASK_MODE>12)))
             $fatal(1,"Choose one third-frame display mode per run");
         if(CARTOON_MODE || SCHARR_INV_MODE) build_cartoon_reference();
+        if(MASK_MODE!=0) build_mask_reference();
         force dut.m_aixs_tdata_96=injected_data;
         force dut.m_aixs_tvalid=injected_valid;
         force dut.m_aixs_tuser=injected_user;
@@ -565,6 +639,10 @@ module tb_isp_lighting_integration #(
             inverse_black==0 || inverse_white==0))
             $fatal(1,"Scharr inverse ISP coverage incomplete pixels=%0d black=%0d white=%0d",
                 inverse_pixels,inverse_black,inverse_white);
+        if(MASK_MODE!=0 && (mask_pixels!=W*H || mask_black==0 ||
+            (!MOTION_MODE && mask_white==0)))
+            $fatal(1,"Color mask ISP coverage incomplete mode=%0d pixels=%0d black=%0d white=%0d",
+                MASK_MODE,mask_pixels,mask_black,mask_white);
         if(MOTION_MODE)
             $display("ISP_MOTION_INTEGRATION_PASS frames=3 awb_groups=%0d edge_groups=%0d packed_words=%0d bytes=%0d ae=%0d targets=%0d edge_white=%0d target_latency=%0d raw_results=%0d confirmed=0",
                 3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,bytes_checked,
@@ -588,6 +666,10 @@ module tb_isp_lighting_integration #(
         if(SCHARR_INV_MODE)
             $display("ISP_SCHARR_INVERSE_INTEGRATION_PASS frames=3 pixels=%0d black=%0d white=%0d bytes=%0d ae=%0d targets=%0d motion=%0d inversion_in_hdmi=1",
                 inverse_pixels,inverse_black,inverse_white,bytes_checked,
+                ae_results,target_results,MOTION_MODE);
+        if(MASK_MODE!=0)
+            $display("ISP_COLOR_MASK_INTEGRATION_PASS frames=3 mode=%0d pixels=%0d black=%0d white=%0d bytes=%0d ae=%0d targets=%0d motion=%0d",
+                MASK_MODE,mask_pixels,mask_black,mask_white,bytes_checked,
                 ae_results,target_results,MOTION_MODE);
         $finish;
     end

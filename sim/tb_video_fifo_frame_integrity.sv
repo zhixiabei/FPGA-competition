@@ -51,9 +51,10 @@ wire [95:0] selected_data;
 rgb_edge_switch_96 #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.DEFAULT_EDGE_MODE(0)) u_selector(
 .I_clk(camera_clk),.I_rst_n(rst_n),
 .I_effect_config({edge_mode ? 4'd2 : 4'd0,8'd0}),
+.I_mask_pixels(4'd0),
 .I_tlast(awb_last),.I_tuser(awb_user),.I_tdata(awb_data),.I_tvalid(awb_valid),
 .O_tlast(selected_last),.O_tuser(selected_user),.O_tdata(selected_data),
-.O_tvalid(selected_valid),.O_edge_mode(selected_mode));
+.O_tvalid(selected_valid),.O_edge_mode(selected_mode),.O_effect_config());
 wire packed_user,packed_valid;wire [127:0] packed_data;
 data_96bit_to_128bit u_packer(
 .I_clk(camera_clk),.I_rst_n(rst_n),.I_96b_frame_start(selected_user),

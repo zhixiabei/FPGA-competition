@@ -27,6 +27,7 @@ module target_frame_bridge #(
     input wire [3:0] I_multi_valid,
     input wire [3:0] I_multi_hold,
     input wire [191:0] I_multi_boxes,
+    input wire [7:0] I_multi_shapes,
     input wire I_multi_overflow,
     input wire I_write_start,
     input wire [1:0] I_write_slot,
@@ -47,12 +48,14 @@ module target_frame_bridge #(
     output reg [3:0] O_multi_valid,
     output reg [3:0] O_multi_hold,
     output reg [191:0] O_multi_boxes,
+    output reg [7:0] O_multi_shapes,
     output reg O_multi_overflow
 );
     // Clipped 720p coordinates need 11 x bits and 10 y bits. Keep the
     // external 12-bit ports while storing only significant payload bits.
     localparam integer BOX_WIDTH = 42;
-    localparam integer BODY_WIDTH = 244;
+    localparam integer BODY_WIDTH = 252;
+    localparam integer EXPANDED_BODY_WIDTH = BODY_WIDTH+33;
     localparam integer RESULT_WIDTH = 16+10+BODY_WIDTH;
     localparam integer READ_WIDTH = BODY_WIDTH+13;
     localparam integer COUNT_WIDTH = (FRAME_WORDS < 2) ? 1 : $clog2(FRAME_WORDS+1);
@@ -62,7 +65,9 @@ module target_frame_bridge #(
         begin
             case (effect_config[11:8])
                 4'd2, 4'd6, 4'd7: F_offset = 2'd3;
-                4'd4, 4'd8: F_offset = 2'd1;
+                4'd4, 4'd8, 4'd10, 4'd11: F_offset = 2'd1;
+                // Majority, dilation and erosion add three centered windows.
+                4'd12: F_offset = 2'd3;
                 default: F_offset = 2'd0;
             endcase
         end
@@ -116,12 +121,13 @@ module target_frame_bridge #(
                                1'b0,coordinates[20:10],2'b0,coordinates[9:0]};
         end
     endfunction
-    function [276:0] F_expand_body;
+    function [EXPANDED_BODY_WIDTH-1:0] F_expand_body;
         input [BODY_WIDTH-1:0] body;
         integer index;
         begin
-            F_expand_body = {body[243:240],F_expand_single(body[239:177]),
-                             body[176:169],192'b0,body[0]};
+            F_expand_body = {body[BODY_WIDTH-1 -: 4],
+                             F_expand_single(body[BODY_WIDTH-5 -: 63]),
+                             body[4*BOX_WIDTH+16:4*BOX_WIDTH+1],192'b0,body[0]};
             for (index=0; index<4; index=index+1)
                 F_expand_body[1+48*index +: 48] =
                     F_expand_box(body[1+BOX_WIDTH*index +: BOX_WIDTH]);
@@ -173,7 +179,7 @@ module target_frame_bridge #(
         F_clip_y(I_result_ymax,S_result_offset),
         F_clip_x(I_result_center_x,S_result_offset),
         F_clip_y(I_result_center_y,S_result_offset)}),
-        I_multi_valid,I_multi_hold,S_adjusted_boxes,I_multi_overflow};
+        I_multi_valid,I_multi_hold,I_multi_shapes,S_adjusted_boxes,I_multi_overflow};
     wire S_new_result_valid = I_result_ready && S_context_match;
 
     reg [RESULT_WIDTH-1:0] S_result_payload, S_result_pending_payload;
@@ -373,14 +379,14 @@ module target_frame_bridge #(
             O_xmin <= 0; O_xmax <= 0; O_ymin <= 0; O_ymax <= 0;
             O_center_x <= 0; O_center_y <= 0;
             O_multi_valid <= 0; O_multi_hold <= 0;
-            O_multi_boxes <= 0; O_multi_overflow <= 0;
+            O_multi_boxes <= 0; O_multi_shapes <= 0; O_multi_overflow <= 0;
         end else begin
             S_read_req_meta <= S_read_request;
             S_read_req_sync <= S_read_req_meta;
             if (S_read_req_sync != S_read_ack) begin
                 {O_ready,O_effect_config,O_motion_mode,O_color_mode,O_found,
                  O_xmin,O_xmax,O_ymin,O_ymax,O_center_x,O_center_y,
-                 O_multi_valid,O_multi_hold,O_multi_boxes,O_multi_overflow} <=
+                 O_multi_valid,O_multi_hold,O_multi_shapes,O_multi_boxes,O_multi_overflow} <=
                     {S_read_payload[READ_WIDTH-1 -: 13],
                      F_expand_body(S_read_payload[BODY_WIDTH-1:0])};
                 S_read_ack <= S_read_req_sync;

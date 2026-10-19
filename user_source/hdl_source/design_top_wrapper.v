@@ -123,6 +123,7 @@ module design_top_wrapper #(
     wire [9:0]  S_ISP_target_result_frame_id;
     wire [3:0]  S_ISP_target_multi_valid, S_ISP_target_multi_hold;
     wire [191:0] S_ISP_target_multi_boxes;
+    wire [7:0] S_ISP_target_multi_shapes;
     wire        S_ISP_target_multi_overflow;
     wire        S_ISP_motion_mode_active;
     wire [1:0]  S_ISP_color_mode_active;
@@ -143,12 +144,17 @@ module design_top_wrapper #(
     wire [63:0] S_ae_stats_data;
 
     // Keep boxes aligned to each buffered frame's causal window position.
+    // Match each display pipeline's causal window shift. CLOSE MASK shares
+    // the shape input: a majority window followed by dilation and erosion.
     wire [1:0] S_target_spatial_shift =
         (S_target_frame_effect_config[11:8] == 4'd2 ||
          S_target_frame_effect_config[11:8] == 4'd6 ||
          S_target_frame_effect_config[11:8] == 4'd7) ? 2'd3 :
         (S_target_frame_effect_config[11:8] == 4'd4 ||
-         S_target_frame_effect_config[11:8] == 4'd8) ? 2'd1 : 2'd0;
+         S_target_frame_effect_config[11:8] == 4'd8 ||
+         S_target_frame_effect_config[11:8] == 4'd10 ||
+         S_target_frame_effect_config[11:8] == 4'd11) ? 2'd1 :
+        S_target_frame_effect_config[11:8] == 4'd12 ? 2'd3 : 2'd0;
     wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + {11'd0,S_target_spatial_shift};
     wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + {11'd0,S_target_spatial_shift};
     wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + {11'd0,S_target_spatial_shift};
@@ -202,6 +208,7 @@ module design_top_wrapper #(
     wire [11:0] S_bridge_center_x, S_bridge_center_y;
     wire [3:0] S_bridge_multi_valid, S_bridge_multi_hold;
     wire [191:0] S_bridge_multi_boxes;
+    wire [7:0] S_bridge_multi_shapes;
     wire S_bridge_multi_overflow;
     wire S_target_result_valid_hdmi = RED_MULTI_ENABLE ?
         S_bridge_ready : S_target_slots_valid[S_read_slot_sync];
@@ -1014,6 +1021,7 @@ end endgenerate
         .I_result_center_x(S_ISP_target_center_x), .I_result_center_y(S_ISP_target_center_y),
         .I_multi_valid(S_ISP_target_multi_valid), .I_multi_hold(S_ISP_target_multi_hold),
         .I_multi_boxes(S_ISP_target_multi_boxes), .I_multi_overflow(S_ISP_target_multi_overflow),
+        .I_multi_shapes(S_ISP_target_multi_shapes),
         .I_write_start(S_write_frame_start), .I_write_slot(S_write_start_slot),
         .I_write_word(S_vi_ddr_wr_en),
         .I_read_start(S_read_frame_start), .I_read_slot(S_video_out_rp),
@@ -1024,7 +1032,8 @@ end endgenerate
         .O_ymin(S_bridge_ymin), .O_ymax(S_bridge_ymax),
         .O_center_x(S_bridge_center_x), .O_center_y(S_bridge_center_y),
         .O_multi_valid(S_bridge_multi_valid), .O_multi_hold(S_bridge_multi_hold),
-        .O_multi_boxes(S_bridge_multi_boxes), .O_multi_overflow(S_bridge_multi_overflow)
+        .O_multi_boxes(S_bridge_multi_boxes), .O_multi_shapes(S_bridge_multi_shapes),
+        .O_multi_overflow(S_bridge_multi_overflow)
     );
 
 //ISP算法顶层模块
@@ -1065,6 +1074,7 @@ isp_top #(
 .O_target_multi_valid  (S_ISP_target_multi_valid),
 .O_target_multi_hold   (S_ISP_target_multi_hold),
 .O_target_multi_boxes  (S_ISP_target_multi_boxes),
+.O_target_multi_shapes (S_ISP_target_multi_shapes),
 .O_target_multi_overflow(S_ISP_target_multi_overflow),
 .O_edge_mode_active    (S_ISP_edge_mode_active),
 .O_effect_config       (S_ISP_effect_config),
@@ -1291,6 +1301,7 @@ isp_top #(
         .I_target_multi_valid  ( S_bridge_multi_valid ),
         .I_target_multi_hold   ( S_bridge_multi_hold ),
         .I_target_multi_boxes  ( S_bridge_multi_boxes ),
+        .I_target_multi_shapes ( S_bridge_multi_shapes ),
         .I_target_multi_overflow( S_bridge_multi_overflow ),
         .O_hdmi_vsync    ( S_hdmi_out_vsync   ),
         .O_hdmi_hsync    ( S_hdmi_out_hsync   ),

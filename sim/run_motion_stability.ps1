@@ -38,7 +38,7 @@ Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir
 try {
     if ($Mode -eq 'Portable' -or $Mode -eq 'Both') {
-        & (Join-Path $SimBin 'xvlog.bat') -sv -d MOTION_PORTABLE_RAM @compiledSources `
+        & (Join-Path $SimBin 'xvlog.bat') -sv -d MOTION_PORTABLE_RAM -d RED_MULTI_PORTABLE_RAM @compiledSources `
             -log xvlog.log *> portable_compile.log
         if ($LASTEXITCODE -ne 0) { throw "Stability compile failed; see $simulationDir\portable_compile.log" }
         & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `

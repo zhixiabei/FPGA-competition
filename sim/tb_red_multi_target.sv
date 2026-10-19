@@ -18,12 +18,13 @@ module tb_red_multi_target #(
         .MIN_WIDTH(4), .MIN_HEIGHT(4), .MULTI_ENABLE(1)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user), .I_tvalid(valid), .I_tdata(data),
-        .I_color_mode(2'd0),
+        .I_color_mode(2'd0), .I_mask_view_mode(4'd0), .O_mask_pixels(),
         .I_frame_id(frame_id), .I_multi_clear(clear),
         .O_result_ready(), .O_found(), .O_xmin(), .O_xmax(), .O_ymin(), .O_ymax(),
         .O_center_x(), .O_center_y(), .O_pixels(), .O_frame_toggle(),
         .O_multi_ready(ready), .O_multi_valid(found), .O_multi_hold(hold),
-        .O_multi_boxes(boxes), .O_multi_frame_id(result_id), .O_multi_overflow(overflow)
+        .O_multi_boxes(boxes), .O_multi_shapes(),
+        .O_multi_frame_id(result_id), .O_multi_overflow(overflow)
     );
 
     reg [23:0] image [0:W*H-1];
@@ -141,7 +142,7 @@ module tb_red_multi_target #(
             @(negedge clk); clear=0;
         end
     endtask
-    // Real pixels drive the majority filter. IDs change after the early SOF
+    // Real pixels drive majority and closing. IDs change after the early SOF
     // to check that a result uses the captured ID, including queued frames.
     task send_frame;
         input integer id, rows, line_blanking;
@@ -238,7 +239,7 @@ module tb_red_multi_target #(
         pattern(4,0);
         send_frame(22,H,96); count_is(22,0,0);
         send_frame(23,H,96); count_is(23,2,0);
-        find_box(23,1,23,1,23,n); find_box(23,W-24,W-2,H-24,H-2,n);
+        find_box(23,3,23,3,23,n); find_box(23,W-24,W-4,H-24,H-4,n);
 
         clear_tracking();
         pattern(0,0);

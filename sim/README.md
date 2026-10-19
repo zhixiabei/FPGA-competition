@@ -12,8 +12,8 @@ CNN 厂商模型测试将向量和日志写入 `tmp/cnn_*`；同样只运行仿�
 | CNN 实际裁剪框、五类标签、旧结果超时与显示同步 | `& './sim/run_cnn_display_status.ps1'` |
 | CNN 两种地址生成实现逐拍一致性（同步读行为模型） | `& './sim/run_cnn_infer_32.ps1'` |
 | 原画 Gamma、灰度、反色、红绿保色、Scharr 取反、空间效果直通与两拍延迟 | `& './sim/run_display_effects_rgb888.ps1'` |
-| K1 消抖、九模式单向循环、K3/K4 忽略和参数恒零 | `& './sim/run_display_effect_control.ps1'` |
-| 九项名称、旧参数区清除与 HDMI 帧首配置 | `& './sim/run_display_effects_mixer.ps1'` |
+| K1 消抖、十三模式单向循环、K3/K4 忽略和参数恒零 | `& './sim/run_display_effect_control.ps1'` |
+| 十三项名称、旧参数区清除与 HDMI 帧首配置 | `& './sim/run_display_effects_mixer.ps1'` |
 | 配置邮箱全部 12 位值、复位默认和异步时钟 | `& './sim/run_camera_diag_cdc.ps1'` |
 | 固定色调查表、RGB 独立地址和禁用时序 | `& './sim/run_gamma_lut_rgb888.ps1'` |
 | 延迟时基、同帧元数据与生产 DDR 字数边界 | `& './sim/run_video_latency.ps1'` |
@@ -22,11 +22,17 @@ CNN 厂商模型测试将向量和日志写入 `tmp/cnn_*`；同样只运行仿�
 | DDR 帧槽、显示配置及红色/运动框对应 | `& './sim/run_target_frame_alignment.ps1'` |
 | 红色多目标检测：便携/真实安路 RAM | `& './sim/run_red_multi_target.ps1' -Mode Both` |
 | 红色多目标 720p、四段逐行零消隐 | `& './sim/run_red_multi_target.ps1' -Mode Portable -Width 1280 -Height 720` |
+| 所选颜色的正方形/三角形/圆形：便携/真实安路 RAM | `& './sim/run_color_shape_target.ps1' -Mode Both` |
+| 720p 形状、高坐标矩和投影范围 | `& './sim/run_color_shape_target.ps1' -Mode Portable -Width 1280 -Height 720 -TimeoutSeconds 900` |
+| 红/绿/蓝掩码与黄绿、青绿及拒绝颜色边界 | `& './sim/run_color_target_modes.ps1'` |
+| 所选颜色的二值化、腐蚀、膨胀及降噪闭运算预览：两种 RAM、独立图像参考 | `& './sim/run_color_mask_pipeline.ps1' -Mode Both` |
+| 720p 独立掩码参考：红色的四种预览逐像素比较 | `& './sim/run_color_mask_pipeline.ps1' -Mode Portable -Width 1280 -Height 720 -ColorCount 1 -TimeoutSeconds 600` |
+| 共享比较器优化前后的所有 RGB、颜色模式和参数等价性 | `& './verification/check_color_mask_equivalence.ps1'` |
 | 多目标/真实运动选择、跨 SOF 原帧身份 | `& './sim/run_red_multi_switch.ps1' -Mode Both` |
-| 帧身份、实际 DDR 槽和读冻结桥 | `& './sim/run_target_frame_bridge.ps1'` |
-| 四框、跟随标签、紧凑退化及固定 OSD 优先 | `& './sim/run_multi_target_mixer.ps1'` |
-| 多目标生产顶层、172800 字/帧与九种框补偿 | `& './sim/run_red_multi_frame_alignment.ps1'` |
-| 去马赛克后 RGB 注入→AWB→四框→DDR 打包 | `& './sim/run_isp_red_multi.ps1'` |
+| 帧身份、实际 DDR 槽、形状元数据及读冻结桥 | `& './sim/run_target_frame_bridge.ps1'` |
+| 四框、颜色/形状标签、紧凑退化及固定 OSD 优先 | `& './sim/run_multi_target_mixer.ps1'` |
+| 多目标生产顶层、颜色/形状绑定、172800 字/帧及框补偿 | `& './sim/run_red_multi_frame_alignment.ps1'` |
+| 去马赛克后 RGB 注入→AWB→四个正方形→DDR 打包 | `& './sim/run_isp_red_multi.ps1'` |
 | 运动稳定性：生产参数、两种 RAM 模型 | `& './sim/run_motion_stability.ps1' -Pipeline Stable -Mode Both -CheckBehavior` |
 | 三帧确认、短暂保持、平滑和复位 | `& './sim/run_motion_result_stabilizer.ps1'` |
 | 真实 RAW 全链路六帧、连续 4 像素右移 | `& './sim/run_isp_motion_camera.ps1' -LineBlanking 32 -MovePixels 4` |
@@ -40,6 +46,11 @@ CNN 厂商模型测试将向量和日志写入 `tmp/cnn_*`；同样只运行仿�
 | Scharr 反色选择与 ISP 打包：运动检测配置 | `& './sim/run_isp_lighting_integration.ps1' -Motion -ScharrInverse` |
 | 形态学选择与 ISP 打包：红色检测配置 | `& './sim/run_isp_lighting_integration.ps1' -Morph` |
 | 形态学选择与 ISP 打包：运动检测配置 | `& './sim/run_isp_lighting_integration.ps1' -Motion -Morph` |
+| 颜色二值掩码、真实 AWB 及 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1' -Binary` |
+| 颜色掩码腐蚀、真实 AWB 及 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1' -Erosion` |
+| 颜色掩码膨胀、真实 AWB 及 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1' -Dilation` |
+| 降噪后闭运算掩码、真实 AWB 及 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1' -CloseMask` |
+| 运动检测下的掩码预览及 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1' -Motion -CloseMask` |
 | 原始帧差与模式选择器 | `& './sim/run_motion_target_detect.ps1' -Mode Both` |
 | 原始帧差慢移图像参考 | `& './sim/run_motion_realistic.ps1' -RequireDetections` |
 | 自动曝光、RAW 统计和闭环 | `& './sim/run_auto_exposure.ps1'` |
@@ -64,65 +75,122 @@ CNN 的尺度说明、验证范围及此前 99.2% 指标的纠正见
 .\sim\run_sc520.cmd --no-pause
 ```
 
-## 当前多目标结果与边界
+## 当前颜色与形状结果及边界
 
-生产顶层默认 `RED_MULTI_ENABLE=1`。红/绿/蓝分支复用同一套全分辨率多数滤波掩码，
+生产顶层默认 `RED_MULTI_ENABLE=1`。红/绿/蓝分支复用同一套全分辨率颜色掩码，
+先进行 3×3 多数滤波，再进行 3×3 膨胀和 3×3 腐蚀组成的闭运算，
+修补小高光孔洞和轻微边缘毛刺。三个窗口只缓存二值行，共用形状检测和预览通路，
+不增加整帧 DDR 图像读写。
 使用行程段、64 深度 FIFO、16 项活动候选和最大四候选选择，
-再由四轨迹完成两帧确认、两帧保持及跟随编号。
+再由共享形状描述器分类、四轨迹完成两帧确认、两帧保持及跟随编号。
+形状描述结合区域面积、Q3 近似轮廓周长、投影跨度与一阶矩，
+在四个候选之间串行复用，不增加整帧边缘图或透视矫正。
+支持实心正方形、三角形和圆形；不确定区域保留框并标为 `UNK`，
+长方形、椭圆、大孔环形、分叉和截边区域有 `UNK` 用例覆盖。
+白色五点高光、2×3/3×2 灰色小孔、±1 像素边界抖动及少量宽 2、深 1 像素浅缺口有正例；
+四边反复出现的密集宽 3 像素、深 1/2/3 像素凹口保留 `UNK` 负例，
+宽 2、深 2 像素的边缘缺口仍可能产生 `UNK`；内孔修补范围不能直接当作边口修复范围。
+未扩大窗口或放宽三角形保护。小圆及带半像素中心的 12..14 像素小正方形
+另有正例，覆盖小尺寸、45° 旋转、高填充及栅格化周长边界。
+这部分测试将候选面积门槛设为 64 以检查分类边界；生产门槛仍为 128，
+不保证所有 12..14 像素目标都能被检出。约 20 像素的小圆叠加边缘噪声后仍可能被判为 `SQR`；
+小尺寸、噪声和栅格采样共同限制了形状区分能力，不能将干净小圆正例推广到所有噪声场景。
+青绿色正例使用 `RGB=(32,150,120)`，包含绿色阈值的等号边界；
+`RGB=(32,150,144)` 不满足绿色饱和度门槛，另保留实际 RGB 拒绝用例。
+这些回归通过实际 RGB 阈值路径，未直接强制内部掩码或形状统计量。
+图像平面内旋转有回归覆盖，明显透视变形仍可能降为 `UNK`。
 FIFO 或候选表溢出令整帧无效、清轨迹并显示 `OVF`，不会退回原单总框。
 运动分支仍为单个总框和原三帧确认策略，K2 在摄像头帧首按红/绿/蓝/运动循环。
-显示算法仍为九项，K1 单向循环 0..8。
+K1 单向循环 0..12：原九项保留，9 为所选颜色二值掩码、10 为掩码腐蚀、
+11 为掩码膨胀、12 为降噪后的闭运算掩码。9/10/11 从原始所选颜色掩码生成；
+12 显示形状判断实际使用的多数滤波→膨胀→腐蚀结果。
+所有 K1 模式都运行相同的形状判断链，K1 只选择画面。K2 仍保留红/绿/蓝/运动。
+预览与原像素、帧首、行尾和完整配置统一保持 11 拍；
+10/11 的框向右下各补偿 1 像素，12 各补偿 3 像素，9 无补偿。
+旧单框颜色结果为 9 拍，真实 ISP 集成测试观测为 10 拍；运动结果仍为 13 拍。
+
+每个轨迹使用两位形状码：`00 UNK`、`01 SQR`、`10 TRI`、`11 CIR`；
+四槽打包为 `O_multi_shapes[7:0]`，槽 0 位于 `[1:0]`。
+完整跟随标签如 `1 RED SQR OK`、`1 GRN TRI H`、`1 BLU CIR OK`，
+空间不足时使用 `1 SQR OK` / `1 TRI H`，仍避开固定 OSD 和其他标签。
+运动标签继续使用 `1 MOV OK`，紧凑形式为 `1 OK`。
+框、形状、保持位和所选颜色绑定同一来源帧及 DDR 槽，显示帧内保持不变；
+漏检保持时保留原形状，K2 切换时一起清除。
 
 本版不是完整 CCL：候选每行只保留一个合并区间，
 U 形、环形空隙内的独立目标可能被合并；四像素拍内部也有合段近似。
 最近邻关联在目标交叉、合并或快速移动时可能换号或重建轨迹。
 具体操作、容量、标签和帧对应见 [红色多目标说明](../docs/RED_MULTI_TARGET.md)。
 
-| 本轮入口 | 已通过结果 |
-|---|---|
-| `run_red_multi_target.ps1 -Mode Both` | 两种 RAM 各 30 个结果、50 项检查，FIFO 高水位 63 |
-| 同脚本 `-Mode Portable -Width 1280 -Height 720` | 720p 30 个结果、50 项检查；四目标每行四段、行消隐为 0 |
-| `run_red_multi_switch.ps1 -Mode Both` | 两种 RAM 各 18 个结果、28 项检查，跨下一 SOF 3 次、真实原始运动结果 11 个 |
-| `run_color_target_modes.ps1` | 红、绿、蓝各自检出本色并拒绝另一主色，共 6 项检查 |
-| `run_target_frame_bridge.ps1` | 26 项；含错误颜色拒绝和正确颜色随缓存帧输出，以及回绕、繁忙、冻结、碰撞、生产字数和几何补偿 |
-| `run_multi_target_mixer.ps1` | 12 帧/2,764,800 像素，标签 2,641,920，紧凑 106、交叉 69、固定 OSD 优先 1,774、计数区 57,600 |
-| `run_red_multi_frame_alignment.ps1` | 写入 17、读取/显示各 14，四红框 9、运动 2、缓存模式 3；短帧/迟到/回滚/冻结各 1，几何 38，每完整帧 172,800 字 |
-| `run_isp_red_multi.ps1` | 去马赛克后 RGB 注入 3 帧、帧号 1023/0/1，AWB/显示各 691,200 组、打包 518,400 字、结果 3、框 8、稳定槽 4、打包标签 3 |
+下表列出本轮掩码清理与十三模式更新已运行的检查。未列为本次结果的历史回归不能视为已用当前源码复跑。
+日志和测试源码快照位于各脚本打印的 TEMP 目录。
+本轮日志、实际执行源码快照、校验值和最终发布报告见
+[十三模式与掩码回归证据包](../build/verification/color_mask_regression.zip)。
+此前[颜色与形状回归证据包](../build/verification/color_shape_regression.zip)
+属于 `src-259cc85e48e1` 历史基线。新包保留各次快照的真实哈希，
+前期显示控制测试中未涉及的检测器文件可能早于最终版，不能将所有测试快照视为同一份源码。
 
-成功标志分别为 `RED_MULTI_TARGET_PASS`、`RED_MULTI_SWITCH_PASS`、
+| 本次入口 | 结果与覆盖 |
+|---|---|
+| `run_display_effect_control.ps1` | 632 项；十三模式、全部 16 个默认编码、三轮 K1 循环、消抖/长按及 K3/K4 忽略 |
+| `run_display_effects_rgb888.ps1` | 972,815 次逐像素对照、1,945,630 次边沿外保持；十三模式、3 个非法值、256 个参数及原 Gamma |
+| `run_display_effects_mixer.ps1` | 40 帧、5,160,960 像素；十三项名称、153,600 个标签区像素、全部模式的目标/OSD 覆盖；颜色目标兼容用例另核对 7,372,800 像素 |
+| `run_color_mask_pipeline.ps1 -Mode Both` | 两种 RAM 各 16 帧、49,152 像素、14,990 拍；红/绿/蓝/运动×四种掩码预览，独立二维参考、8 次提前 SOF、16 次帧中 K1/K2 请求及 2,702 空拍 |
+| 同脚本 `-Mode Portable -Width 1280 -Height 720 -ColorCount 1` | 红色的四种预览共 4 帧、3,686,400 像素、1,009,810 拍；2 次提前 SOF、4 次帧中 K1/K2 请求、88,210 空拍及 27,667 个清理变化像素 |
+| `run_color_shape_target.ps1 -Mode Both` | 两种 RAM 各 96 个结果、194 项检查；30 个真实 RGB 小孔/边噪/小几何用例、十三种 K1 配置、三色及青绿色饱和度边界与拒绝用例 |
+| 同脚本 `-Mode Portable -Width 1280 -Height 720` | 98 个结果、200 项检查；包含上述 30 个用例及生产分辨率高坐标三种形状、矩与投影范围 |
+| `run_red_multi_target.ps1 -Mode Both` | 两种 RAM 各 30 个结果、50 项检查；四目标、排序、保持、FIFO 高水位 63 及溢出保护 |
+| `run_red_multi_switch.ps1 -Mode Both` | 两种 RAM 各 18 个结果、28 项检查；3 次跨 SOF 切换、11 个原始运动检测器结果及模式清理 |
+| `run_motion_target_detect.ps1 -Mode Both` | 两种 RAM 的原始运动各 41 帧、旧模式切换 6 项、跨 SOF 3 项、720p 4 帧；保留运动分支时序与结果 |
+| `run_target_frame_bridge.ps1` | 30 项；形状与颜色完整元组跨时钟，9 项位移/裁切场景，含模式 9..12、回绕/繁忙/冻结/碰撞及生产字数 |
+| `run_target_frame_alignment.ps1` | 36 次写/读/显示、34 次结果、105 次配置；全部十三模式、提前请求与新模式边界裁切 |
+| `run_red_multi_frame_alignment.ps1` | 写入 23、读取/显示各 19，四框帧 14、运动 2；几何/形状各 58、绿色 6、蓝色 4；含模式 9..12、短帧/迟到/回滚/冻结及每帧 172,800 字 |
+| `run_isp_lighting_integration.ps1 -Binary/-Erosion/-Dilation/-CloseMask` 分别执行 | 每项 3 帧、AWB/选择器各 691,200 组、518,400 个打包字、8,294,400 字节、3 次曝光/目标结果及 921,600 个掩码像素；AWB 后独立图像参考包含小高光孔 |
+| 同脚本 `-Motion -CloseMask` | 同样 3 帧和打包字数；运动结果时序仍为 13 拍，灰色运动场景的颜色掩码为全黑 |
+
+成功标志包括 `COLOR_MASK_PIPELINE_PASS`、`COLOR_SHAPE_TARGET_PASS`、`COLOR_TARGET_MODES_PASS`、
 `TARGET_FRAME_BRIDGE_PASS`、`MULTI_TARGET_MIXER_PASS`、
 `RED_MULTI_FRAME_ALIGNMENT_PASS` 和 `ISP_RED_MULTI_PASS`。
-检测器覆盖两/四目标、同 x 不同 y、最大四候选、轨迹保持、噪声、边界、
-短帧恢复、跨 SOF 完成、FIFO 超载、18 个活动目标耗尽候选及模式取消。
-零行消隐四矩形检查只证明该指定场景可持续处理，不代表任意高段密度图案均不溢出。
-旧单红框照明分支仍通过 15 个结果、776 次空拍和 66,612 个颜色检查。
+
+颜色阈值共享 max/min 比较器后的独立 C# 穷举入口为
+`verification/check_color_mask_equivalence.ps1`，共比较 167,772,160 个 RGB/分支/参数组合；
+它只证明阈值重写前后等价，不能替代实物在光照、AWB 和饱和裁切下的颜色验收。
+
+形状类别、真实 RGB 小孔/毛刺与矩范围由 `run_color_shape_target.ps1` 核对。
+零行消隐四矩形场景也不代表任意高段密度图案均不溢出。
+真实 RAW 运动全链路 `run_isp_motion_camera.ps1`、帧号 `run_video_latency_frame_tag.ps1`
+的历史数字不能直接作为本轮通过记录；显示效果 mixer 的本轮结果为上表 40 帧。
 
 `run_isp_red_multi.ps1` 使用惰性 demosaic 模块边界，在其输出注入 RGB、时序与帧号；
 AWB、检测、显示选择/延迟和打包使用生产 RTL，不验证 RAW 解包和去马赛克算法。
 `run_red_multi_frame_alignment.ps1` 使用生产系统顶层与外设 stub，
-注入 ISP 结果、DDR 写字及显示接口，验证帧/槽/框对应，不模拟物理 MIPI、DDR 或 HDMI 器件。
+注入 ISP 结果、DDR 写字及显示接口，验证帧/槽/框/颜色/形状对应，不模拟物理 MIPI、DDR 或 HDMI 器件。
 
 帧号随排队任务和结果传递，不用下一帧 SOF 的当前模式替代。
 实际 DDR 槽绑定 10 位帧号、16 位 nonce 和模式；只对完整 172,800 字图像发布有效槽记录。
+四槽形状码共 8 位，与框和保持位一起传输；运动结果的形状码为零。
 读槽选择冻结元数据，HDMI 帧首提交并保持整帧。
 约束为帧上下文 20 ns、检测结果 20 ns、读快照 13 ns，
-显示配置系统→CSI 邮箱另外为 13 ns。最终三组目标路径分别
-6,024/2,230/249 条、显示配置 4 条，均通过覆盖检查。
+显示配置系统→CSI 邮箱另外为 13 ns。当前发布三组目标路径分别
+6,216/2,312/257 条、显示配置 4 条，均通过覆盖检查，没有无效约束或无路径约束。
 
-当前颜色切换版 `src-01db79ce9d0f` 于 2026-10-19 11:12:00（北京时间）
-完成最终布局布线和 bit 发布：Slice 18,463/21,216（87.02%）、LUT6 17,654、
-寄存器 17,826、ERAM 79/108、DSP 17/40，建立/保持余量 +0.100/+0.016 ns。
-相对上一已发布版增加 122 Slice、92 LUT6 和 4 个寄存器，ERAM/DSP 不变。
-两份 bit SHA256 均为 `375D915059D44436EFB5F17A06AB82DF6BF142521A91DBEB983CACE3D06952F0`，
-身份见 [发布清单](../build/release/release_manifest.json)。
+当前十三模式与掩码清理版 `src-99b844d4d471` 于 2026-10-19 17:25:45（北京时间）
+完成最终布局布线和 bit 发布：Slice 19,660/21,216（92.67%）、LUT6 18,977、
+寄存器 18,330、ERAM 84/108、DSP 19/40，建立/保持余量 +0.034/+0.020 ns。
+相对前一形状版减少 370 Slice、134 LUT6、914 个寄存器，ERAM 增加 2，DSP 不变。
+227 个生产输入与当前工作区及构建清单一致，两份 bit SHA256 均为
+`12C57AF945EF7656FFC8998122BB4F21DF527E2DF16EB401239CFA3D1736FD2D`；
+最终资源、时序与烧录文件身份见 [发布清单](../build/release/release_manifest.json)。
 这些验证没有替代真实摄像头、真实 DDR 器件或板上 HDMI 的最终验收。
 
 ## 九模式验证基线（历史）
 
 以下属于加入多目标前的 `src-0917069cbe5c`。
 显示算法保留，但下述旧单框 mixer/对齐结果及资源不能代替本轮多目标回归。
+本节及后续历史节未列入上表的测试没有因本次形状更新而重新运行；
+历史证据包也不能作为本次形状源码的通过记录。
 
-当前九种画面为 0 原画加原 Gamma、1 灰度、2 原 Scharr 边缘、3 反色、
+该历史版九种画面为 0 原画加原 Gamma、1 灰度、2 原 Scharr 边缘、3 反色、
 4 灰度浮雕、5 红绿保色、6 彩色漫画、7 Scharr 反色和 8 形态学边缘。
 K1 单向循环 0..8，K3/K4 无操作，K2 仍切换红色/运动检测。
 模式 2/7 在 CSI 侧选择原 Scharr，4 选择浮雕，6 选择漫画，8 选择形态学，
@@ -143,7 +211,7 @@ Scharr/浮雕/漫画/形态学直通；
 新增模式 7/8 不增加行缓存、DSP 或 DDR 图像读写。
 兼容信号 `O_edge_mode` 仍只在模式 2 置位，选择器使用完整模式配置。
 
-本轮九模式控制器通过 468 项检查，覆盖全部 16 个复位编码、K1 三轮九项单向循环、
+该历史版九模式控制器通过 468 项检查，覆盖全部 16 个复位编码、K1 三轮九项单向循环、
 按下/释放消抖、长按、K3/K4 忽略和参数恒零。
 逐像素模块通过 709,647 次独立参考对照和 1,419,294 次时钟边沿外保持检查，
 覆盖九模式、7 个非法编码、全部 256 个兼容参数及原 Gamma 曲线。
@@ -192,7 +260,7 @@ HDMI 取反由像素和 mixer 回归核对。运动结果保持 13 拍延迟，
 该版 12 套运行（控制、像素、mixer、对齐、4 套核心图像和 4 套 ISP）的日志、
 源码校验值及合成预览见[算法回归证据包](../build/verification/algorithm_regression.zip)；
 以前各版结果单独作为历史保存，不算作本轮多目标已重跑。
-该历史 bit 不含多目标；当前源码及新 bit 的实际实现见上节，
+该历史 bit 不含多目标；当前源码的实际实现与形状版构建状态见上节，
 原[完整连通域方案](../docs/CONNECTED_COMPONENTS_PLAN.md)继续作为后续规划。
 
 ## 七模式验证基线（历史）

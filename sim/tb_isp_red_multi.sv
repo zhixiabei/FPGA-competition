@@ -15,6 +15,8 @@ module tb_isp_red_multi;
     wire [9:0] target_id, latency_id;
     wire [3:0] target_valid, target_hold;
     wire [191:0] target_boxes;
+    wire [7:0] target_shapes;
+    wire [1:0] target_color, active_color;
     wire target_overflow;
     wire [11:0] effect_config;
     isp_top #(.ENABLE_EDGE(0), .RED_MULTI_ENABLE(1)) dut (
@@ -30,8 +32,10 @@ module tb_isp_red_multi;
         .O_target_center_x(), .O_target_center_y(), .O_target_pixels(),
         .O_target_frame_toggle(target_toggle),
         .O_target_motion_mode(target_motion), .O_motion_mode_active(active_motion),
+        .O_target_color_mode(target_color), .O_color_mode_active(active_color),
         .O_target_result_frame_id(target_id), .O_target_multi_valid(target_valid),
         .O_target_multi_hold(target_hold), .O_target_multi_boxes(target_boxes),
+        .O_target_multi_shapes(target_shapes),
         .O_target_multi_overflow(target_overflow),
         .O_edge_mode_active(), .O_effect_config(effect_config),
         .O_ae_stats_valid(), .O_ae_sum_y(), .O_ae_sample_count(),
@@ -41,6 +45,7 @@ module tb_isp_red_multi;
     integer awb_frame=-1, edge_frame=-1, packed_frame=-1;
     integer awb_count[0:2], edge_count[0:2], packed_count[0:2];
     integer target_results=0, boxes_checked=0, stable_slots=0;
+    integer shapes_checked=0;
     integer packed_labels=0, pixel_labels=0, slot_for_object[0:3];
     reg previous_toggle=0;
     reg sampled_edge_user, sampled_edge_valid;
@@ -92,7 +97,7 @@ module tb_isp_red_multi;
             for(object_number=0;object_number<4;object_number=object_number+1) begin
                 x0=object_x0(frame_number,object_number);
                 y0=object_y0(frame_number,object_number);
-                if(x>=x0 && x<x0+64 && y>=y0 && y<y0+48)
+                if(x>=x0 && x<x0+64 && y>=y0 && y<y0+64)
                     scene=24'hd00806;
             end
         end
@@ -136,7 +141,8 @@ module tb_isp_red_multi;
         end
         #1;
         if(rst_n) begin
-            if(dut.awb_O_tuser!==source_user || active_motion!==1'b0)
+            if(dut.awb_O_tuser!==source_user || active_motion!==1'b0 ||
+               active_color!==2'd0)
                 $fatal(1,"AWB marker or fixed red mode changed");
             if(dut.awb_O_tvalid) begin
                 if(awb_frame<0 || awb_frame>2)
@@ -146,13 +152,15 @@ module tb_isp_red_multi;
             if(target_ready) begin
                 if(target_results>=3 ||
                     target_id!==expected_id(target_results) ||
-                    target_motion!==1'b0 || target_toggle===previous_toggle ||
+                    target_motion!==1'b0 || target_color!==2'd0 ||
+                    target_toggle===previous_toggle ||
                     target_overflow!==1'b0 ||
-                    (^{target_valid,target_hold,target_found,target_boxes})===1'bx)
+                    (^{target_valid,target_hold,target_found,target_boxes,target_shapes})===1'bx)
                     $fatal(1,"Production multi result token mismatch result=%0d id=%0d expected=%0d",
                         target_results,target_id,expected_id(target_results));
                 if(target_results==0) begin
-                    if(target_valid!==4'b0 || target_hold!==4'b0 || target_found!==1'b0)
+                    if(target_valid!==4'b0 || target_hold!==4'b0 ||
+                       target_found!==1'b0 || target_shapes!==8'd0)
                         $fatal(1,"First frame bypassed two-frame confirmation");
                 end else begin
                     if(target_valid!==4'b1111 || target_hold!==4'b0 || target_found!==1'b1)
@@ -168,7 +176,7 @@ module tb_isp_red_multi;
                             if(checked_box[11:0]==object_x0(target_results,object_index) &&
                                checked_box[23:12]==object_x0(target_results,object_index)+63 &&
                                checked_box[35:24]==object_y0(target_results,object_index) &&
-                               checked_box[47:36]==object_y0(target_results,object_index)+47) begin
+                               checked_box[47:36]==object_y0(target_results,object_index)+63) begin
                                 located_slot=slot_index;
                                 matching_slots=matching_slots+1;
                             end
@@ -179,7 +187,12 @@ module tb_isp_red_multi;
                                 object_x0(target_results,object_index),
                                 object_x0(target_results,object_index)+63,
                                 object_y0(target_results,object_index),
-                                object_y0(target_results,object_index)+47,target_boxes);
+                                object_y0(target_results,object_index)+63,target_boxes);
+                        if(target_shapes[located_slot*2+:2]!==2'd1)
+                            $fatal(1,"AWB square shape or spatial slot mismatch result=%0d object=%0d slot=%0d shape=%0d",
+                                target_results,object_index,located_slot,
+                                target_shapes[located_slot*2+:2]);
+                        shapes_checked=shapes_checked+1;
                         if(target_results==1) slot_for_object[object_index]=located_slot;
                         else begin
                             if(slot_for_object[object_index]!=located_slot)
@@ -266,13 +279,13 @@ module tb_isp_red_multi;
                packed_count[f]!=FRAME_WORDS)
                 $fatal(1,"Frame%0d production count mismatch AWB=%0d display=%0d packed=%0d",
                     f,awb_count[f],edge_count[f],packed_count[f]);
-        if(target_results!=3 || boxes_checked!=8 || stable_slots!=4 ||
+        if(target_results!=3 || boxes_checked!=8 || shapes_checked!=8 || stable_slots!=4 ||
            packed_labels!=3 || pixel_labels!=3*FRAME_WORDS ||
            awb_frame!=2 || edge_frame!=2 || packed_frame!=2)
             $fatal(1,"Production multi-target integration coverage incomplete");
-        $display("ISP_RED_MULTI_PASS frames=3 ids=1023,0,1 source_sof_same=2 source_sof_early=1 awb_groups=%0d display_groups=%0d packed_words=%0d result_tokens=%0d boxes=%0d stable_slots=%0d packed_labels=%0d",
+        $display("ISP_RED_MULTI_PASS frames=3 ids=1023,0,1 source_sof_same=2 source_sof_early=1 awb_groups=%0d display_groups=%0d packed_words=%0d result_tokens=%0d boxes=%0d stable_slots=%0d packed_labels=%0d shapes=%0d shape=SQR color=RED",
             3*FRAME_GROUPS,3*FRAME_GROUPS,3*FRAME_WORDS,
-            target_results,boxes_checked,stable_slots,packed_labels);
+            target_results,boxes_checked,stable_slots,packed_labels,shapes_checked);
         $finish;
     end
     initial begin

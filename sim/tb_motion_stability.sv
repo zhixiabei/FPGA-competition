@@ -29,13 +29,17 @@ module tb_motion_stability #(
         if (STABLE_PIPELINE) begin : stable
             target_detect_switch_96 #(.IMG_WIDTH(W), .IMG_HEIGHT(H)) dut (
                 .I_clk(clk), .I_rst_n(rst_n), .I_motion_mode_async(1'b1),
-                .I_color_mode_async(2'd3),
+                .I_color_mode_async(2'd3), .I_effect_config(12'd0),
+                .I_frame_id(10'd0),
                 .I_tuser(tuser), .I_tlast(tlast), .I_tvalid(tvalid), .I_tdata(tdata),
                 .O_result_ready(ready), .O_found(found),
                 .O_xmin(xmin), .O_xmax(xmax), .O_ymin(ymin), .O_ymax(ymax),
                 .O_center_x(center_x), .O_center_y(center_y),
                 .O_pixels(pixels), .O_frame_toggle(frame_toggle),
-                .O_target_motion_mode(), .O_motion_mode_active()
+                .O_target_motion_mode(), .O_motion_mode_active(),
+                .O_target_color_mode(), .O_color_mode_active(), .O_result_frame_id(),
+                .O_multi_valid(), .O_multi_hold(), .O_multi_boxes(), .O_multi_shapes(),
+                .O_multi_overflow(), .O_mask_pixels()
             );
             assign diagnostic_found = dut.raw_motion_found;
             assign diagnostic_scene_change = dut.motion_scene_change;

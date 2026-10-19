@@ -34,7 +34,7 @@ try {
                 throw "XSim tool is missing: $tool"
             }
         }
-        & (Join-Path $SimBin 'xvlog.bat') -sv -d MOTION_PORTABLE_RAM @compiledSources `
+        & (Join-Path $SimBin 'xvlog.bat') -sv -d MOTION_PORTABLE_RAM -d RED_MULTI_PORTABLE_RAM @compiledSources `
             -log xvlog.log *> portable_compile.log
         if ($LASTEXITCODE -ne 0) {
             throw "Motion compile failed; see $simulationDir\portable_compile.log"

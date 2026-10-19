@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// Independent pixel-array reference, including the full centered 3x3 filter.
+// Independent pixel arrays: centered majority, then dilation and erosion.
 // Override W/H with vsim -gW=1280 -gH=720 for the camera geometry.
 module tb_red_target_detect_96 #(
     parameter integer W = 64,
@@ -12,7 +12,7 @@ module tb_red_target_detect_96 #(
     localparam integer MIN_PIXELS = 128;
     localparam integer MIN_WIDTH = 8;
     localparam integer MIN_HEIGHT = 8;
-    localparam integer RESULT_LATENCY = 5;
+    localparam integer RESULT_LATENCY = 9;
 
     reg clk = 1'b0;
     reg rst_n = 1'b0;
@@ -31,14 +31,19 @@ module tb_red_target_detect_96 #(
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user),
         .I_tvalid(valid), .I_tdata(data), .I_color_mode(2'd0),
+        .I_mask_view_mode(4'd0), .O_mask_pixels(),
         .O_result_ready(ready), .O_found(found),
         .O_xmin(xmin), .O_xmax(xmax), .O_ymin(ymin), .O_ymax(ymax),
         .O_center_x(center_x), .O_center_y(center_y),
-        .O_pixels(pixels), .O_frame_toggle(frame_toggle)
+        .O_pixels(pixels), .O_frame_toggle(frame_toggle),
+        .I_frame_id(10'd0), .I_multi_clear(1'b0),
+        .O_multi_ready(), .O_multi_valid(), .O_multi_hold(), .O_multi_boxes(),
+        .O_multi_shapes(), .O_multi_frame_id(), .O_multi_overflow()
     );
 
     reg [23:0] image [0:W*H-1];
     reg reference_mask [0:W*H-1];
+    reg majority_mask [0:W*H-1], dilated_mask [0:W*H-1];
     integer expected_count [0:MAX_RESULTS-1];
     integer expected_xmin [0:MAX_RESULTS-1];
     integer expected_xmax [0:MAX_RESULTS-1];
@@ -101,6 +106,14 @@ module tb_red_target_detect_96 #(
                         10: image[n] = 24'hff780a;
                         11: image[n] = (x >= W/4 && x < 3*W/4 &&
                                         y >= H/4 && y < 3*H/4) ? 24'hff140f : 24'hffaaBE;
+                        12: image[n] = (x >= W/4 && x < 3*W/4 &&
+                                        y >= H/4 && y < 3*H/4 &&
+                                        !(x == W/2 && y == H/2)) ? 24'hbf0812 : 24'h182020;
+                        13: image[n] = (x >= W/4 && x < 3*W/4 &&
+                                        y >= H/4 && y < 3*H/4 &&
+                                        !(x >= W/2 && x < W/2+2 &&
+                                          y >= H/2-2 && y <= H/2+2)) ?
+                                        24'hbf0812 : 24'h182020;
                         default: image[n] = ((n*13+7)%11 < 7) ? 24'hbf0812 : 24'h7f8081;
                     endcase
                 end
@@ -182,15 +195,36 @@ module tb_red_target_detect_96 #(
             count = 0;
             bx0 = W-1; bx1 = 0; by0 = H-1; by1 = 0;
             for (y = 0; y < H; y = y+1)
-                for (x = 0; x < W; x = x+1)
+                for (x = 0; x < W; x = x+1) begin
                     reference_mask[y*W+x] = reference_red(image[y*W+x]);
+                    majority_mask[y*W+x] = 0;
+                    dilated_mask[y*W+x] = 0;
+                end
             for (y = 1; y < H-1; y = y+1) begin
                 for (x = 1; x < W-1; x = x+1) begin
                     votes = 0;
                     for (dy = -1; dy <= 1; dy = dy+1)
                         for (dx = -1; dx <= 1; dx = dx+1)
                             votes = votes + reference_mask[(y+dy)*W+x+dx];
-                    if (votes >= 5) begin
+                    majority_mask[y*W+x] = votes >= 5;
+                end
+            end
+            for (y = 2; y < H-2; y = y+1) begin
+                for (x = 2; x < W-2; x = x+1) begin
+                    votes = 0;
+                    for (dy = -1; dy <= 1; dy = dy+1)
+                        for (dx = -1; dx <= 1; dx = dx+1)
+                            votes = votes+majority_mask[(y+dy)*W+x+dx];
+                    dilated_mask[y*W+x] = votes != 0;
+                end
+            end
+            for (y = 3; y < H-3; y = y+1) begin
+                for (x = 3; x < W-3; x = x+1) begin
+                    votes = 0;
+                    for (dy = -1; dy <= 1; dy = dy+1)
+                        for (dx = -1; dx <= 1; dx = dx+1)
+                            votes = votes+dilated_mask[(y+dy)*W+x+dx];
+                    if (votes == 9) begin
                         count = count+1;
                         if (x < bx0) bx0 = x;
                         if (x > bx1) bx1 = x;
@@ -328,14 +362,16 @@ module tb_red_target_detect_96 #(
         build_image(0); queue_reference; drive_frame(2,1); idle(3);
         build_image(1); queue_reference; drive_frame(1,1); idle(RESULT_LATENCY+2);
 
-        // Exposure/color policy additions retain the original geometry,
-        // result publication latency and continuous-frame behavior.
+        // Exposure/color policy checks retain continuous-frame behavior.
         build_image(6); queue_reference; drive_frame(2,1); idle(3);
         build_image(7); queue_reference; drive_frame(1,1); idle(3);
         build_image(8); queue_reference; drive_frame(0,0); idle(3);
         build_image(9); queue_reference; drive_frame(0,0); idle(3);
         build_image(10); queue_reference; drive_frame(0,0); idle(3);
         build_image(11); queue_reference; drive_frame(2,1); idle(RESULT_LATENCY+2);
+        // Small holes exercise the independent closing reference.
+        build_image(12); queue_reference; drive_frame(2,1); idle(3);
+        build_image(13); queue_reference; drive_frame(1,1); idle(3);
         build_image(2); queue_reference; drive_frame(0,0); idle(3);
         build_image(3); queue_reference; drive_frame(2,0); idle(3);
 

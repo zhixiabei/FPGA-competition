@@ -5,13 +5,17 @@ param(
     [switch] $Emboss,
     [switch] $Cartoon,
     [switch] $Morph,
-    [switch] $ScharrInverse
+    [switch] $ScharrInverse,
+    [switch] $Binary,
+    [switch] $Erosion,
+    [switch] $Dilation,
+    [switch] $CloseMask
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$selectedModes=@(@($Emboss,$Cartoon,$Morph,$ScharrInverse) | Where-Object { $_ })
-if ($selectedModes.Count -gt 1) { throw 'Choose one third-frame display mode: -Emboss, -Cartoon, -Morph or -ScharrInverse' }
+$selectedModes=@(@($Emboss,$Cartoon,$Morph,$ScharrInverse,$Binary,$Erosion,$Dilation,$CloseMask) | Where-Object { $_ })
+if ($selectedModes.Count -gt 1) { throw 'Choose one third-frame display mode.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sourceRoot = Join-Path $projectRoot 'user_source\hdl_source'
 $sources = @('isp\isp_top.v','isp\lsc_raw10_4x.v','awb.v',
@@ -19,7 +23,8 @@ $sources = @('isp\isp_top.v','isp\lsc_raw10_4x.v','awb.v',
     'isp\rgb_edge_switch_96.v','isp\scharr_edge_detect_96.v',
     'isp\red_target_detect_96.v','isp\motion_target_detect_96.v',
     'isp\target_detect_switch_96.v','isp\data96_128\data96_128.v',
-    'isp\data128_96\data128_96.v')
+    'isp\data128_96\data128_96.v',
+    'cnn\cnn_infer_32.v','cnn\cnn_weights.v','cnn\cnn_eram_byte_dp.v')
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SimBin $tool) -PathType Leaf)) {
         throw "XSim tool is missing: $tool"
@@ -54,6 +59,11 @@ $primitiveSource = Join-Path $simulationDir 'ph1p_logic_dram.v'
     $primitiveModule.Value + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false))
 $compiledSources += $primitiveSource
+foreach ($primitive in @('ph1p_logic_eram.v','ph1p_phy_gsr.v')) {
+    $destination=Join-Path $simulationDir $primitive
+    Copy-Item -LiteralPath (Join-Path $TdSimLib $primitive) -Destination $destination
+    $compiledSources += $destination
+}
 Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir
 try {
@@ -66,6 +76,10 @@ try {
     if ($Cartoon) { $modeArgs+=@('-generic_top','"CARTOON_MODE=1"') }
     if ($Morph) { $modeArgs+=@('-generic_top','"MORPH_MODE=1"') }
     if ($ScharrInverse) { $modeArgs+=@('-generic_top','"SCHARR_INV_MODE=1"') }
+    if ($Binary) { $modeArgs+=@('-generic_top','"MASK_MODE=9"') }
+    if ($Erosion) { $modeArgs+=@('-generic_top','"MASK_MODE=10"') }
+    if ($Dilation) { $modeArgs+=@('-generic_top','"MASK_MODE=11"') }
+    if ($CloseMask) { $modeArgs+=@('-generic_top','"MASK_MODE=12"') }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
         @modeArgs work.tb_isp_lighting_integration -s isp_lighting -log xelab.log *> elaborate_console.log
     if ($LASTEXITCODE -ne 0) { throw 'ISP integration elaboration failed; see elaborate_console.log' }
@@ -80,6 +94,7 @@ try {
     if ($Cartoon) { $requiredPasses+='ISP_CARTOON_INTEGRATION_PASS' }
     if ($Morph) { $requiredPasses+='ISP_MORPH_INTEGRATION_PASS' }
     if ($ScharrInverse) { $requiredPasses+='ISP_SCHARR_INVERSE_INTEGRATION_PASS' }
+    if ($Binary -or $Erosion -or $Dilation -or $CloseMask) { $requiredPasses+='ISP_COLOR_MASK_INTEGRATION_PASS' }
     foreach ($marker in $requiredPasses) {
         $matches=[regex]::Matches($console,"(?m)^$marker\b.*$")
         if ($matches.Count -ne 1) { throw "ISP integration did not pass exactly once: $marker; see simulate_console.log" }
