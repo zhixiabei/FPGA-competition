@@ -1,8 +1,18 @@
 param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute,
-      [switch] $GenerateBit, [string] $OutputDirectory='')
+      [switch] $GenerateBit, [string] $OutputDirectory='',
+      [hashtable] $ResourceLimits=@{})
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($GenerateBit -and $SkipRoute) {throw 'Bit generation requires final routed timing checks'}
+if($ResourceLimits.Count -and $SkipRoute) {throw 'Resource limits require final routing'}
+foreach($resource in @($ResourceLimits.Keys)) {
+    $limit=0
+    if($resource -notin @('slice','lut6','reg','eram','dsp') -or
+       -not [int]::TryParse([string]$ResourceLimits[$resource],[ref]$limit) -or $limit -lt 0) {
+        throw "Invalid physical resource limit: $resource"
+    }
+    $ResourceLimits[$resource]=$limit
+}
 $root=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 
 function Get-WorkspaceDestination([string] $Path) {
@@ -253,6 +263,28 @@ if(-not $SkipRoute) {
     puts "IMAGE_QUALITY_ROUTE_PASS"
 '@
 }
+$resourceGate=''
+if($ResourceLimits.Count) {
+    # Run inside TD before bitgen, so a failed area budget cannot publish a bit.
+    $resourceGate=@'
+    set resource_file [open system_phy.area r]
+    set resource_text [read $resource_file]
+    close $resource_file
+    foreach {resource limit} {RESOURCE_LIMITS} {
+        set resource_pattern [string cat {^#} $resource {[ \t]+([0-9]+)}]
+        if {![regexp -line $resource_pattern $resource_text unused used]} {
+            error "Missing final physical resource: $resource"
+        }
+        if {$used > $limit} {
+            error "Final resource budget failed: $resource=$used exceeds $limit"
+        }
+    }
+    puts "IMAGE_QUALITY_RESOURCE_BUDGET_PASS"
+'@
+    $limitPairs=($ResourceLimits.GetEnumerator() | Sort-Object Key |
+        ForEach-Object { "$($_.Key) $($_.Value)" }) -join ' '
+    $resourceGate=$resourceGate.Replace('RESOURCE_LIMITS',$limitPairs)
+}
 $bitgen=''
 if($GenerateBit) {
     $bitgen=@'
@@ -296,6 +328,7 @@ if {[catch {
     export_db system_gate.db
     puts "IMAGE_QUALITY_SYNTHESIS_PASS"
 ROUTE_COMMANDS
+RESOURCE_GATE_COMMANDS
 BITGEN_COMMANDS
 } detail]} {
     puts stderr "IMAGE_QUALITY_BUILD_FAIL: $detail"
@@ -304,6 +337,7 @@ BITGEN_COMMANDS
 exit 0
 '@
 $script=$script.Replace('ROUTE_COMMANDS',$route)
+$script=$script.Replace('RESOURCE_GATE_COMMANDS',$resourceGate)
 $script=$script.Replace('BITGEN_COMMANDS',$bitgen)
 [IO.File]::WriteAllText((Join-Path $work 'build.tcl'),$script,[Text.UTF8Encoding]::new($false))
 Write-Output "Build output: $work"
@@ -314,7 +348,8 @@ try {
     if($LASTEXITCODE -ne 0) {throw "TD build failed: $work\console.log"}
     $text=[IO.File]::ReadAllText((Join-Path $work 'console.log'))
     if($text -notmatch 'IMAGE_QUALITY_SYNTHESIS_PASS' -or
-        (-not $SkipRoute -and $text -notmatch 'IMAGE_QUALITY_ROUTE_PASS')) {
+        (-not $SkipRoute -and $text -notmatch 'IMAGE_QUALITY_ROUTE_PASS') -or
+        ($ResourceLimits.Count -and $text -notmatch 'IMAGE_QUALITY_RESOURCE_BUDGET_PASS')) {
         throw "TD build is incomplete: $work\console.log"
     }
     $slacks=@{}
@@ -423,6 +458,13 @@ try {
                 report_directory=$reportDirectory.Substring($root.Length+1).Replace('\','/')
             }
             reports=$reportNames
+        }
+        if($ResourceLimits.Count) {
+            $manifest['resource_budget']=[ordered]@{
+                status='passed'
+                report='system_phy.area'
+                limits=$ResourceLimits
+            }
         }
         $manifestSource=Join-Path $work 'release_manifest.json'
         [IO.File]::WriteAllText($manifestSource,($manifest | ConvertTo-Json -Depth 5),

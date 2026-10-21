@@ -15,7 +15,7 @@
 | 固定色调查表、RGB 独立地址和禁用时序 | `& './sim/run_gamma_lut_rgb888.ps1'` |
 | 延迟时基、同帧元数据与生产 DDR 字数边界 | `& './sim/run_video_latency.ps1'` |
 | 真实 ISP 帧号、短帧恢复与回绕 | `& './sim/run_video_latency_frame_tag.ps1'` |
-| 延迟数字、64 帧曲线与完整 HDMI 像素 | `& './sim/run_video_latency_osd.ps1'` |
+| 三项延迟数字、N/A/超限显示与紧凑面板逐像素检查 | `& './sim/run_video_latency_osd.ps1'` |
 | DDR 帧槽、显示配置及红色/运动框对应 | `& './sim/run_target_frame_alignment.ps1'` |
 | 红色多目标检测：便携/真实安路 RAM | `& './sim/run_red_multi_target.ps1' -Mode Both` |
 | 红色多目标 720p、四段逐行零消隐 | `& './sim/run_red_multi_target.ps1' -Mode Portable -Width 1280 -Height 720` |
@@ -29,11 +29,14 @@
 | 共享比较器优化前后的所有 RGB、颜色模式和参数等价性 | `& './verification/check_color_mask_equivalence.ps1'` |
 | 多目标/真实运动选择、跨 SOF 原帧身份 | `& './sim/run_red_multi_switch.ps1' -Mode Both` |
 | 帧身份、实际 DDR 槽、形状元数据及读冻结桥 | `& './sim/run_target_frame_bridge.ps1'` |
+| 帧槽并发来源、重复物理槽和写入优先级 | `& './sim/run_target_frame_bridge_slot_writes.ps1'` |
 | 四框、颜色/形状标签、紧凑退化及固定 OSD 优先 | `& './sim/run_multi_target_mixer.ps1'` |
 | 多目标生产顶层、颜色/形状绑定、172800 字/帧及框补偿 | `& './sim/run_red_multi_frame_alignment.ps1'` |
 | 去马赛克后 RGB 注入→AWB→四个正方形→DDR 打包 | `& './sim/run_isp_red_multi.ps1'` |
 | 运动稳定性：生产参数、两种 RAM 模型 | `& './sim/run_motion_stability.ps1' -Pipeline Stable -Mode Both -CheckBehavior` |
 | 三帧确认、短暂保持、平滑和复位 | `& './sim/run_motion_result_stabilizer.ps1'` |
+| 坐标平滑独立参考：默认死区全坐标穷举及其他死区边界 | `& './sim/run_motion_smoothing_equivalence.ps1'` |
+| 形态学比较器共享：四配置原版逐拍对照及独立图像参考 | `& './sim/run_scharr_morphology_equivalence.ps1'` |
 | 真实 RAW 全链路六帧、连续 4 像素右移 | `& './sim/run_isp_motion_camera.ps1' -LineBlanking 32 -MovePixels 4` |
 | 运动分支与 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1' -Motion` |
 | 红色分支与 ISP 打包 | `& './sim/run_isp_lighting_integration.ps1'` |
@@ -70,6 +73,39 @@
 ```powershell
 .\sim\run_sc520.cmd --no-pause
 ```
+
+## 本轮资源压缩回归
+
+保持功能的 Slice 压缩、完整组合的最终物理结果及本轮实际验证范围见
+[Slice 压缩实施记录](../docs/SLICE_COMPRESSION_RESULTS.md)。
+差分默认参考是本轮冻结的 `build/slice_compression/baseline_project`，
+对应发布版本 `src-f87677ec3bf9`，不能换成改动后的当前源文件。
+
+| 内容 | 命令 |
+|---|---|
+| 形状完整算术与多目标逐拍等价，两种 RAM | `& './sim/run_red_slice_compression_equivalence.ps1' -Mode Both` |
+| 同一差分的 720p 大坐标边界 | `& './sim/run_red_slice_compression_equivalence.ps1' -Mode Both -HighCoordinates` |
+| AWB 位宽、延迟共享运算逐拍等价 | `& './sim/run_awb_latency_equivalence.ps1'` |
+| Scharr 实际方向函数全部 33,554,432 组 | `& './sim/run_scharr_direction_exhaustive.ps1'` |
+| 裁剪函数全部输入，与原版和独立 oracle 比对 | `& './sim/run_bridge_clip_equivalence.ps1' -CandidateRtl './user_source/hdl_source/target_frame_bridge.v'` |
+| 原版、通用完整载荷、生产压缩载荷逐拍比对 | `& './sim/run_target_frame_bridge_payload_equivalence.ps1'` |
+| 原版、默认内部计数、共享计数联合差分 | `& './sim/run_ddr_write_progress_equivalence.ps1' -CandidateRoot .` |
+| 生产 compact 关系、真实顶层与四槽/显示对齐 | `& './sim/run_red_multi_frame_alignment.ps1' -CompactMode` |
+| 发布脚本的实际 TD 面积门槛，含超限拒绝 | `& './verification/test_slice_resource_gate.ps1'` |
+| 正式发布后打包源码、旧新报告和实际回归证据 | `& './verification/package_slice_compression.ps1'` |
+
+通用 multi-frame 测试不带 `-CompactMode` 时仍检查独立单框/四框字段；
+生产关系测试显式使用 compact 格式。弃用的标签串行方案差分入口保留作诊断，
+不代表生产 mixer 采用了该方案。
+
+上一轮的平滑/形态学改动与历史资源见
+[前轮资源压缩记录](../docs/RESOURCE_OPTIMIZATION.md)。
+新增平滑测试用独立加权平均公式核对默认死区的全部 16,777,216 组坐标，
+形态学测试逐拍核对原版四路图像和控制，再运行默认 Gaussian=1 的独立整图参考。
+形态学脚本默认读取 `build/resource_optimization/baseline/scharr_edge_detect_96.v`，
+也可用 `-ReferenceRtl <原版文件>` 指定参考。
+Gaussian=0 的现有独立选择器参考在原版也会失败，
+本轮仅将两组 Gaussian=0 原版差分计为通过，诊断日志单独保存。
 
 ## 当前颜色与形状结果及边界
 
@@ -186,12 +222,12 @@ U 形、环形空隙内的独立目标可能被合并；四像素拍内部也有
 |---|---|
 | `run_display_effects_mixer.ps1` | 十三模式名称及叠加：40 帧、5,160,960 像素；颜色目标兼容用例另核对 8 帧、7,372,800 像素 |
 | `run_multi_target_mixer.ps1` | 12 帧、2,764,800 像素；多框与颜色/形状标签 |
-| `run_latency_display_toggle.ps1` | 8 帧、2,867,200 像素、41 项检查；延迟面板开关和显示同步 |
+| `run_latency_display_toggle.ps1` | 8 帧、2,867,200 像素、41 项检查；面板开关，可见和隐藏区域各 71,680 像素，隐藏期间持续转换三项读数 |
 | `run_target_frame_alignment.ps1` | 36 次写/读/显示、34 次结果、105 次配置；十三模式与 DDR 帧槽对应 |
 | `run_red_multi_frame_alignment.ps1` | 写入 23、读取/显示各 19，形状/几何各 58 项检查；生产顶层四框与帧槽对应 |
 | `run_isp_red_multi.ps1` | 去马赛克后 RGB 注入的 3 帧；691,200 组 AWB/显示数据、518,400 个打包字、8 个 SQR 框 |
 | `run_isp_lighting_integration.ps1 -CloseMask` | 3 帧、8,294,400 字节、921,600 个清理掩码像素，其中白色 19,196、黑色 902,404 |
-| `run_video_latency_osd.ps1` | 495 项检查，4 帧、3,686,400 个 mixer 像素 |
+| `run_video_latency_osd.ps1` | 25 项状态检查、88,966 个面板像素检查；完整 HDMI 帧同步和开关回归见 `run_latency_display_toggle.ps1` |
 | `run_video_latency_frame_tag.ps1` | 5 个 RAW 帧，其中完整输出 3 帧、无输出短帧 2 帧；帧号回绕 1 次、帧首重叠 1 次、3 次模式检查，核对 518,400 个带标签打包字 |
 | `run_isp_motion_camera.ps1 -LineBlanking 32 -MovePixels 4` | 实际 RAW 输入 6 帧、1,382,400 组 RAW/AWB、每帧 720 个 AWB 行尾、1,036,800 个打包字；6 次结果、2 次公开目标，原始候选 3 次，第 4 帧确认、第 5 帧保持，结果延迟 13 拍 |
 
@@ -252,11 +288,12 @@ AWB、检测、显示选择/延迟和打包使用生产 RTL，不验证 RAW 解�
 读槽选择冻结元数据，HDMI 帧首提交并保持整帧。
 约束为帧上下文 20 ns、检测结果 20 ns、读快照 13 ns，
 显示配置系统→CSI 邮箱另外为 13 ns。当前发布三组目标路径分别
-6,216/2,318/257 条、显示配置 4 条，均通过覆盖检查，无效约束和无路径约束均为零。
+3,520/3,604/721 条、显示配置 4 条，均通过覆盖检查，无效约束和无路径约束均为零。
 
 ### 当前构建与前版基线
 
-最新资源与验证见 [方形像素容差与圆形特征保持修订](../docs/SHAPE_BOUNDARY_FIX.md)。
+最新资源与验证见 [Slice 压缩实施记录](../docs/SLICE_COMPRESSION_RESULTS.md)；
+此前形状修订见 [方形像素容差与圆形特征保持修订](../docs/SHAPE_BOUNDARY_FIX.md)。
 以下为前版形状容差与时间稳定版 `src-f2960ad79fd7`，于 2026-10-19 19:32:11（北京时间）
 完成最终布局布线和 bit 发布：Slice 19,044/21,216（89.76%）、LUT6 18,292、
 寄存器 17,886、ERAM 79/108、DSP 15/40，建立/保持余量 +0.106/+0.020 ns。

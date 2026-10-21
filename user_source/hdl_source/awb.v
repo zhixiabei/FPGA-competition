@@ -36,14 +36,22 @@ module awb #(
     localparam integer MIN_SAMPLES =
         MAX_SAMPLES >= 128 ? MAX_SAMPLES / 32 :
         MAX_SAMPLES >= 4 ? 4 : MAX_SAMPLES;
+    // Accepted samples have every channel <= 220. Size the statistics from
+    // that bound; retain the original 32-bit modulo arithmetic if a larger
+    // legal image would exceed it. Use a wide constant for the bound itself.
+    localparam [63:0] MAX_CHANNEL_SUM = 64'd220 * MAX_SAMPLES;
+    localparam integer SUM_BITS = MAX_CHANNEL_SUM >= 64'h00000000ffffffff ?
+        32 : (MAX_CHANNEL_SUM == 0 ? 1 : $clog2(MAX_CHANNEL_SUM + 64'd1));
+    localparam integer SAMPLE_COUNT_BITS =
+        MAX_SAMPLES == 0 ? 1 : $clog2(MAX_SAMPLES + 64'd1);
     localparam [1:0] DIV_IDLE = 2'd0, DIV_RED = 2'd1, DIV_BLUE = 2'd2;
 
     reg frame_active;
     reg [COUNT_BITS-1:0] beat_count;
     reg [SAMPLE_LOG2-1:0] sample_phase;
     reg [1:0] sample_lane;
-    reg [31:0] sum_r, sum_g, sum_b;
-    reg [31:0] sample_count;
+    reg [SUM_BITS-1:0] sum_r, sum_g, sum_b;
+    reg [SAMPLE_COUNT_BITS-1:0] sample_count;
 
     reg [10:0] gain_r_q8, gain_b_q8;
     reg [10:0] pending_r_q8, pending_b_q8;
@@ -52,9 +60,9 @@ module awb #(
     reg [1:0] div_state;
     reg [5:0] div_bit_count;
     reg [39:0] div_quotient;
-    reg [32:0] div_remainder;
-    reg [31:0] div_denominator;
-    reg [31:0] div_green_sum, div_blue_denominator;
+    reg [SUM_BITS:0] div_remainder;
+    reg [SUM_BITS-1:0] div_denominator;
+    reg [SUM_BITS-1:0] div_green_sum, div_blue_denominator;
     reg [10:0] div_red_result;
 
     // Selecting a different lane at successive sample points avoids sampling
@@ -151,23 +159,24 @@ module awb #(
                 sample_count <= 0;
             end
             if (sample_accept_d2) begin
-                sum_r <= (stats_start_d2 ? 32'd0 : sum_r) +
-                    {24'd0, sample_rgb_d2[23:16]};
-                sum_g <= (stats_start_d2 ? 32'd0 : sum_g) +
-                    {24'd0, sample_rgb_d2[15:8]};
-                sum_b <= (stats_start_d2 ? 32'd0 : sum_b) +
-                    {24'd0, sample_rgb_d2[7:0]};
-                sample_count <= (stats_start_d2 ? 32'd0 : sample_count) + 1'b1;
+                sum_r <= (stats_start_d2 ? {SUM_BITS{1'b0}} : sum_r) +
+                    sample_rgb_d2[23:16];
+                sum_g <= (stats_start_d2 ? {SUM_BITS{1'b0}} : sum_g) +
+                    sample_rgb_d2[15:8];
+                sum_b <= (stats_start_d2 ? {SUM_BITS{1'b0}} : sum_b) +
+                    sample_rgb_d2[7:0];
+                sample_count <=
+                    (stats_start_d2 ? {SAMPLE_COUNT_BITS{1'b0}} : sample_count) + 1'b1;
             end
         end
     end
 
     // Restoring division: one quotient bit each clock, using one subtractor.
     // Keep all 40 numerator bits; G<<8 must not lose its high bits.
-    wire [32:0] div_trial =
-        {div_remainder[31:0], div_quotient[39]};
+    wire [SUM_BITS:0] div_trial =
+        {div_remainder[SUM_BITS-1:0], div_quotient[39]};
     wire div_subtract = div_trial >= {1'b0, div_denominator};
-    wire [32:0] div_next_remainder = div_subtract ?
+    wire [SUM_BITS:0] div_next_remainder = div_subtract ?
         div_trial - {1'b0, div_denominator} : div_trial;
     wire [39:0] div_next_quotient =
         {div_quotient[38:0], div_subtract};

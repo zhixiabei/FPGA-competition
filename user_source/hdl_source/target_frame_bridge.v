@@ -2,7 +2,11 @@
 // selected slot before display. Only metadata crosses these clock domains.
 module target_frame_bridge #(
     parameter integer FRAME_WORDS = 172800,
-    parameter [11:0] DEFAULT_EFFECT_CONFIG = 12'd0
+    parameter [11:0] DEFAULT_EFFECT_CONFIG = 12'd0,
+    // Production target_detect_switch uses first-valid color bounds and
+    // clears motion multi-boxes. Other users retain independent fields.
+    parameter integer COMPACT_MODE_PAYLOAD = 0,
+    parameter integer USE_EXTERNAL_WRITE_PROGRESS = 0
 ) (
     input wire I_csi_clk,
     input wire I_ddr_clk,
@@ -49,13 +53,15 @@ module target_frame_bridge #(
     output reg [3:0] O_multi_hold,
     output reg [191:0] O_multi_boxes,
     output reg [7:0] O_multi_shapes,
-    output reg O_multi_overflow
+    output reg O_multi_overflow,
+    // Same-edge combinational completion from video_ddr_write_progress.
+    input wire I_write_complete
 );
     // Clipped 720p coordinates need 11 x bits and 10 y bits. Keep the
     // external 12-bit ports while storing only significant payload bits.
     localparam integer BOX_WIDTH = 42;
-    localparam integer BODY_WIDTH = 252;
-    localparam integer EXPANDED_BODY_WIDTH = BODY_WIDTH+33;
+    localparam integer BODY_WIDTH = COMPACT_MODE_PAYLOAD ? 210 : 252;
+    localparam integer EXPANDED_BODY_WIDTH = 285;
     localparam integer RESULT_WIDTH = 16+10+BODY_WIDTH;
     localparam integer READ_WIDTH = BODY_WIDTH+13;
     localparam integer COUNT_WIDTH = (FRAME_WORDS < 2) ? 1 : $clog2(FRAME_WORDS+1);
@@ -75,19 +81,32 @@ module target_frame_bridge #(
     function [11:0] F_clip_x;
         input [11:0] value;
         input [1:0] offset;
-        reg [12:0] shifted;
+        reg [10:0] shifted;
+        reg [1:0] remaining_low;
+        reg exceeds_limit;
         begin
-            shifted = {1'b0,value}+offset;
-            F_clip_x = (shifted > 13'd1279) ? 12'd1279 : shifted[11:0];
+            // 1279 = 4*319+3. Compare before the offset add so the
+            // saturating decision needs no carry chain from that add.
+            remaining_low = ~offset;
+            exceeds_limit = value[11:2] > 10'd319 ||
+                (value[11:2] == 10'd319 && value[1:0] > remaining_low);
+            shifted = value[10:0]+{9'd0,offset};
+            F_clip_x = exceeds_limit ? 12'd1279 : {1'b0,shifted};
         end
     endfunction
     function [11:0] F_clip_y;
         input [11:0] value;
         input [1:0] offset;
-        reg [12:0] shifted;
+        reg [9:0] shifted;
+        reg [1:0] remaining_low;
+        reg exceeds_limit;
         begin
-            shifted = {1'b0,value}+offset;
-            F_clip_y = (shifted > 13'd719) ? 12'd719 : shifted[11:0];
+            // Keep all upper input bits in the range comparison.
+            remaining_low = ~offset;
+            exceeds_limit = value[11:2] > 10'd179 ||
+                (value[11:2] == 10'd179 && value[1:0] > remaining_low);
+            shifted = value[9:0]+{8'd0,offset};
+            F_clip_y = exceeds_limit ? 12'd719 : {2'b0,shifted};
         end
     endfunction
 
@@ -123,14 +142,46 @@ module target_frame_bridge #(
     endfunction
     function [EXPANDED_BODY_WIDTH-1:0] F_expand_body;
         input [BODY_WIDTH-1:0] body;
+        input [11:0] effect_config;
+        input read_valid;
         integer index;
+        reg [BOX_WIDTH-1:0] single_box;
+        reg [11:0] motion_zero;
         begin
-            F_expand_body = {body[BODY_WIDTH-1 -: 4],
-                             F_expand_single(body[BODY_WIDTH-5 -: 63]),
-                             body[4*BOX_WIDTH+16:4*BOX_WIDTH+1],192'b0,body[0]};
-            for (index=0; index<4; index=index+1)
-                F_expand_body[1+48*index +: 48] =
-                    F_expand_box(body[1+BOX_WIDTH*index +: BOX_WIDTH]);
+            if (COMPACT_MODE_PAYLOAD) begin
+                // Both formats keep flags and the shared box area at the
+                // same low offsets. Only the single bounds are omitted.
+                if (body[BODY_WIDTH-1] || body[4*BOX_WIDTH+13])
+                    single_box = body[1 +: BOX_WIDTH];
+                else if (body[4*BOX_WIDTH+14])
+                    single_box = body[1+BOX_WIDTH +: BOX_WIDTH];
+                else if (body[4*BOX_WIDTH+15])
+                    single_box = body[1+2*BOX_WIDTH +: BOX_WIDTH];
+                else
+                    single_box = body[1+3*BOX_WIDTH +: BOX_WIDTH];
+                F_expand_body = {body[BODY_WIDTH-1 -: 4],
+                    F_expand_single({
+                        single_box[10:0],single_box[21:11],
+                        single_box[31:22],single_box[41:32],
+                        body[BODY_WIDTH-5 -: 21]}),
+                    body[4*BOX_WIDTH+16:4*BOX_WIDTH+1],192'b0,body[0]};
+                // Invalid read snapshots already store zero geometry and
+                // bypass result clipping. Only reconstructed motion boxes
+                // need this guard; found/valid flags cannot substitute for
+                // read_valid because no-target results may still be shifted.
+                motion_zero = read_valid ? {10'b0,F_offset(effect_config)} : 12'b0;
+                for (index=0; index<4; index=index+1)
+                    F_expand_body[1+48*index +: 48] = body[BODY_WIDTH-1] ?
+                        {motion_zero,motion_zero,motion_zero,motion_zero} :
+                        F_expand_box(body[1+BOX_WIDTH*index +: BOX_WIDTH]);
+            end else begin
+                F_expand_body = {body[BODY_WIDTH-1 -: 4],
+                                 F_expand_single(body[BODY_WIDTH-5 -: 63]),
+                                 body[4*BOX_WIDTH+16:4*BOX_WIDTH+1],192'b0,body[0]};
+                for (index=0; index<4; index=index+1)
+                    F_expand_body[1+48*index +: 48] =
+                        F_expand_box(body[1+BOX_WIDTH*index +: BOX_WIDTH]);
+            end
         end
     endfunction
 
@@ -169,17 +220,37 @@ module target_frame_bridge #(
                 F_clip_x(I_multi_boxes[48*box_index +: 12], S_result_offset)});
         end
     endgenerate
-    wire [RESULT_WIDTH-1:0] S_new_result = {
-        S_context_nonce[S_context_index],I_result_frame_id,
-        I_result_motion_mode,I_result_color_mode,I_result_found,
-        F_pack_single({
+    wire [62:0] S_adjusted_single = F_pack_single({
         F_clip_x(I_result_xmin,S_result_offset),
         F_clip_x(I_result_xmax,S_result_offset),
         F_clip_y(I_result_ymin,S_result_offset),
         F_clip_y(I_result_ymax,S_result_offset),
         F_clip_x(I_result_center_x,S_result_offset),
-        F_clip_y(I_result_center_y,S_result_offset)}),
-        I_multi_valid,I_multi_hold,I_multi_shapes,S_adjusted_boxes,I_multi_overflow};
+        F_clip_y(I_result_center_y,S_result_offset)});
+    wire [RESULT_WIDTH-1:0] S_new_result;
+    generate
+        if (COMPACT_MODE_PAYLOAD) begin : g_compact_payload
+            // Keep centers independently: averaging clipped bounds changes
+            // their rounding/saturation. Motion uses box zero for its bounds;
+            // its original zero multi-boxes are reconstructed after CDC.
+            wire [4*BOX_WIDTH-1:0] S_shared_boxes = I_result_motion_mode ?
+                {{(3*BOX_WIDTH){1'b0}},
+                 S_adjusted_single[30:21],S_adjusted_single[40:31],
+                 S_adjusted_single[51:41],S_adjusted_single[62:52]} :
+                S_adjusted_boxes;
+            assign S_new_result = {
+                S_context_nonce[S_context_index],I_result_frame_id,
+                I_result_motion_mode,I_result_color_mode,I_result_found,
+                S_adjusted_single[20:0],
+                I_multi_valid,I_multi_hold,I_multi_shapes,S_shared_boxes,I_multi_overflow};
+        end else begin : g_full_payload
+            assign S_new_result = {
+                S_context_nonce[S_context_index],I_result_frame_id,
+                I_result_motion_mode,I_result_color_mode,I_result_found,
+                S_adjusted_single,
+                I_multi_valid,I_multi_hold,I_multi_shapes,S_adjusted_boxes,I_multi_overflow};
+        end
+    endgenerate
     wire S_new_result_valid = I_result_ready && S_context_match;
 
     reg [RESULT_WIDTH-1:0] S_result_payload, S_result_pending_payload;
@@ -286,12 +357,47 @@ module target_frame_bridge #(
     reg [READ_WIDTH-1:0] S_read_payload, S_read_pending_payload;
     reg S_read_request, S_read_ack, S_read_pending_valid;
     (* async_reg = "true" *) reg S_read_ack_meta, S_read_ack_sync;
+    genvar slot_bank;
+    generate
+        for (slot_bank=0; slot_bank<4; slot_bank=slot_bank+1) begin : g_slot_result
+            wire S_start_selected = I_write_start && I_write_slot == slot_bank;
+            wire S_message_matches_slot = S_slot_started[slot_bank] &&
+                S_slot_nonce[slot_bank] == S_message_nonce &&
+                S_slot_frame_id[slot_bank] == S_message_id &&
+                S_slot_motion_mode[slot_bank] == S_message_motion &&
+                S_slot_color_mode[slot_bank] == S_message_color;
+            wire S_take_message = S_start_selected ? S_message_matches_start :
+                S_result_message && S_message_matches_slot;
+            wire S_take_last = S_start_selected && !S_message_matches_start &&
+                S_last_matches_start;
+
+            // The two sources are exclusive, with write-start taking priority.
+            // One static write port per bank avoids a second dynamic array write.
+            always @(posedge I_ddr_clk or negedge I_rst_n) begin
+                if (!I_rst_n) begin
+                    S_slot_result[slot_bank] <= 0;
+                    S_slot_result_valid[slot_bank] <= 1'b0;
+                end else begin
+                    if (S_take_message || S_take_last)
+                        S_slot_result[slot_bank] <=
+                            ({BODY_WIDTH{S_take_message}} &
+                             S_result_payload[BODY_WIDTH-1:0]) |
+                            ({BODY_WIDTH{S_take_last}} &
+                             S_last_result_payload[BODY_WIDTH-1:0]);
+                    if (S_start_selected)
+                        S_slot_result_valid[slot_bank] <= S_take_message || S_take_last;
+                    else if (S_take_message)
+                        S_slot_result_valid[slot_bank] <= 1'b1;
+                end
+            end
+        end
+    endgenerate
     integer slot_index;
     always @(posedge I_ddr_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             S_result_req_meta <= 0; S_result_req_sync <= 0; S_result_ack <= 0;
             S_slot_motion_mode <= 0; S_slot_started <= 0;
-            S_slot_complete <= 0; S_slot_result_valid <= 0;
+            S_slot_complete <= 0;
             S_active_write_slot <= 0; S_write_count <= 0; S_write_active <= 0;
             S_last_result_payload <= 0; S_last_result_valid <= 0;
             S_read_payload <= 0; S_read_pending_payload <= 0;
@@ -301,7 +407,6 @@ module target_frame_bridge #(
                 S_slot_nonce[slot_index] <= 0; S_slot_frame_id[slot_index] <= 0;
                 S_slot_effect_config[slot_index] <= DEFAULT_EFFECT_CONFIG;
                 S_slot_color_mode[slot_index] <= 0;
-                S_slot_result[slot_index] <= 0;
             end
         end else begin
             S_result_req_meta <= S_result_request;
@@ -312,22 +417,13 @@ module target_frame_bridge #(
                 S_result_ack <= S_result_req_sync;
                 S_last_result_payload <= S_result_payload;
                 S_last_result_valid <= 1'b1;
-                for (slot_index=0; slot_index<4; slot_index=slot_index+1) begin
-                    if (S_slot_started[slot_index] &&
-                        S_slot_nonce[slot_index] == S_message_nonce &&
-                        S_slot_frame_id[slot_index] == S_message_id &&
-                        S_slot_motion_mode[slot_index] == S_message_motion &&
-                        S_slot_color_mode[slot_index] == S_message_color &&
-                        !(I_write_start && I_write_slot == slot_index)) begin
-                        S_slot_result[slot_index] <= S_result_payload[BODY_WIDTH-1:0];
-                        S_slot_result_valid[slot_index] <= 1'b1;
-                    end
-                end
             end
             if (I_write_start) begin
                 S_active_write_slot <= I_write_slot;
-                S_write_count <= I_write_word ? 1 : 0;
-                S_write_active <= !(FRAME_WORDS == 1 && I_write_word);
+                if (!USE_EXTERNAL_WRITE_PROGRESS) begin
+                    S_write_count <= I_write_word ? 1 : 0;
+                    S_write_active <= !(FRAME_WORDS == 1 && I_write_word);
+                end
                 S_slot_nonce[I_write_slot] <= S_start_nonce;
                 S_slot_frame_id[I_write_slot] <= S_start_frame_id;
                 S_slot_effect_config[I_write_slot] <= S_start_effect_config;
@@ -335,19 +431,12 @@ module target_frame_bridge #(
                 S_slot_color_mode[I_write_slot] <= S_start_color_mode;
                 S_slot_started[I_write_slot] <= S_start_valid;
                 S_slot_complete[I_write_slot] <= FRAME_WORDS == 1 && I_write_word;
-                if (S_message_matches_start) begin
-                    S_slot_result[I_write_slot] <= S_result_payload[BODY_WIDTH-1:0];
-                    S_slot_result_valid[I_write_slot] <= 1'b1;
-                end else if (S_last_matches_start) begin
-                    S_slot_result[I_write_slot] <= S_last_result_payload[BODY_WIDTH-1:0];
-                    S_slot_result_valid[I_write_slot] <= 1'b1;
-                end else begin
-                    S_slot_result_valid[I_write_slot] <= 1'b0;
-                end
-            end else if (I_write_word && S_write_active) begin
-                if (S_write_count == FRAME_WORDS-1) begin
+            end else if (USE_EXTERNAL_WRITE_PROGRESS ? I_write_complete :
+                         I_write_word && S_write_active) begin
+                if (USE_EXTERNAL_WRITE_PROGRESS || S_write_count == FRAME_WORDS-1) begin
                     S_slot_complete[S_active_write_slot] <= 1'b1;
-                    S_write_active <= 1'b0;
+                    if (!USE_EXTERNAL_WRITE_PROGRESS)
+                        S_write_active <= 1'b0;
                 end else begin
                     S_write_count <= S_write_count+1'b1;
                 end
@@ -388,9 +477,68 @@ module target_frame_bridge #(
                  O_xmin,O_xmax,O_ymin,O_ymax,O_center_x,O_center_y,
                  O_multi_valid,O_multi_hold,O_multi_shapes,O_multi_boxes,O_multi_overflow} <=
                     {S_read_payload[READ_WIDTH-1 -: 13],
-                     F_expand_body(S_read_payload[BODY_WIDTH-1:0])};
+                     F_expand_body(S_read_payload[BODY_WIDTH-1:0],
+                         S_read_payload[READ_WIDTH-2 -: 12],S_read_payload[READ_WIDTH-1])};
                 S_read_ack <= S_read_req_sync;
             end
+        end
+    end
+endmodule
+
+// Shared DDR progress for bridge and latency metadata. Latency excludes a
+// start-coincident word; bridge includes it. Both completion outputs use the
+// pre-edge count, so their consumers retain the original completion edge.
+module video_ddr_write_progress #(
+    parameter integer FRAME_WORDS = 172800
+) (
+    input wire I_clk,
+    input wire I_rst_n,
+    input wire I_write_start,
+    input wire I_write_word,
+    output wire O_bridge_complete,
+    output wire O_latency_complete
+);
+    localparam integer COUNT_WIDTH = (FRAME_WORDS < 2) ? 1 : $clog2(FRAME_WORDS+1);
+    reg [COUNT_WIDTH-1:0] S_write_count;
+    reg S_write_active, S_start_word;
+    wire S_bridge_terminal, S_latency_terminal;
+    generate
+        if (FRAME_WORDS > 1 && FRAME_WORDS%2 == 0) begin : g_even_words
+            // For the production 172800 words the two terminal values
+            // 172799 and 172798 differ only in their lowest bit.
+            localparam [COUNT_WIDTH-2:0] LAST_HIGH = (FRAME_WORDS-1)/2;
+            wire S_terminal_high = S_write_count[COUNT_WIDTH-1:1] == LAST_HIGH;
+            assign S_latency_terminal = S_terminal_high && S_write_count[0];
+            assign S_bridge_terminal = S_terminal_high &&
+                (S_write_count[0] != S_start_word);
+        end else if (FRAME_WORDS == 1) begin : g_one_word
+            // start+word completes bridge inside its start branch. The
+            // common counter remains active for latency's subsequent word.
+            assign S_latency_terminal = 1'b1;
+            assign S_bridge_terminal = !S_start_word;
+        end else begin : g_odd_words
+            assign S_latency_terminal = S_write_count == FRAME_WORDS-1;
+            assign S_bridge_terminal = S_start_word ?
+                S_write_count == FRAME_WORDS-2 : S_latency_terminal;
+        end
+    endgenerate
+    wire S_accept_word = !I_write_start && I_write_word && S_write_active;
+    assign O_bridge_complete = S_accept_word && S_bridge_terminal;
+    assign O_latency_complete = S_accept_word && S_latency_terminal;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_write_count <= 0;
+            S_write_active <= 0;
+            S_start_word <= 0;
+        end else if (I_write_start) begin
+            S_write_count <= 0;
+            S_write_active <= 1'b1;
+            S_start_word <= I_write_word;
+        end else if (S_accept_word) begin
+            if (S_latency_terminal)
+                S_write_active <= 1'b0;
+            else
+                S_write_count <= S_write_count+1'b1;
         end
     end
 endmodule

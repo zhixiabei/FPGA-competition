@@ -68,7 +68,8 @@ bit 生成，成功后只更新 `td_project/anlogic_edge_osd_Runs/best_result/an
 
 ## 当前构建与资源
 
-最新资源与验证见 [方形像素容差与圆形特征保持修订](SHAPE_BOUNDARY_FIX.md)。
+最新资源与验证见 [Slice 压缩实施记录](SLICE_COMPRESSION_RESULTS.md)；
+此前形状修订见 [方形像素容差与圆形特征保持修订](SHAPE_BOUNDARY_FIX.md)。
 以下为前版形状容差与时间稳定版 `src-f2960ad79fd7`，于 2026-10-19 19:32:11（北京时间）
 完成综合、最终布局布线和 bit 发布。最终 Slice 19,044/21,216（89.76%）、
 LUT6 18,292、寄存器 17,886、ERAM 79/108、DSP 15/40；

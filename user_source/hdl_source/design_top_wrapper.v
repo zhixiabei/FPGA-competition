@@ -982,7 +982,16 @@ end else begin: no_raw_diagnostics
     assign S_ae_readout_data = 28'd0;
 end endgenerate
 
-    video_latency_monitor u_video_latency (
+    wire S_bridge_write_complete, S_latency_write_complete;
+    video_ddr_write_progress u_ddr_write_progress (
+        .I_clk(S_ddr_clk), .I_rst_n(S_rst_n),
+        .I_write_start(S_write_frame_start), .I_write_word(S_vi_ddr_wr_en),
+        .O_bridge_complete(S_bridge_write_complete),
+        .O_latency_complete(S_latency_write_complete)
+    );
+    video_latency_monitor #(
+        .USE_EXTERNAL_WRITE_PROGRESS(1)
+    ) u_video_latency (
         .I_time_clk(I_sys_clk), .I_csi_clk(S_csi_rx_clk),
         .I_ddr_clk(S_ddr_clk), .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
         .I_raw_sof(S_raw_tuser), .I_raw_valid(S_raw_tvalid),
@@ -995,11 +1004,14 @@ end endgenerate
         .I_display_frame_start(S_display_frame_start),
         .O_sample_strobe(S_latency_sample_strobe), .O_sample_valid(S_latency_sample_valid),
         .O_frame_id(S_latency_frame_id), .O_total_us(S_latency_total_us),
-        .O_isp_us(S_latency_isp_us), .O_buffer_us(S_latency_buffer_us)
+        .O_isp_us(S_latency_isp_us), .O_buffer_us(S_latency_buffer_us),
+        .I_write_complete(S_latency_write_complete)
     );
 
     target_frame_bridge #(
-        .DEFAULT_EFFECT_CONFIG(DEFAULT_EFFECT_CONFIG)
+        .DEFAULT_EFFECT_CONFIG(DEFAULT_EFFECT_CONFIG),
+        .COMPACT_MODE_PAYLOAD(1),
+        .USE_EXTERNAL_WRITE_PROGRESS(1)
     ) u_target_frame_bridge (
         .I_csi_clk(S_csi_rx_clk), .I_ddr_clk(S_ddr_clk),
         .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
@@ -1027,7 +1039,8 @@ end endgenerate
         .O_center_x(S_bridge_center_x), .O_center_y(S_bridge_center_y),
         .O_multi_valid(S_bridge_multi_valid), .O_multi_hold(S_bridge_multi_hold),
         .O_multi_boxes(S_bridge_multi_boxes), .O_multi_shapes(S_bridge_multi_shapes),
-        .O_multi_overflow(S_bridge_multi_overflow)
+        .O_multi_overflow(S_bridge_multi_overflow),
+        .I_write_complete(S_bridge_write_complete)
     );
 
 //ISP算法顶层模块

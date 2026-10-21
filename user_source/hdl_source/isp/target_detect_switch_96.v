@@ -356,12 +356,18 @@ module motion_result_stabilizer #(
 
     function [11:0] smooth_coordinate;
         input [11:0] previous, current;
-        reg [12:0] difference, step;
+        reg signed [12:0] difference;
+        reg signed [13:0] biased_difference, step;
         begin
-            difference = current >= previous ? current-previous : previous-current;
-            step = (difference + 13'd3) >> 2;
-            smooth_coordinate = difference <= DEADBAND ? previous :
-                current >= previous ? previous + step : previous - step;
+            difference = $signed({1'b0,current}) - $signed({1'b0,previous});
+            // Negative arithmetic shifts round away from zero; positive
+            // steps need the bias to retain the same rounding.
+            biased_difference = {difference[12],difference} +
+                (difference[12] ? 14'sd0 : 14'sd3);
+            step = biased_difference >>> 2;
+            smooth_coordinate =
+                difference >= -DEADBAND && difference <= DEADBAND ?
+                previous : $signed({1'b0,previous}) + step;
         end
     endfunction
 

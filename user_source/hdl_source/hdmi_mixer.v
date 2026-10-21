@@ -811,7 +811,7 @@ module hdmi_mixer #(
         assign S_raw_alert=1'b0;
     end endgenerate
 
-    wire S_latency_panel, S_latency_text, S_latency_graph, S_latency_alert;
+    wire S_latency_panel, S_latency_text, S_latency_alert;
     generate if (SHOW_LATENCY != 0) begin: latency_readout
         video_latency_osd u_osd (
             .I_clk(I_clk), .I_rst_n(I_rst_n),
@@ -822,12 +822,11 @@ module hdmi_mixer #(
             .I_de(S_video_de_1d && S_latency_visible),
             .I_x(S_x_1d), .I_y(S_y_1d),
             .O_panel(S_latency_panel), .O_text(S_latency_text),
-            .O_graph(S_latency_graph), .O_alert(S_latency_alert)
+            .O_alert(S_latency_alert)
         );
     end else begin: no_latency_readout
         assign S_latency_panel=1'b0;
         assign S_latency_text=1'b0;
-        assign S_latency_graph=1'b0;
         assign S_latency_alert=1'b0;
     end endgenerate
 
@@ -1551,8 +1550,7 @@ module hdmi_mixer #(
                     O_hdmi_data <= S_effect_text_on ? 24'h00e6ff : 24'h101010;
                 else if(S_latency_panel)
                     O_hdmi_data <= S_latency_text ?
-                        (S_latency_alert ? 24'hffb040 : 24'hffffff) :
-                        S_latency_graph ? (S_latency_alert ? 24'hff4040 : 24'h40e0a0) : 24'h101418;
+                        (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
                 else if(S_raw_panel)
                     O_hdmi_data <= S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
                 else if(S_osd_hit)

@@ -3,7 +3,9 @@
 // Camera algorithms, pixel FIFO storage, PLL and physical DDR are boundaries.
 // Accepted DDR write words are injected; addresses, allocation, completion,
 // metadata CDC, read selection and mixer frame latches remain real logic.
-module tb_red_multi_frame_alignment;
+module tb_red_multi_frame_alignment #(
+    parameter integer COMPACT_MODE = 0
+);
     localparam integer FRAME_WORDS = 172800;
     reg csi_clk = 0, hdmi_clk = 0, ddr_clk = 0;
     always #7 csi_clk = ~csi_clk;
@@ -53,6 +55,9 @@ module tb_red_multi_frame_alignment;
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
         .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1)
     );
+    // The default keeps the original arbitrary independent-field regression.
+    // Compact mode uses the production detector contract below.
+    defparam dut.u_target_frame_bridge.COMPACT_MODE_PAYLOAD = COMPACT_MODE;
 
     function automatic integer slot_of_base(input [24:0] address);
         case (address)
@@ -188,6 +193,8 @@ module tb_red_multi_frame_alignment;
                            input [3:0] valid_value, input [3:0] held_value,
                            input bit overflow_value);
         integer s;
+        reg [47:0] first_box;
+        reg [12:0] center_sum_x, center_sum_y;
         begin
             @(negedge csi_clk);
             result_ready = 1; result_id = id; result_motion = motion; result_found = found_value;
@@ -198,6 +205,23 @@ module tb_red_multi_frame_alignment;
             result_boxes = packed_boxes(id,0);
             result_shapes = motion ? 8'd0 : packed_shapes(id);
             result_valid = valid_value; result_hold = held_value; result_overflow = overflow_value;
+            if (COMPACT_MODE) begin
+                if (motion) begin
+                    result_valid = 0; result_hold = 0; result_shapes = 0;
+                    result_boxes = 0; result_overflow = 0;
+                end else begin
+                    first_box = valid_value[0] ? result_boxes[0 +: 48] :
+                        valid_value[1] ? result_boxes[48 +: 48] :
+                        valid_value[2] ? result_boxes[96 +: 48] : result_boxes[144 +: 48];
+                    result_xmin = first_box[11:0]; result_xmax = first_box[23:12];
+                    result_ymin = first_box[35:24]; result_ymax = first_box[47:36];
+                    center_sum_x = {1'b0,result_xmin}+{1'b0,result_xmax};
+                    center_sum_y = {1'b0,result_ymin}+{1'b0,result_ymax};
+                    result_cx = center_sum_x[12:1]; result_cy = center_sum_y[12:1];
+                    if (found_value !== (|valid_value))
+                        $fatal(1,"Compact integration source violated production found invariant");
+                end
+            end
             @(negedge csi_clk);
             result_ready = 0;
             for (s=0; s<4; s=s+1)
@@ -213,8 +237,43 @@ module tb_red_multi_frame_alignment;
     endtask
     task automatic check_bridge_snapshot(input string scenario);
         integer shift;
+        reg [191:0] expected_multi;
+        reg [47:0] first_box;
+        reg [11:0] expected_xmin,expected_xmax,expected_ymin,expected_ymax;
+        reg [11:0] expected_cx,expected_cy,zero_shift;
+        reg [12:0] center_sum_x,center_sum_y;
         begin
             shift = offset_of(snapshot_config);
+            expected_multi = packed_boxes(snapshot_id,shift);
+            expected_xmin = clip_x(box_x(snapshot_id,0),shift);
+            expected_xmax = clip_x(box_x(snapshot_id,0)+96,shift);
+            expected_ymin = clip_y(box_y(snapshot_id,0),shift);
+            expected_ymax = clip_y(box_y(snapshot_id,0)+48,shift);
+            expected_cx = clip_x(box_x(snapshot_id,0)+48,shift);
+            expected_cy = clip_y(box_y(snapshot_id,0)+24,shift);
+            if (COMPACT_MODE) begin
+                if (snapshot_motion) begin
+                    zero_shift = 12'(shift);
+                    expected_multi = {16{zero_shift}};
+                end else begin
+                    // Recreate detector coordinates before the bridge adds
+                    // offset; centers are averaged before its clipping.
+                    expected_multi = packed_boxes(snapshot_id,0);
+                    first_box = snapshot_valid[0] ? expected_multi[0 +: 48] :
+                        snapshot_valid[1] ? expected_multi[48 +: 48] :
+                        snapshot_valid[2] ? expected_multi[96 +: 48] :
+                            expected_multi[144 +: 48];
+                    center_sum_x = {1'b0,first_box[11:0]}+{1'b0,first_box[23:12]};
+                    center_sum_y = {1'b0,first_box[35:24]}+{1'b0,first_box[47:36]};
+                    expected_xmin = clip_x(first_box[11:0],shift);
+                    expected_xmax = clip_x(first_box[23:12],shift);
+                    expected_ymin = clip_y(first_box[35:24],shift);
+                    expected_ymax = clip_y(first_box[47:36],shift);
+                    expected_cx = clip_x(center_sum_x[12:1],shift);
+                    expected_cy = clip_y(center_sum_y[12:1],shift);
+                    expected_multi = packed_boxes(snapshot_id,shift);
+                end
+            end
             if (dut.u_hdmi_mixer.I_target_result_ready !== snapshot_ready ||
                 {dut.u_hdmi_mixer.I_effect_mode,dut.u_hdmi_mixer.I_effect_param} !== snapshot_config ||
                 dut.u_hdmi_mixer.I_target_motion_mode !== snapshot_motion ||
@@ -230,13 +289,13 @@ module tb_red_multi_frame_alignment;
                     {dut.u_hdmi_mixer.I_effect_mode,dut.u_hdmi_mixer.I_effect_param},snapshot_config,
                     dut.u_hdmi_mixer.I_target_motion_mode,snapshot_motion);
             if (snapshot_ready &&
-                (dut.u_hdmi_mixer.I_target_multi_boxes !== packed_boxes(snapshot_id,shift) ||
-                 dut.u_hdmi_mixer.I_target_xmin !== clip_x(box_x(snapshot_id,0),shift) ||
-                 dut.u_hdmi_mixer.I_target_xmax !== clip_x(box_x(snapshot_id,0)+96,shift) ||
-                 dut.u_hdmi_mixer.I_target_ymin !== clip_y(box_y(snapshot_id,0),shift) ||
-                 dut.u_hdmi_mixer.I_target_ymax !== clip_y(box_y(snapshot_id,0)+48,shift) ||
-                 dut.u_hdmi_mixer.I_target_center_x !== clip_x(box_x(snapshot_id,0)+48,shift) ||
-                 dut.u_hdmi_mixer.I_target_center_y !== clip_y(box_y(snapshot_id,0)+24,shift)))
+                (dut.u_hdmi_mixer.I_target_multi_boxes !== expected_multi ||
+                 dut.u_hdmi_mixer.I_target_xmin !== expected_xmin ||
+                 dut.u_hdmi_mixer.I_target_xmax !== expected_xmax ||
+                 dut.u_hdmi_mixer.I_target_ymin !== expected_ymin ||
+                 dut.u_hdmi_mixer.I_target_ymax !== expected_ymax ||
+                 dut.u_hdmi_mixer.I_target_center_x !== expected_cx ||
+                 dut.u_hdmi_mixer.I_target_center_y !== expected_cy))
                 $fatal(1,"%s selected geometry mismatch source_frame=%0d config=%h",
                        scenario,snapshot_id,snapshot_config);
         end
@@ -446,10 +505,11 @@ module tb_red_multi_frame_alignment;
             rollback_checks != 1 || freeze_checks != 1 || geometry_checks < 30 ||
             green_checks == 0 || blue_checks == 0 || shape_checks < 30)
             $fatal(1,"Production multi-frame integration coverage incomplete");
-        $display("RED_MULTI_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d red_four=%0d motion=%0d buffered_mode=%0d partial=%0d late=%0d rollback=%0d freeze=%0d geometry=%0d green=%0d blue=%0d shapes=%0d words=%0d mask_modes=9..12",
+        $display("RED_MULTI_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d red_four=%0d motion=%0d buffered_mode=%0d partial=%0d late=%0d rollback=%0d freeze=%0d geometry=%0d green=%0d blue=%0d shapes=%0d words=%0d mask_modes=9..12 compact=%0d",
             write_events,read_events,display_checks,red_four_checks,motion_checks,
             buffered_mode_checks,partial_checks,late_checks,rollback_checks,
-            freeze_checks,geometry_checks,green_checks,blue_checks,shape_checks,FRAME_WORDS);
+            freeze_checks,geometry_checks,green_checks,blue_checks,shape_checks,FRAME_WORDS,
+            COMPACT_MODE);
         $finish;
     end
     initial begin

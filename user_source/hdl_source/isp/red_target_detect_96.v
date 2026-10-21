@@ -1395,9 +1395,21 @@ module color_shape_descriptor #(
     reg [COORD_BITS-1:0] projection_min,projection_max;
     reg signed [MATH_BITS-1:0] projection_moment;
     reg [COORD_BITS:0] projection_span;
-    wire signed [MATH_BITS-1:0] signed_center_product=center_negative ?
-        -$signed(product) : $signed(product);
-    wire signed [MATH_BITS-1:0] signed_difference=moment-signed_center_product;
+    // Add or subtract the center product in one full-width carry chain.
+    // Keeping the carry-in explicit preserves the original modulo arithmetic.
+    wire [MATH_BITS-1:0] center_product_operand=
+        product ^ {MATH_BITS{!center_negative}};
+    wire signed [MATH_BITS-1:0] signed_difference=
+        moment+center_product_operand+
+        {{(MATH_BITS-1){1'b0}},!center_negative};
+    // U and V projections use the same sum, with a controlled second operand.
+    wire projection_subtract=projection == 3;
+    wire [MATH_BITS-1:0] projection_my_operand=
+        {{(MATH_BITS-MOM_BITS){1'b0}},my2} ^
+        {MATH_BITS{projection_subtract}};
+    wire signed [MATH_BITS-1:0] projection_uv_moment=
+        {{(MATH_BITS-MOM_BITS){1'b0}},mx2}+projection_my_operand+
+        {{(MATH_BITS-1){1'b0}},projection_subtract};
     always @* begin
         case (projection)
             0: begin
@@ -1412,12 +1424,12 @@ module color_shape_descriptor #(
             end
             2: begin
                 projection_min=umin; projection_max=umax;
-                projection_moment=$signed({1'b0,mx2})+$signed({1'b0,my2});
+                projection_moment=projection_uv_moment;
                 projection_span=u_span;
             end
             default: begin
                 projection_min=vmin; projection_max=vmax;
-                projection_moment=$signed({1'b0,mx2})-$signed({1'b0,my2});
+                projection_moment=projection_uv_moment;
                 projection_span=v_span;
             end
         endcase

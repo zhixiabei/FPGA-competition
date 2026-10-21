@@ -17,7 +17,7 @@ module tb_latency_display_toggle;
     wire [191:0] boxes={144'd0,12'd150,12'd110,12'd950,12'd900};
     integer frame_index=0, input_frame=0;
     integer pixels=0, frames=0, panel_pixels=0, hidden_panel_pixels=0;
-    integer label_frames=0, extrema_checks=0, sample_count=0;
+    integer label_frames=0, conversion_checks=0, sample_count=0;
     integer assertions=0, transitions=0, request_id=0, hold_checks=0;
     integer output_x=0, output_y=0;
     reg previous_request=0;
@@ -46,6 +46,7 @@ module tb_latency_display_toggle;
         .I_target_ymax(12'd150),.I_target_center_x(12'd925), \
         .I_target_center_y(12'd130),.I_target_multi_valid(4'b0001), \
         .I_target_multi_hold(4'd0),.I_target_multi_boxes(boxes), \
+        .I_target_multi_shapes(8'd0), \
         .I_target_multi_overflow(1'b0),.I_video_rd_data(rgb), \
         .O_video_rd_en(RD),.O_display_frame_start(),.O_hdmi_de(DE), \
         .O_hdmi_hsync(HS),.O_hdmi_vsync(VS),.O_hdmi_data(DATA))
@@ -171,11 +172,11 @@ module tb_latency_display_toggle;
                 if (toggle_rgb!==expected_rgb)
                     $fatal(1,"Panel or label mismatch f=%0d x=%0d y=%0d visible=%0b got=%h expected=%h",
                         ff,xx,yy,visible,toggle_rgb,expected_rgb);
-                if (sample_panel!==(visible && xx>=864 && xx<1264 &&
-                                      yy>=16 && yy<232))
+                if (sample_panel!==(visible && xx>=984 && xx<1264 &&
+                                      yy>=16 && yy<80))
                     $fatal(1,"Latency panel visibility changed within frame %0d at %0d,%0d",ff,xx,yy);
                 if (sample_panel) panel_pixels=panel_pixels+1;
-                if (!visible && xx>=864 && xx<1264 && yy>=16 && yy<232)
+                if (!visible && xx>=984 && xx<1264 && yy>=16 && yy<80)
                     hidden_panel_pixels=hidden_panel_pixels+1;
                 if (xx==1200 && yy==260) begin
                     if (visible) begin
@@ -239,10 +240,11 @@ module tb_latency_display_toggle;
                     if (xx==200 && yy==0) begin
                         check(dut.latency_readout.u_osd.bcd_total==bcd(20000+f*3000),
                             "Latency conversion stopped while its panel was hidden");
-                        check(dut.latency_readout.u_osd.min_us==(f>=6 ? 20000+f*3000 : 20000) &&
-                            dut.latency_readout.u_osd.max_us==20000+f*3000,
-                            "Latency extrema failed to update continuously while hidden");
-                        extrema_checks=extrema_checks+1;
+                        check(dut.latency_readout.u_osd.bcd_isp==bcd(100+f) &&
+                            dut.latency_readout.u_osd.bcd_buffer==bcd(19900+f*2999) &&
+                            dut.latency_readout.u_osd.display_valid,
+                            "Latency fields failed to update continuously while hidden");
+                        conversion_checks=conversion_checks+1;
                     end
                     if (xx==50 && yy==10) effect_mode=4'd6;
                     if (f<5 && xx==100 && yy==20) begin
@@ -256,14 +258,14 @@ module tb_latency_display_toggle;
         blank(12);
         check(frames==FRAMES && pixels==FRAMES*W*H,
             "Switch simulation did not complete all video frames");
-        check(panel_pixels==4*400*216 && hidden_panel_pixels==4*400*216,
+        check(panel_pixels==4*280*64 && hidden_panel_pixels==4*280*64,
             "Full-frame visible or hidden panel coverage is incomplete");
-        check(label_frames==FRAMES && extrema_checks==FRAMES && sample_count==FRAMES,
-            "Missing label placement, hidden statistics, or sample checks");
+        check(label_frames==FRAMES && conversion_checks==FRAMES && sample_count==FRAMES,
+            "Missing label placement, hidden conversion, or sample checks");
         check(transitions==6 && hold_checks==5,
             "Maintained switch changes or long-hold coverage is incomplete");
-        $display("LATENCY_DISPLAY_TOGGLE_PASS frames=%0d pixels=%0d shown_pixels=%0d hidden_pixels=%0d holds=%0d hidden_stats=%0d labels=%0d checks=%0d",
-            frames,pixels,panel_pixels,hidden_panel_pixels,hold_checks,extrema_checks,label_frames,assertions);
+        $display("LATENCY_DISPLAY_TOGGLE_PASS frames=%0d pixels=%0d shown_pixels=%0d hidden_pixels=%0d holds=%0d hidden_conversion=%0d labels=%0d checks=%0d",
+            frames,pixels,panel_pixels,hidden_panel_pixels,hold_checks,conversion_checks,label_frames,assertions);
         $finish;
     end
     initial begin #100000000; $fatal(1,"Latency display toggle test timeout"); end

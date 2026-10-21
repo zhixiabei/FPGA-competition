@@ -26,7 +26,8 @@
 当前已移除 CNN 推理、权重、专用 RAM、结果跨域，以及 HDMI 手势标签与中心裁剪框；
 颜色形状、运动检测、K1 十三项显示算法及延迟监测继续使用原有通路。
 
-最新资源与验证见 [方形像素容差与圆形特征保持修订](SHAPE_BOUNDARY_FIX.md)。
+最新资源压缩实施与验证见 [Slice 压缩记录](SLICE_COMPRESSION_RESULTS.md)；
+检测规则修订见 [方形像素容差与圆形特征保持修订](SHAPE_BOUNDARY_FIX.md)。
 以下为前版形状容差与时间稳定版 `src-f2960ad79fd7`，于 2026-10-19 19:32:11（北京时间）
 通过最终布局布线并发布 bit：Slice 19,044/21,216（89.76%）、LUT6 18,292、
 寄存器 17,886、ERAM 79/108、DSP 15/40，建立/保持余量 +0.106/+0.020 ns。
@@ -157,16 +158,16 @@ Gate 增量不能与 Routed 占用混算。
 `%TEMP%/anlogic_image_quality_55b224aa056449fda19b046578ca1771/`；
 该次检查未更新 `build/release` 或 TD 的 `best_result`。
 
-## 2026-10-16 处理延迟可视化
+## 处理延迟可视化
 
-HDMI 右上角显示同帧总延迟、ISP 延迟、缓存与输出等待、累计最小/最大值，
-以及最近 64 个显示帧的曲线。当前按键定义以上节统一算法选择为准。
+HDMI 右上角紧凑面板显示同帧总延迟、ISP 延迟和缓存/输出等待；不绘制历史曲线，
+也不统计 FPS。当前按键定义以上节统一算法选择为准。
 
 | 文件 | 当前功能 | 阅读入口 |
 |---|---|---|
 | [video_latency_timebase.v](../user_source/hdl_source/video_latency_timebase.v) | 50 MHz 系统时钟产生微秒时间和寄存 Gray 编码 | `O_time_us`、`O_time_gray` |
 | [video_latency_monitor.v](../user_source/hdl_source/video_latency_monitor.v) | RAW/ISP 首像素时间、实际 DDR 槽位和 HDMI 显示帧配对 | `S_raw_times`、`S_start_raw_us`、`S_slot_raw`、`S_read_payload`、`O_sample_strobe` |
-| [video_latency_osd.v](../user_source/hdl_source/video_latency_osd.v) | 共享十进制转换、64 帧历史、数字和曲线绘制 | `bcd_work`、`history`、`O_panel`、`O_text`、`O_graph` |
+| [video_latency_osd.v](../user_source/hdl_source/video_latency_osd.v) | 共享十进制转换与三项延迟数字绘制 | `bcd_work`、`bcd_total`、`bcd_isp`、`bcd_buffer`、`O_panel`、`O_text` |
 
 帧号经过 ISP 行缓存和打包器随真实图像传递，读记录在 DDR 实际选择基地址时冻结。
 `video_in.v` 的 `O_write_frame_start/O_write_start_slot` 提供实际写槽分配事件，
@@ -528,7 +529,7 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 | [user_source/hdl_source/gamma_lut_rgb888.v](../user_source/hdl_source/gamma_lut_rgb888.v) | 由模式 0 彩色画面复用的固定三通道色调查表 | 已登记 |
 | [user_source/hdl_source/video_latency_timebase.v](../user_source/hdl_source/video_latency_timebase.v) | 微秒时间与寄存 Gray 编码 | 已登记 |
 | [user_source/hdl_source/video_latency_monitor.v](../user_source/hdl_source/video_latency_monitor.v) | RAW、ISP、DDR 槽与显示帧的同帧时间配对 | 已登记 |
-| [user_source/hdl_source/video_latency_osd.v](../user_source/hdl_source/video_latency_osd.v) | 延迟数字和 64 帧历史曲线 | 已登记 |
+| [user_source/hdl_source/video_latency_osd.v](../user_source/hdl_source/video_latency_osd.v) | TOTAL/ISP/BUF 延迟数字；无曲线和 FPS | 已登记 |
 | [user_source/hdl_source/isp/raw_region_stats.v](../user_source/hdl_source/isp/raw_region_stats.v) | 可选 RAW 九区统计 | 已登记；SHOW_RAW_STATS=0 时不实例化 |
 | [user_source/hdl_source/raw_stats_osd.v](../user_source/hdl_source/raw_stats_osd.v) | 可选 RAW 九区数字表 | 已登记；SHOW_RAW_STATS=0 时不实例化 |
 | [user_source/hdl_source/I2S_receiver.v](../user_source/hdl_source/I2S_receiver.v) | HDMI 子系统的 I2S 音频接收配套模块 | 已登记 |

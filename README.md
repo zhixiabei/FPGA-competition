@@ -1,7 +1,7 @@
 # 安路 PH1P35 图像处理工程
 
 **烧录文件固定为 [td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit](td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit)。**
-当前源码为 2026-10-19 形状容差与时间稳定版，已移除 CNN 链路，包含原画（含 Gamma）、灰度、Scharr 边缘、
+当前源码为 2026-10-20 资源压缩版，保留形状容差与时间稳定功能，已移除 CNN 链路，包含原画（含 Gamma）、灰度、Scharr 边缘、
 反色、灰度浮雕、红绿保色、彩色漫画、Scharr 反色、形态学边缘，
 以及所选颜色的二值掩码、腐蚀、膨胀和清理掩码预览，
 以及红/绿/蓝所选颜色的最多四个独立框、正方形/三角形/圆形识别、
@@ -11,6 +11,14 @@
 烧录前按构建清单核对版本，并在下载器中重新加载上述固定文件。
 TD 与脚本构建均只更新 `best_result`；构建时间、校验值及最终时序见
 [脚本构建记录](build/release/release_manifest.json)。
+
+本轮以 Slice 优先、其余资源不增加验收，采用 `src-a4edaf9e0171`：
+Slice **18,929 → 18,145（−784，89.22% → 85.53%）**，
+LUT6 18,200 → 17,665，FF 17,784 → 17,261，ERAM/DSP 保持 79/15。
+最终建立/保持余量 +0.105/+0.020 ns，全部 222 个生产输入与发布清单一致，
+等价、帧槽、RAW/FIFO 及 ISP 集成回归通过，尚未上板。
+候选取舍、正式结果及证据见 [Slice 压缩记录](docs/SLICE_COMPRESSION_RESULTS.md)；
+上一轮记录见 [历史资源压缩](docs/RESOURCE_OPTIMIZATION.md)。
 
 ## 使用
 
@@ -29,8 +37,8 @@ TD 与脚本构建均只更新 `best_result`；构建时间、校验值及最终
    形状面向填实、分离的色块，本版仅放宽质心门槛，支持画面内旋转及有限的偏斜容差，
    未做透视矫正；近方长方形、低轴比椭圆可能混淆，详见[形状说明](docs/COLOR_SHAPE.md)。
    算法容量溢出时显示 `OVF` 并清框；详见[多目标说明](docs/RED_MULTI_TARGET.md)。
-5. 右上角显示同帧 `TOTAL`、`ISP`、`BUF` 延迟、累计 `MIN/MAX`
-   和最近 64 个显示帧的曲线，单位为 ms。无有效记录时显示 `N/A`。
+5. 右上角紧凑面板显示同帧 `TOTAL`、`ISP`、`BUF` 延迟，单位为 ms；
+   超过阈值时高亮，无有效记录时显示 `N/A`。当前不显示 FPS。
    该读数测量 RAW 输入到 HDMI 输出的板内数字通路，不含传感器曝光及显示器响应。
 
 ## 显示算法
@@ -140,7 +148,7 @@ LUT6 18,292、寄存器 17,863、ERAM 79/108、DSP 15/40；
 [CNN 移除回归证据包](build/verification/cnn_removal_regression.zip)。
 
 最新方形像素容差与圆形特征保持修订见 [修订与验收记录](docs/SHAPE_BOUNDARY_FIX.md)。
-当前发布 `src-5d1bd88a50ff`（2026-10-19 20:24:28，北京时间）为
+方形像素容差修订版 `src-5d1bd88a50ff`（2026-10-19 20:24:28，北京时间）为
 Slice 19,127（90.15%）、LUT6 18,468、寄存器 17,894、ERAM 79、DSP 15，
 建立/保持余量 +0.101/+0.020 ns。相对直接前版 +83 Slice、+176 LUT6、+8 寄存器。
 
@@ -173,12 +181,13 @@ TD 的 `phy_1` 报告仅对应 TD 界面中最近一次编译。Slice、LUT6 和
 也可以双击根目录的 [build_firmware.cmd](build_firmware.cmd)，或在 PowerShell 执行：
 
 ```powershell
-& '.\verification\run_image_quality_build.ps1' -GenerateBit
+& '.\verification\run_image_quality_build.ps1' -GenerateBit `
+    -ResourceLimits @{slice=18145;lut6=17665;reg=17261;eram=79;dsp=15}
 ```
 
 脚本在独立临时目录完成综合、布局布线和 bit 生成，
 仅在最终建立/保持时序均通过，且显示配置 13 ns、目标元数据 20/20/13 ns
-约束覆盖全部有效路径后更新
+约束覆盖全部有效路径、指定的五项最终物理资源均不超限后更新
 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`；
 失败时保留上一份成功的 bit。TD 界面编译和脚本构建均以 `best_result` 为唯一烧录路径。
 每次都重新加载本次实际生成的文件后再烧录。
@@ -206,7 +215,8 @@ TD 界面编译会在这里生成 `*_Runs` 和 `best_result`。
 - [红色多目标、跟随标签与验证](docs/RED_MULTI_TARGET.md)
 - [完整连通域后续方案](docs/CONNECTED_COMPONENTS_PLAN.md)
 - [运动检测规则和验证结果](docs/MOTION_DETECTION.md)
-- [延迟读数、曲线和验证边界](docs/LATENCY_VISUALIZATION.md)
+- [Slice 压缩、实际资源与等价验证](docs/SLICE_COMPRESSION_RESULTS.md)
+- [延迟读数和验证边界](docs/LATENCY_VISUALIZATION.md)
 - [摄像头诊断](docs/SC520CS_TEST.md)、[RAW10 测量](docs/RAW_STATS_GUIDE.md)
 - [参考资料导航](docs/参考资料导航.md)、[开题文档](docs/proposals/)、[Git 使用](docs/GITHUB_WORKFLOW.md)
 
