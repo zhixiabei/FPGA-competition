@@ -655,12 +655,14 @@ module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0, DE
 endmodule
 module auto_exposure_control #(
     parameter TARGET_LOW=0, TARGET_HIGH=0, DARK_FAST=0, BRIGHT_FAST=0,
-    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0
+    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0,
+    HIGHLIGHT_ENABLE=0, FIXED_SAMPLE_COUNT=0, CHECK_BRIGHT_COUNT=1
 ) (input wire [127:0] I_clk, I_rst, I_cam_cfg_done, I_ae_cfg_done,
-    I_stats_valid, I_sum_y, I_sample_count, I_bright_count,
-    O_ae_req, O_ae, O_ag);
+    I_stats_valid, I_sum_y, I_sample_count, I_bright_count, I_p95,
+    O_ae_req, O_ae, O_ag, O_awb_hold);
 endmodule
-module ae_stats_cdc(input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
+module ae_stats_cdc #(parameter WIDTH=64)
+    (input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
     I_src_valid, I_src_data, O_dst_valid, O_dst_data);
 endmodule
 module uicfgcs520 #(parameter CLK_DIV=0)
@@ -689,9 +691,9 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
     (input wire [127:0] I_native_clk, I_rst_n, I_data, I_data_valid,
     I_data_start, I_data_end, axis_tvalid, axis_tdata, axis_tuser, axis_tlast);
 endmodule
-module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
+module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, IQ_DIAGNOSTIC_ENABLE=0)
     (input wire [127:0] axi4s_video_aclk, I_rst_n, I_effect_config, I_motion_mode_async,
-    I_color_mode_async,
+    I_color_mode_async, I_awb_hold_async,
     I_tlast, I_tuser, I_tdata, I_tvalid, I_tdest, O_tready, O_tdata,
     O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
@@ -701,7 +703,8 @@ module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
     O_target_result_frame_id, O_target_multi_valid, O_target_multi_hold,
     O_target_multi_boxes, O_target_multi_overflow,
     O_edge_mode_active, O_effect_config, I_tready,
-    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count,
+    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count, O_ae_p95,
+    O_iq_diag_valid, O_iq_diag_data,
     O_latency_frame_id,
     output wire [7:0] O_target_multi_shapes);
     assign O_target_multi_shapes = 8'd0;

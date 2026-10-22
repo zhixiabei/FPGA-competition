@@ -25,6 +25,7 @@ set_false_path -from [get_regs -nowarn {u_video/u_camera_diag_cdc/ack_toggle u_v
 # 24 MHz and retain their separate 20 ns bundled-data bound.
 set_max_delay -datapath_only -from [get_regs -nowarn {u_video/u_camera_diag_cdc/payload_hold[*] u_video/raw_diagnostics$u_cdc/payload_hold[*] u_video/raw_diagnostics$u_ae_readout_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_video/u_camera_diag_cdc/O_dst_data[*] u_video/raw_diagnostics$u_cdc/O_dst_data[*] u_video/raw_diagnostics$u_ae_readout_cdc/O_dst_data[*]}] 13.000
 set_max_delay -datapath_only -from [get_regs -nowarn {u_video/u_ae_stats_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_video/u_ae_stats_cdc/O_dst_data[*]}] 20.000
+set_false_path -from [get_regs {u_video/u_auto_exposure/O_awb_hold}] -to [get_regs {u_video/u_isp_top/awb_hold_meta}]
 
 # Keep timestamp and held-payload crossings bounded instead of grouping
 # their clocks away. These exceptions match the main project with u_video.

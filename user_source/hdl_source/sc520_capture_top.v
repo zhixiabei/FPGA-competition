@@ -1,5 +1,7 @@
 // Same switchable RGB/edge pipeline, with RGB selected after reset.
-module sc520_capture_top (
+module sc520_capture_top #(
+    parameter integer IQ_DIAGNOSTIC_ENABLE = 0
+) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
       
@@ -41,7 +43,9 @@ module sc520_capture_top (
     inout wire[1:0]   ddr_dqs_p,
     inout wire[1:0]   ddr_dqs_n   
 );
-    design_top_wrapper #(.ENABLE_EDGE(0)) u_video (
+    design_top_wrapper #(
+        .ENABLE_EDGE(0), .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
+    ) u_video (
         .I_sys_clk(I_sys_clk),
         .I_rst_n(I_rst_n),
         .O_cam_scl(O_cam_scl),

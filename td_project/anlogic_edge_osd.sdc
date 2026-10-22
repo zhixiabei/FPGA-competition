@@ -27,6 +27,8 @@ set_false_path -from [get_regs -nowarn {u_camera_diag_cdc/ack_toggle u_ae_stats_
 # stages. AE statistics cross to 24 MHz and retain their separate 20 ns bound.
 set_max_delay -datapath_only -from [get_regs -nowarn {u_camera_diag_cdc/payload_hold[*] raw_diagnostics$u_cdc/payload_hold[*] raw_diagnostics$u_ae_readout_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_camera_diag_cdc/O_dst_data[*] raw_diagnostics$u_cdc/O_dst_data[*] raw_diagnostics$u_ae_readout_cdc/O_dst_data[*]}] 13.000
 set_max_delay -datapath_only -from [get_regs -nowarn {u_ae_stats_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_ae_stats_cdc/O_dst_data[*]}] 20.000
+# Registered AE hold level; only the first synchronizer stage is asynchronous.
+set_false_path -from [get_regs {u_auto_exposure/O_awb_hold}] -to [get_regs {u_isp_top/awb_hold_meta}]
 
 # Latency mailboxes cross CSI/DDR/HDMI; their payload bounds must remain
 # active. TD's broad asynchronous groups would override those bounds.

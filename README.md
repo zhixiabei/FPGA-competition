@@ -1,7 +1,7 @@
 # 安路 PH1P35 图像处理工程
 
 **烧录文件固定为 [td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit](td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit)。**
-当前源码为 2026-10-20 资源压缩版，保留形状容差与时间稳定功能，已移除 CNN 链路，包含原画（含 Gamma）、灰度、Scharr 边缘、
+当前源码为 2026-10-21 背光测光、可信白平衡与 32 桶 RAW 直方图版，保留形状容差与时间稳定功能，已移除 CNN 链路，包含原画（含 Gamma）、灰度、Scharr 边缘、
 反色、灰度浮雕、红绿保色、彩色漫画、Scharr 反色、形态学边缘，
 以及所选颜色的二值掩码、腐蚀、膨胀和清理掩码预览，
 以及红/绿/蓝所选颜色的最多四个独立框、正方形/三角形/圆形识别、
@@ -12,13 +12,30 @@
 TD 与脚本构建均只更新 `best_result`；构建时间、校验值及最终时序见
 [脚本构建记录](build/release/release_manifest.json)。
 
-本轮以 Slice 优先、其余资源不增加验收，采用 `src-a4edaf9e0171`：
+本轮 RTL 与仿真已完成，后续由用户自行布局布线和生成 bit；本轮未更新烧录文件。
+AE 使用截顶均值与有界 P95 高光评分；AWB 加入完整帧、空间覆盖、连续候选和曝光等待保护；
+32 桶 RAW 统计复用现有采样，Gamma 与 LSC 标定表保留。
+默认关闭的分阶段剪切诊断可通过 ChipWatcher 抓取独立源帧快照。
+实施细节、仿真证据、资源候选和诊断入口见
+[背光、白平衡与直方图实施记录](docs/BACKLIGHT_AWB_HISTOGRAM_RESULTS.md)。
+TD 手动生成的 `best_result` 不会自动登记到旧脚本发布清单；
+自行布局布线后，以此次 TD 日志、资源/时序报告及实际生成文件为准。
+
+本轮资源基线为 13:32 脚本发布版本 `src-1ca26d33c7f7`：修复高光比例锁暗与反向控制，
+调整明暗快慢步长，曝光最小步长由 4 改为 1，曝光下限仍为 4。
+生产测光截顶保持 192，完整原 Gamma 表保留。
+相对上一轮压缩版，最终 Slice **18,145 → 17,706（−439，83.46%）**，
+LUT6 17,665 → 17,508，FF 17,261 → 17,225，ERAM/DSP 保持 79/15。
+最终建立/保持余量 **+0.109/+0.020 ns**，五项资源与 CDC 门槛均通过；
+222 项构建输入与发布清单一致，AE、Gamma 和十三模式显示回归通过，尚未上板。
+实现、候选取舍和闭环局限见 [AE 修改与验证记录](docs/AE_GAMMA_RESULTS.md)。
+
+上一轮 2026-10-20 压缩版 `src-a4edaf9e0171`：
 Slice **18,929 → 18,145（−784，89.22% → 85.53%）**，
 LUT6 18,200 → 17,665，FF 17,784 → 17,261，ERAM/DSP 保持 79/15。
-最终建立/保持余量 +0.105/+0.020 ns，全部 222 个生产输入与发布清单一致，
-等价、帧槽、RAW/FIFO 及 ISP 集成回归通过，尚未上板。
-候选取舍、正式结果及证据见 [Slice 压缩记录](docs/SLICE_COMPRESSION_RESULTS.md)；
-上一轮记录见 [历史资源压缩](docs/RESOURCE_OPTIMIZATION.md)。
+当时建立/保持余量 +0.105/+0.020 ns，等价、帧槽、RAW/FIFO 及 ISP 集成回归通过。
+该轮候选和证据见 [Slice 压缩记录](docs/SLICE_COMPRESSION_RESULTS.md)；
+更早记录见 [历史资源压缩](docs/RESOURCE_OPTIMIZATION.md)。
 
 ## 使用
 
@@ -182,11 +199,11 @@ TD 的 `phy_1` 报告仅对应 TD 界面中最近一次编译。Slice、LUT6 和
 
 ```powershell
 & '.\verification\run_image_quality_build.ps1' -GenerateBit `
-    -ResourceLimits @{slice=18145;lut6=17665;reg=17261;eram=79;dsp=15}
+    -ResourceLimits @{slice=17706;lut6=17508;reg=17225;eram=79;dsp=15}
 ```
 
 脚本在独立临时目录完成综合、布局布线和 bit 生成，
-仅在最终建立/保持时序均通过，且显示配置 13 ns、目标元数据 20/20/13 ns
+仅在最终建立/保持时序均通过，且显示配置 13 ns、AE 统计 20 ns、目标元数据 20/20/13 ns
 约束覆盖全部有效路径、指定的五项最终物理资源均不超限后更新
 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`；
 失败时保留上一份成功的 bit。TD 界面编译和脚本构建均以 `best_result` 为唯一烧录路径。
@@ -216,6 +233,8 @@ TD 界面编译会在这里生成 `*_Runs` 和 `best_result`。
 - [完整连通域后续方案](docs/CONNECTED_COMPONENTS_PLAN.md)
 - [运动检测规则和验证结果](docs/MOTION_DETECTION.md)
 - [Slice 压缩、实际资源与等价验证](docs/SLICE_COMPRESSION_RESULTS.md)
+- [AE 修改、Gamma 保留与最终资源](docs/AE_GAMMA_RESULTS.md)
+- [本轮背光、白平衡、直方图与诊断](docs/BACKLIGHT_AWB_HISTOGRAM_RESULTS.md)
 - [延迟读数和验证边界](docs/LATENCY_VISUALIZATION.md)
 - [摄像头诊断](docs/SC520CS_TEST.md)、[RAW10 测量](docs/RAW_STATS_GUIDE.md)
 - [参考资料导航](docs/参考资料导航.md)、[开题文档](docs/proposals/)、[Git 使用](docs/GITHUB_WORKFLOW.md)

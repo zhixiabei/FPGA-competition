@@ -412,6 +412,15 @@
                     <Attr Name="CompileOrder" Val="63"/>
                 </FileInfo>
             </File>
+            <File Path="../user_source/hdl_source/isp/iq_diagnostic_stats.v">
+                <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="76"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/isp/lsc_raw10_4x.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
@@ -679,6 +688,9 @@
     <Runs>
         <Run Name="syn_1" Type="Synthesis" ConstraintSet="constraint_1" Description="" Active="true" useDefaultScript="false">
             <Strategy Name="Default_Synthesis_Strategy">
+                <GateProperty>
+                    <pack_effort>high</pack_effort>
+                </GateProperty>
             </Strategy>
             <UserParams>
             </UserParams>

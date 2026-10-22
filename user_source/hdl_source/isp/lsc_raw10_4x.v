@@ -37,7 +37,8 @@ module lsc_raw10_4x #(
     // This sensor profile attenuates Gr/Gb (8-bit Q8), B uses 9-bit Q8.
     parameter [71:0] MESH_GR_Q8 = {9{8'd255}},
     parameter [71:0] MESH_GB_Q8 = {9{8'd255}},
-    parameter [80:0] MESH_B_Q8 = {9{9'd256}}
+    parameter [80:0] MESH_B_Q8 = {9{9'd256}},
+    parameter integer DIAGNOSTIC_ENABLE = 0
 ) (
     input wire I_clk,
     input wire I_rst_n,
@@ -50,7 +51,8 @@ module lsc_raw10_4x #(
     output wire O_tvalid,
     output wire O_tuser,
     output wire O_tlast,
-    input wire O_tready
+    input wire O_tready,
+    output wire [3:0] O_diag_clip_new
 );
     localparam integer GROUPS = IMG_WIDTH / 4;
     localparam integer HALF_GROUPS = (GROUPS + 1) / 2;
@@ -128,6 +130,7 @@ module lsc_raw10_4x #(
             else begin d0 <= I_tdata; d1 <= d0; d2 <= d1; end
         end
         assign O_tdata = O_tvalid ? d2 : 40'd0;
+        assign O_diag_clip_new = 4'd0;
     end else if (MESH_ENABLE) begin: mesh
         // 720x80 bits still fit four 20-bit ERAMs. Biased knot storage leaves
         // room for the horizontal midpoint corrections. Vertical reciprocal
@@ -283,6 +286,7 @@ module lsc_raw10_4x #(
         assign pixel[2]=green_even_d0 ? raw_d0[19:10] : raw_d0[9:0];
         assign pixel[3]=green_even_d0 ? raw_d0[39:30] : raw_d0[29:20];
         wire [9:0] corrected [0:3];
+        wire [3:0] arithmetic_clip;
         genvar p;
         for(p=0;p<4;p=p+1) begin: multiply
             reg [18:0] product;
@@ -298,6 +302,7 @@ module lsc_raw10_4x #(
                 end
             end
             assign corrected[p]=|total[11:10] ? 10'd1023 : total[9:0];
+            assign arithmetic_clip[p]=|total[11:10];
         end
         reg [39:0] corrected_data;
         always @(posedge I_clk or negedge I_rst_n) begin
@@ -310,6 +315,20 @@ module lsc_raw10_4x #(
             end
         end
         assign O_tdata=O_tvalid ? corrected_data : 40'd0;
+        if (DIAGNOSTIC_ENABLE != 0) begin : diagnostic
+            reg [3:0] clip_new;
+            always @(posedge I_clk or negedge I_rst_n) begin
+                if (!I_rst_n) clip_new<=0;
+                else clip_new<=green_even_d1 ?
+                    {arithmetic_clip[3],arithmetic_clip[1],
+                     arithmetic_clip[2],arithmetic_clip[0]} :
+                    {arithmetic_clip[1],arithmetic_clip[3],
+                     arithmetic_clip[0],arithmetic_clip[2]};
+            end
+            assign O_diag_clip_new=O_tvalid ? clip_new : 4'd0;
+        end else begin : no_diagnostic
+            assign O_diag_clip_new=4'd0;
+        end
         // synthesis translate_off
         integer ch, band, d, check_row, a_check, b_check, correction_check;
         initial begin
@@ -495,6 +514,31 @@ module lsc_raw10_4x #(
             end
         end
         assign O_tdata = O_tvalid ? corrected_data : 40'd0;
+        if (DIAGNOSTIC_ENABLE != 0) begin : diagnostic
+            function overflowed;
+                input [9:0] pixel;
+                input [17:0] product;
+                reg [18:0] rounded;
+                reg [10:0] result;
+                begin
+                    rounded={1'b0,product}+19'd128;
+                    result={1'b0,pixel}+rounded[18:8];
+                    overflowed=result[10];
+                end
+            endfunction
+            wire g0=overflowed(green0_d1,green_product0);
+            wire g1=overflowed(green1_d1,green_product1);
+            wire o0=overflowed(other0_d1,other_product0);
+            wire o1=overflowed(other1_d1,other_product1);
+            reg [3:0] clip_new;
+            always @(posedge I_clk or negedge I_rst_n) begin
+                if (!I_rst_n) clip_new<=0;
+                else clip_new<=green_even_d1 ? {o1,g1,o0,g0} : {g1,o1,g0,o0};
+            end
+            assign O_diag_clip_new=O_tvalid ? clip_new : 4'd0;
+        end else begin : no_diagnostic
+            assign O_diag_clip_new=4'd0;
+        end
     end endgenerate
 
     // synthesis translate_off

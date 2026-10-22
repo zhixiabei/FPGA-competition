@@ -20,6 +20,7 @@ module tb_isp_red_multi;
     wire target_overflow;
     wire [11:0] effect_config;
     isp_top #(.ENABLE_EDGE(0), .RED_MULTI_ENABLE(1)) dut (
+        .I_awb_hold_async(1'b0),
         .axi4s_video_aclk(clk), .I_rst_n(rst_n),
         .I_effect_config(12'd0), .I_motion_mode_async(1'b0), .I_color_mode_async(2'd0),
         .I_tlast(source_last), .I_tuser(source_user),

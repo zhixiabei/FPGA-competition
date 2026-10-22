@@ -4,7 +4,8 @@ module design_top_wrapper #(
     parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
     parameter integer RED_MULTI_ENABLE = 1,
     parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
-    parameter integer SHOW_RAW_STATS = 0 // RAW diagnostics.
+    parameter integer SHOW_RAW_STATS = 0, // RAW diagnostics.
+    parameter integer IQ_DIAGNOSTIC_ENABLE = 0 // Optional CSI-clock ChipWatcher probes.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -106,6 +107,8 @@ module design_top_wrapper #(
 	wire 			S_ISP_O_tlast ;
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
+    wire            S_iq_diag_valid;
+    wire [127:0]    S_iq_diag_data;
 
     // Per-frame selected red/motion result from the AWB RGB stream.
     wire        S_ISP_target_result_ready;
@@ -134,8 +137,10 @@ module design_top_wrapper #(
     wire [31:0] S_ISP_ae_sum_y;
     wire [15:0] S_ISP_ae_sample_count;
     wire [15:0] S_ISP_ae_bright_count;
+    wire [4:0] S_ISP_ae_p95;
+    wire S_awb_hold;
     wire        S_ae_stats_valid;
-    wire [63:0] S_ae_stats_data;
+    wire [68:0] S_ae_stats_data;
 
     // Keep boxes aligned to each buffered frame's causal window position.
     // Match each display pipeline's causal window shift. CLOSE MASK shares
@@ -743,12 +748,12 @@ module design_top_wrapper #(
         .O_dst_data(S_effect_config_csi)
     );
 
-  ae_stats_cdc u_ae_stats_cdc (
+  ae_stats_cdc #(.WIDTH(69)) u_ae_stats_cdc (
       .I_src_clk(S_csi_rx_clk),
       .I_dst_clk(S_24m_clk),
       .I_rst_n(S_rst_n),
       .I_src_valid(S_ISP_ae_stats_valid),
-      .I_src_data({S_ISP_ae_sum_y,S_ISP_ae_sample_count,S_ISP_ae_bright_count}),
+      .I_src_data({S_ISP_ae_p95,S_ISP_ae_sum_y,S_ISP_ae_sample_count,S_ISP_ae_bright_count}),
       .O_dst_valid(S_ae_stats_valid),
       .O_dst_data(S_ae_stats_data)
   );
@@ -762,7 +767,11 @@ module design_top_wrapper #(
       .BRIGHT_FAST(144),
       .GAIN_MAX(176),
       .SETTLE_FRAMES(3),
-      .AVERAGE_FRAMES(6)
+      .AVERAGE_FRAMES(6), .HIGHLIGHT_ENABLE(1),
+      .FIXED_SAMPLE_COUNT(28800),
+      // The complete-frame publisher guarantees near_count <= sample_count.
+      // Near/clip diagnostics stay in the source domain; AE uses P95.
+      .CHECK_BRIGHT_COUNT(0)
   ) u_auto_exposure (
       .I_clk(S_24m_clk),
       .I_rst(~S_rst_n),
@@ -772,6 +781,8 @@ module design_top_wrapper #(
       .I_sum_y(S_ae_stats_data[63:32]),
       .I_sample_count(S_ae_stats_data[31:16]),
       .I_bright_count(S_ae_stats_data[15:0]),
+      .I_p95(S_ae_stats_data[68:64]),
+      .O_awb_hold(S_awb_hold),
       .O_ae_req(S_ae_req),
       .O_ae(S_ae),
       .O_ag(S_ag)
@@ -1046,7 +1057,8 @@ end endgenerate
 //ISP算法顶层模块
 isp_top #(
         .ENABLE_EDGE(ENABLE_EDGE),
-        .RED_MULTI_ENABLE(RED_MULTI_ENABLE)
+        .RED_MULTI_ENABLE(RED_MULTI_ENABLE),
+        .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
     ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
@@ -1089,9 +1101,31 @@ isp_top #(
 .O_ae_sum_y            (S_ISP_ae_sum_y),
 .O_ae_sample_count     (S_ISP_ae_sample_count),
 .O_ae_bright_count     (S_ISP_ae_bright_count),
+.O_ae_p95              (S_ISP_ae_p95),
+.I_awb_hold_async      (S_awb_hold),
+.O_iq_diag_valid       (S_iq_diag_valid),
+.O_iq_diag_data        (S_iq_diag_data),
 .O_latency_frame_id   (S_isp_frame_id),
 .I_tready        ()
   );
+
+    generate if (IQ_DIAGNOSTIC_ENABLE != 0) begin : iq_diagnostics
+        // Retain an actual register endpoint for ChipWatcher. Sample valid
+        // and data together on S_csi_rx_clk; these are source-frame snapshots.
+        // This entire branch is absent from the default production build.
+        (* keep="true", preserve="true" *) reg valid;
+        (* keep="true", preserve="true" *) reg [127:0] data;
+        always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
+            if (!S_rst_n) begin
+                valid <= 1'b0;
+                data <= 128'd0;
+            end else begin
+                valid <= S_iq_diag_valid;
+                if (S_iq_diag_valid)
+                    data <= S_iq_diag_data;
+            end
+        end
+    end endgenerate
 
     video_in u_video_in(
         .I_rst_n              (  S_rst_n             ),
@@ -1245,7 +1279,7 @@ isp_top #(
         .IMG_WIDTH  ( 1280 ),
         .IMG_HEIGHT ( 720  ),
         .DEBUG_MODE ( 0    ),
-        .SHOW_CAMERA_STATUS ( 1 ),
+        .SHOW_CAMERA_STATUS ( 0 ), // Hide camera verification dots and fault-code overlay.
         .SHOW_COLOR_TARGET  ( 1 ),
         .MULTI_TARGET_ENABLE( RED_MULTI_ENABLE ),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.

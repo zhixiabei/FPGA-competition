@@ -1,7 +1,8 @@
 @echo off
 setlocal
 pushd "%~dp0"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0verification\run_image_quality_build.ps1" -GenerateBit
+set "FIRMWARE_BUILD_ROOT=%~dp0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& (Join-Path $env:FIRMWARE_BUILD_ROOT 'verification\run_image_quality_build.ps1') -GenerateBit -ResourceLimits @{slice=17706;lut6=17508;reg=17225;eram=79;dsp=15}"
 set "BIT_BUILD_EXIT=%ERRORLEVEL%"
 if "%BIT_BUILD_EXIT%"=="0" (
     echo.

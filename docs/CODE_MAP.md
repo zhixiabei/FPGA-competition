@@ -6,6 +6,11 @@
 
 本说明依据当前的 [TD 工程文件](../td_project/anlogic_edge_osd.al)、[系统顶层](../user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](../user_source/hdl_source/isp/isp_top.v) 整理。
 
+2026-10-21 当前源码已加入背光评分、可信 AWB 和 32 桶 RAW 直方图；
+RTL 与仿真已完成，布局布线和 bit 由用户自行生成。
+资源候选、诊断包和实际验证边界见
+[本轮实施记录](BACKLIGHT_AWB_HISTOGRAM_RESULTS.md)，不能用下文历史版资源代表本轮最终结果。
+
 ## 当前多颜色与形状版
 
 主工程默认 `RED_MULTI_ENABLE=1`。K2 的红、绿、蓝模式最多 4 框，K1 循环十三项显示算法；
@@ -228,7 +233,7 @@ K2（A9）切换红色/运动检测，当前 K1 单向循环显示算法，K3/K4
 未在本轮作为生产配置验证。生产修改仍在原文件路径，无需添加新综合文件。
 AE/AWB、红色检测、Scharr 及 HDMI 路径未改；完整验证与限制见 README 最新章节。
 
-## 当前曝光与白平衡通路（2026-10-15）
+## 当前曝光与白平衡通路（2026-10-21）
 
 曝光由 **LSC 前 RAW10 统计 → CDC → 自动曝光 → SC520CS I²C 表**控制，
 上电 E1000/G16，范围 E4..1991/G16..176。检测在 AWB 后、显示算法选择之前。
@@ -236,15 +241,23 @@ AE/AWB、红色检测、Scharr 及 HDMI 路径未改；完整验证与限制见 
 
 | 文件 | 当前功能 | 阅读入口 |
 |---|---|---|
-| [ae_frame_stats_raw10_4x.v](../user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前每帧抽取 28,800 个 Bayer 分量，累计限幅亮度并统计剪白样本 | `sample_group`、`component_value`、`sum_next`、`O_stats_valid` |
-| [ae_stats_cdc.v](../user_source/hdl_source/ae_stats_cdc.v) | 将完整 64 位帧统计握手传入摄像头控制时钟域 | `payload_hold`、`pending_data`、`req_toggle`、`ack_toggle` |
-| [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v) | 六帧平均、三帧写后等待、均值和高光滞回判断，产生 E/G 请求 | `highlight_latched`、`increase_light`、`reduce_light`、`ST_COLLECT` |
-| [awb.v](../user_source/hdl_source/awb.v) | 近中性色采样、共享顺序除法、增益按帧提交和平滑；四像素输出保持 54 拍 | `sample_neutral_d1`、`stats_ready`、`div_state`、`pixel_gain_r`、`u_video_start_guard` |
+| [ae_frame_stats_raw10_4x.v](../user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前每帧抽取 28,800 个 Bayer 分量，精确截顶均值、32 桶 RAW 百分位、RAW10≥992 近顶和原码==1023 计数 | `sample_beat`、`sum_next`、`ae_raw_histogram`、`O_stats_valid` |
+| [ae_stats_cdc.v](../user_source/hdl_source/ae_stats_cdc.v) | 将完整 69 位帧摘要握手传入摄像头控制时钟域；原低 64 位布局不变 | `payload_hold`、`pending_data`、`req_toggle`、`ack_toggle` |
+| [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v) | 截顶均值加有界 P95 评分，六帧平均、三帧写后等待；统一 E/G 方向与 AWB hold | `highlight_bias`、`FIXED_SAMPLE_COUNT`、`ST_COLLECT`、`O_awb_hold` |
+| [awb.v](../user_source/hdl_source/awb.v) | 完整帧、上下覆盖、两帧候选一致、跟踪/重捕获、曝光等待保护；共享除法、帧首提交与 54 拍输出 | `capture_range_ok`、`coverage_ok`、`candidate_approved`、`hold_updates`、`pixel_gain_r` |
+| [iq_diagnostic_stats.v](../user_source/hdl_source/isp/iq_diagnostic_stats.v) | 默认关闭，分阶段均值/近顶/内部剪切、RAW 百分位与 AWB 状态源帧包 | `IQ_DIAGNOSTIC_ENABLE`、`O_iq_diag_valid`、`O_iq_diag_data` |
 | [red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | 选择红/绿/蓝主通道，以共享比较器生成掩码，再做多数滤波、闭运算和区域/形状统计 | `secondary_max`、`triple_secondary`、`hue_limit`、`votes` |
 
 两个 TD 工程均启用 RAW10 统计、CDC 和自动曝光，旧 `ae_set.v` 标为 `AutoExcluded`。
 每次 E/G 写入仍由原 group-hold I2C 表原子提交；显示算法选择不改变曝光请求。
 统计支路不向像素主通路施加反压，也不增加图像帧缓存。
+生产 `HOLD_OUTPUTS=0` 仅保证 valid 周期的摘要值；所有当前消费者按 valid 抓取。
+默认关的板上观察端是顶层 `iq_diagnostics/valid,data`，时钟 `S_csi_rx_clk`；
+这是独立源帧快照，不是当前 DDR 显示槽元数据，详见本轮实施记录。
+本轮高光评分、可信 AWB、直方图和回归证据见
+[背光实施记录](BACKLIGHT_AWB_HISTOGRAM_RESULTS.md)；
+[上一轮 AE 修改](AE_GAMMA_RESULTS.md)记录统一方向和短曝光步长，
+[灯光闭环对照](AE_LIGHTING_VALIDATION.md)说明场景收益与模型局限。
 
 AWB 的像素乘法保持八个 DSP，共享顺序除法不再使用两份旧流水除法器 IP；
 旧 AWB 延迟 RAM 也不再实例化。统计流水与像素流水相互独立，视频为两拍颜色运算
@@ -336,9 +349,9 @@ flowchart TD
 | 构造图像窗口 | [raw_matrix_3x3_buffer.v](../user_source/hdl_source/isp/demosaic_4x_2_0/raw_matrix_3x3_buffer.v)、[line_buffer_demosaic.v](../user_source/hdl_source/isp/demosaic_4x_2_0/line_buffer_demosaic.v) | 保留相邻行的数据，形成算法所需的邻域 |
 | 插值计算 | [bilinear_interpolation.v](../user_source/hdl_source/isp/demosaic_4x_2_0/bilinear_interpolation.v) | 根据 Bayer 排列和邻域数据计算彩色像素 |
 | 像素格式转换 | [data128_96.v](../user_source/hdl_source/isp/data128_96/data128_96.v) | 从四个 32 位位置取出 RGB888，并按代码规定的顺序拼成 96 位 |
-| 曝光亮度统计 | [ae_frame_stats_raw10_4x.v](../user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前 RAW10 抽样，完整帧亮度和剪白比例 |
-| 曝光控制 | [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v) | 目标96..120、六帧平均、高光滞回，通过配置握手写入摄像头 |
-| 自动白平衡 | [awb.v](../user_source/hdl_source/awb.v) | 近中性色采样，红/蓝增益按帧更新；四个 RGB888 像素组成的 96 位数据保持 54 拍输出，帧首提前透传 |
+| 曝光亮度统计 | [ae_frame_stats_raw10_4x.v](../user_source/hdl_source/isp/ae_frame_stats_raw10_4x.v) | LSC 前 RAW10 抽样，精确截顶均值、32 桶百分位、近顶≥992 及原码==1023 分离；不是显示亮度图 |
+| 曝光控制 | [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v) | 有界 P95 与均值统一评分目标96..120、六帧平均、无高光锁暗；保留原步长和配置握手 |
+| 自动白平衡 | [awb.v](../user_source/hdl_source/awb.v) | 可信候选捕获/跟踪、低可信保持、AE hold，红/蓝帧首更新；96 位像素保持 54 拍、帧首提前透传 |
 | 边缘检测 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 96 位 RGB 输入，亮度高斯、Scharr、NMS后输出同宽黑白边缘图 |
 | 灰度浮雕 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | 共享第一层灰度窗口，以中心和左上像素差生成中灰底明暗轮廓，统一 11 拍输出 |
 | 彩色漫画 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | RGB5 高斯、RGB3 色阶和 Scharr 黑轮廓，统一 11 拍与 3 像素偏移 |
@@ -369,13 +382,14 @@ Scharr 和四方向 NMS 后，用 `abs(Gx)+abs(Gy)>=16*EDGE_TH` 判定。
 | 改颜色判定 | [target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v)、[red_target_detect_96.v](../user_source/hdl_source/isp/red_target_detect_96.v) | u_red、I_color_mode、gen_red | 主通道最小 24、领先至少 6、MIN_PIXELS=128；红蓝使用严格主色色相，绿色允许红蓝分量分别达到 G 的 80% |
 | 改运动检测门槛 | [isp_top.v](../user_source/hdl_source/isp/isp_top.v)、[target_detect_switch_96.v](../user_source/hdl_source/isp/target_detect_switch_96.v) | DIFF_THRESHOLD、MIN_BLOCKS、GLOBAL_CHANGE_PERCENT、motion_result_stabilizer 参数 | 生产均值差≥10、至少12变化块；3帧确认、8像素死区、四分之一平滑及支持/光照过滤 |
 | 改自动曝光参数 | [auto_exposure_control.v](../user_source/hdl_source/auto_exposure_control.v)、[design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | TARGET_LOW/HIGH、DARK/BRIGHT_FAST、GAIN_MAX、AVERAGE_FRAMES | 当前目标96..120、范围E4..1991/G16..176、六帧平均；改后必须重跑曝光闭环和完整构建 |
-| 改白平衡 | [awb.v](../user_source/hdl_source/awb.v) | sample_neutral_d1、MIN/MAX_GAIN_Q8、F_smooth_gain | 未饱和近中性色采样，红/蓝增益 0.5..4 倍；差值 1/8 平滑，帧内固定 |
+| 改白平衡 | [awb.v](../user_source/hdl_source/awb.v) | CAPTURE_*、TRACK_TOLERANCE_Q8、REACQUIRE_FRAMES、F_smooth_gain | 捕获Q8 170..512，跟踪容差64，两帧一致、四次失败重捕获；参数未做实际灰板标定 |
 | 切换显示模式 | [display_effect_control.v](../user_source/hdl_source/display_effect_control.v)、[display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | MODE_COUNT、I_mode | K1 单向循环 0..12，K3/K4 无操作；默认原画加 Gamma，帧首提交，兼容参数固定 0 |
 | 改保色范围 | [display_effects_rgb888.v](../user_source/hdl_source/display_effects_rgb888.v) | keep_red_green | 通道至少 24、差至少 6，另有比例和色相范围；与目标检测判定分开 |
 | 改漫画平滑或色阶 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | cartoon_channel、cartoon_expand | RGB5 高斯后每通道八级；改变窗口、拍数或中心对齐需同步核对轮廓和框 |
 | 调整 Gamma 暗部和亮灰曲线 | [gamma_lut_rgb888.v](../user_source/hdl_source/gamma_lut_rgb888.v) | TONE_LUT | 模式 0 的彩色画面使用；调表后同步更新参考并重新验证 |
 | 改上电默认模式 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v) | ENABLE_EDGE | 默认 0=模式 00 原画+Gamma；设为 1 则默认模式 02 Scharr；运行中 K1 单向十三项循环 |
 | 开关九区通道测试表 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v) | SHOW_RAW_STATS | 默认 0；诊断时设 1 并重新编译下载；关闭不影响曝光控制或 AWB |
+| 分阶段剪切和直方图摘要抓取 | [design_top_wrapper.v](../user_source/hdl_source/design_top_wrapper.v)、[sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v) | IQ_DIAGNOSTIC_ENABLE | 默认 0；设 1 后用 CSI 时钟采集 iq_diagnostics/valid,data；插入 ChipWatcher 核需另核资源 |
 | 改边缘算法 | [scharr_edge_detect_96.v](../user_source/hdl_source/isp/scharr_edge_detect_96.v) | gaussian、scharr、nms | 修改流水级数须同步切换延迟；修改窗口须同步顶层框补偿 |
 | 改仿真阈值 | [tb_scharr_edge_detect_96.sv](../sim/tb_scharr_edge_detect_96.sv) | TH、reference | 默认 20，不自动读取 isp_top；修改后需重新标定场景断言 |
 | 改无板测试尺寸 | [tb_scharr_edge_detect_96.sv](../sim/tb_scharr_edge_detect_96.sv)、[run_video_mode.cmd](../sim/run_video_mode.cmd) | WIDTH、HEIGHT、SIZE_PARAMS | 默认 64×48；`--no-pause 720` 设为 1280×720、FAST=1 |

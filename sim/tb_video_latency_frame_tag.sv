@@ -19,6 +19,7 @@ module tb_video_latency_frame_tag;
     wire [127:0] packed_data;
 
     isp_top #(.ENABLE_EDGE(0)) dut (
+        .I_awb_hold_async(1'b0),
         .axi4s_video_aclk(clk), .I_rst_n(rst_n),
         .I_effect_config({edge_request ? 4'd2 : 4'd0,8'd0}),
         .I_motion_mode_async(motion_request),

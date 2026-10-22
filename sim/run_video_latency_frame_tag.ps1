@@ -23,6 +23,9 @@ $sources = @(
     'user_source\hdl_source\isp\demosaic_4x_2_0\bilinear_interpolation.v',
     'sim\tb_video_latency_frame_tag.sv'
 )
+if (Test-Path -LiteralPath (Join-Path $projectRoot 'user_source\hdl_source\isp\iq_diagnostic_stats.v')) {
+    $sources += 'user_source\hdl_source\isp\iq_diagnostic_stats.v'
+}
 foreach ($tool in @('vsim.exe', 'vlog.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ModelSimBin $tool) -PathType Leaf)) {
         throw "ModelSim tool is missing: $tool"

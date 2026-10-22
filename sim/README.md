@@ -56,11 +56,40 @@
 | 原始帧差与模式选择器 | `& './sim/run_motion_target_detect.ps1' -Mode Both` |
 | 原始帧差慢移图像参考 | `& './sim/run_motion_realistic.ps1' -RequireDetections` |
 | 自动曝光、RAW 统计和闭环 | `& './sim/run_auto_exposure.ps1'` |
+| 32/16/8 桶 RAW 直方图、精确摘要、输出保持/直连及异步 CDC | `& './sim/run_ae_histogram.ps1'` |
+| AWB 可信捕获/跟踪、彩色拒绝、曝光等待和 54 拍延迟 | `& './sim/run_awb_confidence.ps1'` |
+| 可选 RAW/LSC/AWB 剪切诊断、四 Bayer 与坏帧恢复 | `& './sim/run_iq_diagnostic_stats.ps1'` |
+| 开启诊断的真实 ISP、48 包源帧标签及像素打包 | `& './sim/run_isp_lighting_integration.ps1' -Diagnostics` |
+| ISP 十组模式集成 | `& './sim/run_isp_lighting_integration.ps1' -AllModes` |
 | 白平衡与连续行尾 | `& './sim/run_awb_frame_adaptation.ps1'` |
 | RAW 解包和去马赛克 | `& './sim/run_demosaic_quality.ps1' -CsiSource -Width 1280 -Height 720` |
 | FIFO 图像完整性 | `& './sim/run_video_fifo_frame_integrity.ps1' -RawSource` |
 | RAW10 分区统计与 HDMI 数字表 | `& './sim/run_raw_stats.ps1'` |
 | 红色检测照明场景 | `& './sim/run_red_target_lighting.ps1'` |
+
+自动曝光完整入口包含统一测光方向与 I²C 握手、曝光码 4～32 和增益跨档闭环、
+1/6/16 帧累加与 0/3/255 帧等待边界、RAW 统计、CDC、有界 P95 高光评分、
+24,000 帧固定计数等价检查，以及生产参数和均值控制对照的灯光闭环。
+只运行生产灯光闭环可用 `& './sim/run_auto_exposure.ps1' -ProductionLightingOnly`。
+`& './sim/run_ae_control_arithmetic.ps1'` 另用独立整数规格检查实际控制器的
+1,670,644 组算术决策，覆盖全部生产 E/G 组合的五种均值档及 16 位泛型饱和边界；
+该组合探针不替代真实统计、状态与寄存器握手闭环。
+完整 AE 入口每次运行保存实际编译的源码快照、`source_sha256.csv` 与
+`production_parameters.csv`，并检查 RAW 截顶值与 AE 的 `METER_MAX` 一致。
+入口同时核对曝光/增益范围与默认值；若生产覆盖超出灯光模型，先报错，
+避免实际参数已变而仍用旧场景通过验收。
+独立算术入口另保存自身的源码快照和哈希。
+生产保持截顶 192 和原 Gamma；旧版、C160 与 3 帧生效延迟的离线矩阵及模型局限见
+[AE 灯光对照](../docs/AE_LIGHTING_VALIDATION.md)，不将这些离线参数写入生产。
+
+2026-10-21 背光/AWB/直方图本轮的完整证据、核心 RTL 哈希及各项边界见
+[实施记录](../docs/BACKLIGHT_AWB_HISTOGRAM_RESULTS.md)。
+生产统计为 28,800 个 Bayer 分量、32 桶，`HOLD_OUTPUTS=0` 的摘要仅在 valid 周期可用；
+通用默认 `HOLD_OUTPUTS=1` 保留历史结果保持语义。直方图回归并行比较两者，
+覆盖连续帧、下一 SOF 与消费者捕获同拍、720p、65,520 样本及不支持参数拒绝。
+AWB 回归保留低可信不更新、两帧一致、上下半幅覆盖、重新捕获与 AE hold 边界。
+诊断 128 位包有独立源帧号，不属于 DDR 当前显示帧的元数据，也未增加常驻直方图 OSD。
+本轮没有修改 Gamma/LSC 标定表；最终布局布线与 bit 由用户自行生成。
 
 按键、Scharr/浮雕/漫画/形态学和显示切换：
 

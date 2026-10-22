@@ -8,11 +8,16 @@ module tb_isp_lighting_integration #(
     parameter integer CARTOON_MODE=0,
     parameter integer MORPH_MODE=0,
     parameter integer SCHARR_INV_MODE=0,
-    parameter integer MASK_MODE=0
+    parameter integer MASK_MODE=0,
+    parameter integer IQ_DIAG_ENABLE=0
 );
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
     localparam integer AWB_LATENCY=54;
+    // Frame 0 supplies only the first illuminant candidate. Frame 1 has no
+    // eligible neutral samples, and frame 2 is a different illuminant.
+    // Confidence mode must therefore retain the initial unity gains.
+    localparam integer EXPECTED_RED_GAIN=256, EXPECTED_BLUE_GAIN=256;
     // The color result uses three shared binary windows: majority, dilation,
     // erosion. Its nine registered clocks are observed one edge later here.
     // Motion retains its existing thirteen-clock publication contract.
@@ -38,13 +43,18 @@ module tb_isp_lighting_integration #(
     wire stats_valid;
     wire [31:0] sum_y;
     wire [15:0] sample_count, bright_count;
-    isp_top #(.ENABLE_EDGE(0)) dut (
+    wire [4:0] p95;
+    wire iq_diag_valid;
+    wire [127:0] iq_diag_data;
+    reg [9:0] input_frame_id=0;
+    isp_top #(.ENABLE_EDGE(0),.IQ_DIAGNOSTIC_ENABLE(IQ_DIAG_ENABLE)) dut (
+        .I_awb_hold_async(1'b0),
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),
         .I_effect_config({request_mode,8'd0}),
         .I_motion_mode_async(MOTION_MODE!=0),
         .I_color_mode_async(MOTION_MODE!=0 ? 2'd3 : 2'd0),
         .I_tlast(raw_last),.I_tuser(raw_user),.I_tdata(raw_data),.I_tvalid(raw_valid),
-        .I_tdest(10'd0),.O_tready(1'b1),.O_tdata(output_data),
+        .I_tdest(input_frame_id),.O_tready(1'b1),.O_tdata(output_data),
         .O_tlast(output_last),.O_tuser(output_user),.O_tvalid(output_valid),
         .I_tready(),.O_target_result_ready(target_ready),.O_target_found(target_found),
         .O_target_xmin(xmin),.O_target_xmax(xmax),.O_target_ymin(ymin),
@@ -54,14 +64,20 @@ module tb_isp_lighting_integration #(
         .O_edge_mode_active(mode),.O_effect_config(effect_config),
         .O_ae_stats_valid(stats_valid),
         .O_ae_sum_y(sum_y),.O_ae_sample_count(sample_count),
-        .O_ae_bright_count(bright_count)
+        .O_ae_bright_count(bright_count), .O_ae_p95(p95),
+        .O_iq_diag_valid(iq_diag_valid),.O_iq_diag_data(iq_diag_data)
     );
 
     integer source_frame=-1, awb_frame=-1, edge_frame=-1, packed_frame=-1;
     integer awb_count[0:2], edge_count[0:2], packed_count[0:2];
     integer expected_sum[0:2], expected_count[0:2], expected_bright[0:2];
+    integer expected_p95[0:2];
     integer ae_results=0, target_results=0, raw_motion_results=0, bytes_checked=0;
     integer cycle_number=0, awb_last_cycle[0:2], white_pixels=0;
+    bit diagnostic_seen[0:2][0:5][0:3];
+    integer diagnostic_packets=0,diag_kind,diag_channel,diag_frame,diag_i;
+    integer diag_a,diag_b,diag_near,diag_clip;
+    reg [39:0] diag_raw;
     integer emboss_pixels=0,emboss_bright=0,emboss_dark=0,emboss_neutral=0;
     integer emboss_white=0,emboss_black=0;
     integer cartoon_pixels=0,cartoon_black=0,cartoon_color=0,cartoon_nonblack=0;
@@ -119,9 +135,9 @@ module tb_isp_lighting_integration #(
         begin
             for(y=0;y<H;y=y+1) for(x=0;x<W;x=x+1) begin
                 original=scene(2,x,y);
-                r=original[23:16]*(MOTION_MODE ? 256 : 249)/256;
+                r=original[23:16]*EXPECTED_RED_GAIN/256;
                 g=original[15:8];
-                b=original[7:0]*(MOTION_MODE ? 256 : 260)/256;
+                b=original[7:0]*EXPECTED_BLUE_GAIN/256;
                 if(r>255) r=255;
                 if(b>255) b=255;
                 index=y*W+x;
@@ -215,8 +231,8 @@ module tb_isp_lighting_integration #(
                         for(dy=-1;dy<=1;dy=dy+1) for(dx=-1;dx<=1;dx=dx+1) begin
                             original=scene(2,x-3+dx,y-3+dy);
                             value=original[23-ch*8 -:8];
-                            if(!MOTION_MODE && ch==0) value=value*249/256;
-                            if(!MOTION_MODE && ch==2) value=value*260/256;
+                            if(ch==0) value=value*EXPECTED_RED_GAIN/256;
+                            if(ch==2) value=value*EXPECTED_BLUE_GAIN/256;
                             if(value>255) value=255;
                             weight=(dx==0 ? 2 : 1)*(dy==0 ? 2 : 1);
                             sum=sum+(value/8)*weight;
@@ -237,8 +253,8 @@ module tb_isp_lighting_integration #(
         integer r,g,b,rg,bg;
         begin
             original=scene(frame_id,x,y);
-            rg=!MOTION_MODE && frame_id==2 ? 249 : 256;
-            bg=!MOTION_MODE && frame_id==2 ? 260 : 256;
+            rg=EXPECTED_RED_GAIN;
+            bg=EXPECTED_BLUE_GAIN;
             r=original[23:16]*rg/256;
             g=original[15:8];
             b=original[7:0]*bg/256;
@@ -286,10 +302,10 @@ module tb_isp_lighting_integration #(
     endfunction
     function automatic [39:0] raw_scene(input integer frame_id);
         case (frame_id)
-            // Scaled lanes are 100,191,192,255. The last two are bright and
-            // both contribute the capped value 192 to the full-frame sum.
+            // Scaled lanes are 100,191,192,255. Only the final lane is
+            // near the sensor ceiling; the last two meter values cap at 192.
             0: raw_scene={10'd1023,10'd768,10'd767,10'd400};
-            // Scaled lanes are 0,1,128,200; only the final lane is bright.
+            // Scaled lanes are 0,1,128,200; none is near the sensor ceiling.
             1: raw_scene={10'd800,10'd512,10'd4,10'd0};
             // Ordinary unsaturated values spanning the AE control thresholds.
             default: raw_scene={10'd576,10'd480,10'd384,10'd252};
@@ -300,12 +316,11 @@ module tb_isp_lighting_integration #(
     );
         integer n,r,b,rg,bg;
         begin
-            // Vertical blanking is 68 clocks, shorter than AWB division.
-            // Its early SOF still precedes all of the new frame's pixels.
-            // Division
-            // from frame0 finishes during frame1, and commits at frame2 SOF.
-            rg=!MOTION_MODE && frame_id==2 ? 249 : 256;
-            bg=!MOTION_MODE && frame_id==2 ? 260 : 256;
+            // The complete-frame confidence rule rejects a first candidate
+            // and the following clipped scene. Compare actual pixel values,
+            // independently of internal pending/divider signals.
+            rg=EXPECTED_RED_GAIN;
+            bg=EXPECTED_BLUE_GAIN;
             for(n=0;n<4;n=n+1) begin
                 r=original[n*24+16 +:8]*rg/256;
                 b=original[n*24 +:8]*bg/256;
@@ -448,6 +463,10 @@ module tb_isp_lighting_integration #(
         end
         #1;
         if(rst_n) begin
+            if(dut.u_awb.gain_r_q8!==EXPECTED_RED_GAIN ||
+               dut.u_awb.gain_b_q8!==EXPECTED_BLUE_GAIN)
+                $fatal(1,"Unconfirmed/invalid illuminant changed AWB gains R=%0d B=%0d",
+                    dut.u_awb.gain_r_q8,dut.u_awb.gain_b_q8);
             if(motion_mode !== (MOTION_MODE!=0 && awb_frame>=0) ||
                 (!MOTION_MODE && target_motion_mode !== 1'b0))
                 $fatal(1,"Fixed target-detection mode changed or became unknown");
@@ -464,11 +483,56 @@ module tb_isp_lighting_integration #(
             if(stats_valid) begin
                 if(ae_results>=3 || sample_count!=expected_count[ae_results] ||
                     sum_y!=expected_sum[ae_results] ||
-                    bright_count!=expected_bright[ae_results])
-                    $fatal(1,"AE stats wrong frame=%0d sum=%0d samples=%0d bright=%0d",
-                        ae_results,sum_y,sample_count,bright_count);
+                    bright_count!=expected_bright[ae_results] ||
+                    p95!=expected_p95[ae_results])
+                    $fatal(1,"AE stats wrong frame=%0d sum=%0d samples=%0d bright=%0d P95=%0d",
+                        ae_results,sum_y,sample_count,bright_count,p95);
                 ae_results=ae_results+1;
             end
+            if(IQ_DIAG_ENABLE && iq_diag_valid) begin
+                diag_kind=iq_diag_data[127:124];
+                diag_channel=iq_diag_data[123:122];
+                diag_frame=iq_diag_data[121:112];
+                if(diag_kind>=6 || diag_frame>=3 ||
+                    (diag_kind>=2 && diag_kind<4 && diag_channel==2) ||
+                    (diag_kind>=4 && diag_channel!=0) ||
+                    diagnostic_seen[diag_frame][diag_kind][diag_channel])
+                    $fatal(1,"ISP diagnostic duplicate/invalid packet kind=%0d channel=%0d frame=%0d",
+                        diag_kind,diag_channel,diag_frame);
+                diagnostic_seen[diag_frame][diag_kind][diag_channel]=1;
+                diagnostic_packets++;
+                if(diag_kind<4 &&
+                    iq_diag_data[111:96]!=(diag_kind<2 ? 7200 : 14400))
+                    $fatal(1,"ISP diagnostic wrong sample population");
+                if(diag_kind==0) begin
+                    diag_raw=raw_scene(diag_frame);
+                    diag_a=diag_raw[(diag_channel==0 || diag_channel==2) ? 10 : 0 +:10];
+                    diag_b=diag_raw[(diag_channel==0 || diag_channel==2) ? 30 : 20 +:10];
+                    diag_near=3600*((diag_a>=992)+(diag_b>=992));
+                    diag_clip=3600*((diag_a==1023)+(diag_b==1023));
+                    if(iq_diag_data[95:72]!=(diag_a+diag_b)*3600 ||
+                        iq_diag_data[71:56]!=diag_near ||
+                        iq_diag_data[55:40]!=diag_clip ||
+                        iq_diag_data[39:24]!=diag_near)
+                        $fatal(1,"ISP RAW diagnostic source/channel mismatch frame=%0d channel=%0d",
+                            diag_frame,diag_channel);
+                end
+                if(diag_kind==4 &&
+                    (iq_diag_data[111:107]!=(diag_frame==0 ? 12 : diag_frame==1 ? 0 : 7) ||
+                     iq_diag_data[106:102]!=(diag_frame==0 ? 23 : diag_frame==1 ? 0 : 12) ||
+                     iq_diag_data[101:97]!=expected_p95[diag_frame] ||
+                     iq_diag_data[96:92]!=expected_p95[diag_frame] ||
+                     iq_diag_data[91:76]!=28800 ||
+                     iq_diag_data[75:60]!=(diag_frame==0 ? 7200 : 0) ||
+                     iq_diag_data[59:44]!=(diag_frame==0 ? 7200 : 0)))
+                    $fatal(1,"ISP histogram diagnostic source/percentile mismatch frame=%0d",diag_frame);
+                if(diag_kind==5 &&
+                    (iq_diag_data[111:101]!=256 || iq_diag_data[100:90]!=256 ||
+                     iq_diag_data[88:73]>14400))
+                    $fatal(1,"ISP WB diagnostic gain/sample mismatch");
+            end
+            if(!IQ_DIAG_ENABLE && (iq_diag_valid!==0 || iq_diag_data!==0))
+                $fatal(1,"ISP diagnostic default-off outputs changed");
             if(MOTION_MODE && dut.u_target_detect_switch.raw_motion_ready) begin
                 if(raw_motion_results>=3 ||
                     cycle_number-awb_last_cycle[raw_motion_results]!=11 ||
@@ -558,6 +622,7 @@ module tb_isp_lighting_integration #(
     task automatic tick(input bit v,input bit u,input bit l,input [95:0] d);
         @(negedge clk);
         raw_valid=v;raw_user=u;raw_last=l;
+        input_frame_id=source_frame[9:0];
         raw_data=v ? raw_scene(source_frame) : 40'd0;
         injected_valid=v;injected_user=u;injected_last=l;injected_data=d;
         @(posedge clk);#2;
@@ -574,10 +639,17 @@ module tb_isp_lighting_integration #(
         force dut.m_aixs_tvalid=injected_valid;
         force dut.m_aixs_tuser=injected_user;
         force dut.m_aixs_tlast=injected_last;
+        if(IQ_DIAG_ENABLE)
+            force dut.demosaic_frame_id=input_frame_id;
+        for(f=0;f<3;f=f+1) for(y=0;y<6;y=y+1) for(g=0;g<4;g=g+1)
+            diagnostic_seen[f][y][g]=0;
         for(f=0;f<3;f=f+1) begin
             awb_count[f]=0;edge_count[f]=0;packed_count[f]=0;
             awb_last_cycle[f]=-1;expected_sum[f]=0;
             expected_count[f]=0;expected_bright[f]=0;
+            // Each RAW lane occupies exactly one quarter of the population;
+            // P95 is the highest lane's RAW10/32 bucket, before meter capping.
+            expected_p95[f]=f==0 ? 31 : f==1 ? 25 : 18;
             metered_raw=raw_scene(f);
             // Production RAW metering samples one four-pixel group per eight
             // groups on the two Bayer rows at row mod 8 = 0 and 1.
@@ -587,14 +659,14 @@ module tb_isp_lighting_integration #(
                     scaled=raw_value>>2;
                     expected_sum[f]=expected_sum[f]+(scaled>=192?192:scaled);
                     expected_count[f]=expected_count[f]+1;
-                    if(scaled>=192)
+                    if(scaled>=248)
                         expected_bright[f]=expected_bright[f]+1;
                 end
             end
         end
         repeat(5) tick(0,0,0,0);
         @(negedge clk);rst_n=1;
-        repeat(5) tick(0,0,0,0);
+        repeat(40) tick(0,0,0,0); // Initialize all 32 histogram RAM buckets.
         for(f=0;f<3;f=f+1) begin
             source_frame=f;
             if(f==2) tick(0,1,0,0); // Early marker during blanking.
@@ -616,6 +688,16 @@ module tb_isp_lighting_integration #(
             byte_write!=byte_read ||
             bytes_checked!=3*W*H*3 || white_pixels==0)
             $fatal(1,"ISP integration coverage/count mismatch");
+        if(IQ_DIAG_ENABLE) begin
+            if(diagnostic_packets!=48)
+                $fatal(1,"ISP diagnostic missing packets checked=%0d expected=48",diagnostic_packets);
+            for(f=0;f<3;f=f+1) for(y=0;y<6;y=y+1) for(g=0;g<4;g=g+1)
+                if((y<2 || (y<4 && g!=2) || (y>=4 && g==0)) &&
+                    !diagnostic_seen[f][y][g])
+                    $fatal(1,"ISP diagnostic missing frame/kind/channel %0d/%0d/%0d",f,y,g);
+            $display("ISP_IQ_DIAGNOSTIC_INTEGRATION_PASS frames=3 packets=%0d raw_lsc_rgb_awb_hist_wb_status=1 source_frame_tags=1 valid_only_stats=1",
+                diagnostic_packets);
+        end
         for(f=0;f<3;f=f+1)
             if(awb_count[f]!=FRAME_GROUPS || edge_count[f]!=FRAME_GROUPS ||
                 packed_count[f]!=FRAME_WORDS)

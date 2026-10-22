@@ -180,6 +180,46 @@ function Assert-TargetFrameConstraintHealth([string] $Path) {
     return [pscustomobject]$results
 }
 
+function Assert-AeConstraintHealth([string] $Path,[string] $SdcPath) {
+    $health=[IO.File]::ReadAllText($Path)
+    $rows=@($health -split '\r?\n' | Where-Object {
+        $_.Contains('u_ae_stats_cdc/payload_hold[*]') -and
+        $_.Contains('u_ae_stats_cdc/O_dst_data[*]')
+    })
+    $pattern='^\s*(?<total>\d+)\s+(?<dominated>\d+)\s+(?<shadowed>\d+)\s+(?<ignored>\d+)\s+set_max_delay\s+-datapath_only\b.*\s(?<limit>\d+(?:\.\d+)?)\s*$'
+    if($rows.Count -ne 1) {
+        throw "Expected one AE statistics CDC payload constraint: $Path"
+    }
+    $row=[regex]::Match($rows[0],$pattern)
+    if(-not $row.Success) {
+        throw "Unrecognized AE statistics CDC constraint health: $Path"
+    }
+    $total=[int]$row.Groups['total'].Value
+    $limit=[double]::Parse($row.Groups['limit'].Value,
+        [Globalization.CultureInfo]::InvariantCulture)
+    if($total -le 0 -or [int]$row.Groups['dominated'].Value -ne $total -or
+       [int]$row.Groups['shadowed'].Value -ne 0 -or
+       [int]$row.Groups['ignored'].Value -ne 0 -or $limit -ne 20.0) {
+        throw "The 20 ns AE statistics CDC bound must cover every payload path: $Path"
+    }
+    # TD's MCP/SMD table does not list false paths. Check the exact source
+    # exception, together with the tool's invalid/no-path health checks.
+    $sdc=[IO.File]::ReadAllText($SdcPath)
+    $holdRows=@($sdc -split '\r?\n' | Where-Object {
+        $_ -match '^\s*set_false_path\b' -and $_.Contains('awb_hold')
+    })
+    $expectedHold='set_false_path -from [get_regs {u_auto_exposure/O_awb_hold}] -to [get_regs {u_isp_top/awb_hold_meta}]'
+    if($holdRows.Count -ne 1 -or $holdRows[0].Trim() -cne $expectedHold -or
+       $health -notmatch 'There are 0 invalid constraints\.' -or
+       $health -notmatch 'There are 0 constraints that have no timing paths\.') {
+        throw "AE hold must cross only into the first AWB synchronizer register: $Path"
+    }
+    return [pscustomobject]@{
+        payload_paths=$total; max_delay_ns=$limit; status='passed'
+        awb_hold_first_stage_only=$true
+    }
+}
+
 $bestResultDirectory=Get-WorkspaceDestination 'td_project\anlogic_edge_osd_Runs\best_result'
 $reportDirectory=$null
 if($GenerateBit) {
@@ -355,6 +395,7 @@ try {
     $slacks=@{}
     $displayEffectConstraint=$null
     $targetFrameConstraint=$null
+    $aeConstraint=$null
     if(-not $SkipRoute) {
         $timing=[IO.File]::ReadAllText((Join-Path $work 'system_pr.timing'))
         foreach($kind in @('SWNS','HWNS')) {
@@ -371,6 +412,8 @@ try {
         Write-Output "DISPLAY_EFFECT_CDC_CONSTRAINT_PASS paths=$($displayEffectConstraint.payload_paths) max_delay_ns=$($displayEffectConstraint.max_delay_ns)"
         $targetFrameConstraint=Assert-TargetFrameConstraintHealth (Join-Path $work 'constraint_health.timing')
         Write-Output 'TARGET_FRAME_CDC_CONSTRAINT_PASS context=20ns result=20ns display=13ns'
+        $aeConstraint=Assert-AeConstraintHealth (Join-Path $work 'constraint_health.timing') (Join-Path $work 'td_project\anlogic_edge_osd.sdc')
+        Write-Output "AE_CDC_CONSTRAINT_PASS paths=$($aeConstraint.payload_paths) max_delay_ns=$($aeConstraint.max_delay_ns) awb_hold_first_stage_only=True"
     }
     Select-String -LiteralPath console.log -Pattern '^IMAGE_QUALITY_.*PASS' |
         ForEach-Object { $_.Line }
@@ -449,6 +492,7 @@ try {
                 hold_slack_ns=$slacks['HWNS']
                 display_effect_cdc=$displayEffectConstraint
                 target_frame_cdc=$targetFrameConstraint
+                ae_stats_cdc=$aeConstraint
             }
             build=[ordered]@{
                 started_at_utc=$startedAtUtc

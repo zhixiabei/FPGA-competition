@@ -191,35 +191,48 @@ module tb_auto_exposure_control;
         send_window(120, 0, 1000, 16, 0, "inclusive target high");
         repeat (5) flicker_window(1000, 16, "six-frame mains flicker hold");
 
-        send_window(95, 64, 875, 16, 1,
-                    "25 percent highlight forces a slow reduction");
+        send_window(95, 64, 1125, 16, 1,
+                    "25 percent highlight does not reverse a dark mean");
         complete_transaction();
-        send_window(95, 51, 875, 16, 0,
-                    "latched 20 percent highlight holds exposure");
-        send_window(95, 32, 875, 16, 0,
-                    "latched 12.5 percent boundary holds exposure");
-        send_window(95, 64, 766, 16, 1,
-                    "sustained 25 percent highlight keeps reducing");
+        send_window(95, 51, 1265, 16, 1,
+                    "20 percent highlight does not latch a dark exposure");
         complete_transaction();
-        send_window(121, 25, 671, 16, 1,
-                    "bright mean wins while low highlight clears latch");
+        send_window(95, 32, 1423, 16, 1,
+                    "12.5 percent highlight boundary still permits recovery");
         complete_transaction();
-        send_window(95, 25, 754, 16, 1,
-                    "below 12.5 percent permits normal increase");
+        send_window(108, 128, 1423, 16, 0,
+                    "high highlight fraction does not reverse an in-band mean");
+        send_window(121, 64, 1246, 16, 1,
+                    "a bright mean reduces independently of highlight history");
         complete_transaction();
-        send_window(63, 25, 942, 16, 1, "fast dark increase after clear");
+        send_window(95, 0, 1401, 16, 1,
+                    "normal increase after a bright window");
+        complete_transaction();
+        send_window(63, 25, 1991, 16, 1,
+                    "fast dark increase uses a half step and upper clamp");
         complete_transaction();
 
         initialize();
-        push_stats(95, 256);
-        push_stats(95, 128);
-        repeat (3) push_stats(95, 0);
-        assert_state(1000, 16, 0, "partial aggregate highlight window holds");
-        push_stats(95, 0);
-        assert_state(875, 16, 1,
-                     "aggregate 25 percent boundary forces reduction");
+        push_stats(192, 256);
+        push_stats(192, 256);
+        repeat (3) push_stats(47, 0);
+        assert_state(1000, 16, 0, "five aggregate frames do not decide");
+        push_stats(47, 0);
+        assert_state(1125, 16, 1,
+                     "dark aggregate mean wins over one-third bright samples");
         complete_transaction();
 
+        initialize();
+        repeat (5) push_raw(80 * SAMPLE_COUNT, SAMPLE_COUNT, 0);
+        push_raw(192 * (SAMPLE_COUNT / 2), SAMPLE_COUNT / 2,
+                 SAMPLE_COUNT / 2);
+        assert_state(1125, 16, 1,
+                     "window uses sample-weighted mean rather than frame means");
+        complete_transaction();
+
+        initialize();
+        send_window(63, 0, 1500, 16, 1, "fast dark half exposure increase");
+        complete_transaction();
         initialize();
         send_window(64, 0, 1125, 16, 1, "dark fast boundary is exclusive");
         complete_transaction();
@@ -237,6 +250,7 @@ module tb_auto_exposure_control;
         push_raw(0, 0, 0);
         push_raw(0, SAMPLE_COUNT, SAMPLE_COUNT + 1);
         push_raw(SAMPLE_COUNT * 192 + 1, SAMPLE_COUNT, 0);
+        push_raw(32'h80000001, SAMPLE_COUNT, 0);
         repeat (5) begin
             push_stats(95, 0);
             assert_state(1000, 16, 0, "invalid statistics did not advance window");
@@ -252,8 +266,8 @@ module tb_auto_exposure_control;
             expected_ae = previous_ae;
             expected_ag = previous_ag;
             if (previous_ae < 1991) begin
-                step_value = previous_ae >> 2;
-                if (step_value < 4) step_value = 4;
+                step_value = previous_ae >> 1;
+                if (step_value < 1) step_value = 1;
                 expected_ae = previous_ae + step_value;
                 if (expected_ae > 1991) expected_ae = 1991;
             end else begin
@@ -288,14 +302,14 @@ module tb_auto_exposure_control;
         while (exposure != 4) begin
             previous_ae = exposure;
             step_value = previous_ae >> 2;
-            if (step_value < 4) step_value = 4;
+            if (step_value < 1) step_value = 1;
             expected_ae = (previous_ae > step_value + 4) ?
                           previous_ae - step_value : 4;
             send_window(192, SAMPLE_COUNT, expected_ae, 16, 1,
                         "full white exposure lower clamp");
             complete_transaction();
             loop_count = loop_count + 1;
-            if (loop_count > 35) $fatal(1, "Exposure failed to reach minimum");
+            if (loop_count > 45) $fatal(1, "Exposure failed to reach minimum");
         end
         send_window(192, SAMPLE_COUNT, 4, 16, 0, "bright lower limit holds");
 
@@ -321,7 +335,7 @@ module tb_auto_exposure_control;
             assert_state(1000, 16, 0, "restart discarded partial window");
         end
         push_stats(0, 0);
-        assert_state(1250, 16, 1, "restart sixth frame makes one decision");
+        assert_state(1500, 16, 1, "restart sixth frame makes one decision");
 
         @(negedge clk);
         rst = 1;
