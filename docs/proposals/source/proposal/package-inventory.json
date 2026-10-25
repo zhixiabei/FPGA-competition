@@ -1,0 +1,146 @@
+[
+  {
+    "path": "[Content_Types].xml",
+    "size": 1816,
+    "sha256": "93517ef5a75c2906368d51e614651cd5931f884c055783c1424389ce4b89d527",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "_rels/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "_rels/.rels",
+    "size": 737,
+    "sha256": "514e1846381cb6bcfff105a4b0a17d666cf0ed1f0c120bff73b82226ab7ed977",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "customXml/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "customXml/_rels/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "customXml/_rels/item1.xml.rels",
+    "size": 296,
+    "sha256": "80482f86e196171d66001e0e74d1900408a3aaf2463e54005d251b5f2db9a0b0",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "customXml/item1.xml",
+    "size": 289,
+    "sha256": "f3b453b1755b133356885f27dfd8d96ac1d03abab49d28b11a2960c34226ed8a",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "customXml/itemProps1.xml",
+    "size": 236,
+    "sha256": "77d71625f1bbbedaa2b325cbacfbb8822d57fd981e229195d4baf2e7210d2c1d",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "docProps/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "docProps/app.xml",
+    "size": 658,
+    "sha256": "75de965b744b6d3bafb88b8b83cff190bb75daf68e58d42703fe66aaf1e35a57",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "docProps/core.xml",
+    "size": 634,
+    "sha256": "b8acf6ff4f950d2b89f3222a63d597db843b307236738c0a4b8571cae636eaab",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "docProps/custom.xml",
+    "size": 750,
+    "sha256": "fa07dba88135ca8a323df68782b9c3d7a5198818c7d1a3f9986b6dfaff0c1f0b",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/_rels/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/_rels/document.xml.rels",
+    "size": 1206,
+    "sha256": "0ea82c2d554e1b076a74e4c857c8bcdd878c48cd82eedad154cfec2e0d3cf045",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/document.xml",
+    "size": 30770,
+    "sha256": "6f42ab94d6af5cceb9e6e14ea4f24b3d1612d672338bc69555cfd893302a1c36",
+    "policy": "editable"
+  },
+  {
+    "path": "word/fontTable.xml",
+    "size": 3084,
+    "sha256": "f8a15c4727f33c52d57873ee0c2390008dd709b742d88d445741d75aaa0bcb88",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/footer1.xml",
+    "size": 1790,
+    "sha256": "a33a322b0fe0d7263e14a4adb8ec8949f4b922c0598e984b9f12159af911dd24",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/footer2.xml",
+    "size": 1892,
+    "sha256": "0fc01a187d7c292e0d831827f955cf4fc70a3f27b2733cfc62c4a889aaca3da4",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/header1.xml",
+    "size": 1418,
+    "sha256": "d97036eda3fef03008be63762d9580ffecbeb49046593c408f8e237b158c76b6",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/settings.xml",
+    "size": 11073,
+    "sha256": "280b88f4309a7077100482f8a737b1be88318e43462a89245fb158994234bc71",
+    "policy": "editable"
+  },
+  {
+    "path": "word/styles.xml",
+    "size": 26907,
+    "sha256": "ad07186a39b0f84ea4caf1d94478e65ca652e461af03daf5f7bc84a5e2d5ebca",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/theme/",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy": "preserve-only"
+  },
+  {
+    "path": "word/theme/theme1.xml",
+    "size": 6436,
+    "sha256": "2157ebaa401af49c0c9b80ad88ccbad4dbe486136a0b3f4bddc77de976340c33",
+    "policy": "preserve-only"
+  }
+]
