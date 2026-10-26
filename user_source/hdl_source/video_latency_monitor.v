@@ -5,7 +5,8 @@ module video_latency_monitor #(
     parameter integer TIME_NUM = 1,
     parameter integer TIME_DEN = 50,
     parameter integer FRAME_WORDS = 172800,
-    parameter integer MAX_AGE_US = 1000000
+    parameter integer MAX_AGE_US = 1000000,
+    parameter integer USE_EXTERNAL_WRITE_PROGRESS = 0
 ) (
     input wire I_time_clk,
     input wire I_csi_clk,
@@ -29,7 +30,9 @@ module video_latency_monitor #(
     output reg [9:0] O_frame_id,
     output reg [19:0] O_total_us,
     output reg [19:0] O_isp_us,
-    output reg [19:0] O_buffer_us
+    output reg [19:0] O_buffer_us,
+    // Same-edge combinational completion from video_ddr_write_progress.
+    input wire I_write_complete
 );
     localparam integer COUNT_WIDTH = $clog2(FRAME_WORDS+1);
     localparam integer AGE_BIT = $clog2(MAX_AGE_US)-1;
@@ -213,8 +216,10 @@ module video_latency_monitor #(
 
             if (I_write_start) begin
                 S_active_write_slot <= I_write_slot;
-                S_write_count <= 0;
-                S_write_active <= 1'b1;
+                if (!USE_EXTERNAL_WRITE_PROGRESS) begin
+                    S_write_count <= 0;
+                    S_write_active <= 1'b1;
+                end
                 S_slot_ids[I_write_slot] <= S_start_id;
                 S_slot_raw[I_write_slot] <= S_start_raw_us;
                 S_slot_started[I_write_slot] <= S_start_valid;
@@ -231,10 +236,12 @@ module video_latency_monitor #(
                     S_slot_metadata[I_write_slot] <= 1'b0;
                 S_slot_complete[I_write_slot] <= 1'b0;
                 S_slot_age[I_write_slot] <= 0;
-            end else if (I_write_word && S_write_active) begin
-                if (S_write_count == FRAME_WORDS-1) begin
+            end else if (USE_EXTERNAL_WRITE_PROGRESS ? I_write_complete :
+                         I_write_word && S_write_active) begin
+                if (USE_EXTERNAL_WRITE_PROGRESS || S_write_count == FRAME_WORDS-1) begin
                     S_slot_complete[S_active_write_slot] <= 1'b1;
-                    S_write_active <= 1'b0;
+                    if (!USE_EXTERNAL_WRITE_PROGRESS)
+                        S_write_active <= 1'b0;
                 end else
                     S_write_count <= S_write_count+1'b1;
             end
@@ -254,22 +261,31 @@ module video_latency_monitor #(
     (* async_reg = "true" *) reg S_read_req_meta, S_read_req_sync;
     reg [PAYLOAD_WIDTH-1:0] S_pending_payload;
     reg S_pending_valid, S_pending_fresh;
-    reg [TIME_WIDTH-1:0] S_sample_time;
     reg [PAYLOAD_WIDTH-1:0] S_sample_payload;
     reg S_sample_record_valid;
     reg [1:0] S_sample_stage;
-    reg [TIME_WIDTH-1:0] S_total_delta, S_isp_delta, S_buffer_delta;
+    reg [TIME_WIDTH-1:0] S_total_delta, S_isp_delta;
     wire [TIME_WIDTH-1:0] S_pending_age =
         S_hdmi_us-S_pending_payload[TIME_WIDTH +: TIME_WIDTH];
     wire [TIME_WIDTH-1:0] S_sample_raw =
         S_sample_payload[TIME_WIDTH +: TIME_WIDTH];
     wire [TIME_WIDTH-1:0] S_sample_isp = S_sample_payload[0 +: TIME_WIDTH];
+    // The continuous pending-age subtraction already equals the sampled
+    // total at display-start. Reuse it there, then share one subtractor
+    // for ISP at stage 1 and total-ISP (buffer) at stage 2. All arithmetic
+    // is modulo 2^TIME_WIDTH, so total-ISP equals display-time minus ISP
+    // even for wrapped/invalid timestamps. Publication retains its edge.
+    wire [TIME_WIDTH-1:0] S_delta_left = S_sample_stage == 1 ?
+        S_sample_isp : S_total_delta;
+    wire [TIME_WIDTH-1:0] S_delta_right = S_sample_stage == 1 ?
+        S_sample_raw : S_isp_delta;
+    wire [TIME_WIDTH-1:0] S_shared_delta = S_delta_left-S_delta_right;
     always @(posedge I_hdmi_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             S_read_req_meta <= 0; S_read_req_sync <= 0; S_read_ack <= 0;
             S_pending_payload <= 0; S_pending_valid <= 0; S_pending_fresh <= 0;
-            S_sample_time <= 0; S_sample_payload <= 0; S_sample_record_valid <= 0;
-            S_sample_stage <= 0; S_total_delta <= 0; S_isp_delta <= 0; S_buffer_delta <= 0;
+            S_sample_payload <= 0; S_sample_record_valid <= 0;
+            S_sample_stage <= 0; S_total_delta <= 0; S_isp_delta <= 0;
             O_sample_strobe <= 0; O_sample_valid <= 0; O_frame_id <= 0;
             O_total_us <= 0; O_isp_us <= 0; O_buffer_us <= 0;
         end else begin
@@ -285,15 +301,14 @@ module video_latency_monitor #(
                 S_read_ack <= S_read_req_sync;
             end
             if (I_display_frame_start) begin
-                S_sample_time <= S_hdmi_us;
                 S_sample_payload <= S_pending_payload;
+                // OLD pending data is intentional if a read arrives too.
+                S_total_delta <= S_pending_age;
                 S_sample_record_valid <= S_pending_fresh && S_pending_valid;
                 S_pending_fresh <= 1'b0;
                 S_sample_stage <= 1;
             end else if (S_sample_stage == 1) begin
-                S_total_delta <= S_sample_time-S_sample_raw;
-                S_isp_delta <= S_sample_isp-S_sample_raw;
-                S_buffer_delta <= S_sample_time-S_sample_isp;
+                S_isp_delta <= S_shared_delta;
                 S_sample_stage <= 2;
             end else if (S_sample_stage == 2) begin
                 O_sample_strobe <= 1'b1;
@@ -303,7 +318,7 @@ module video_latency_monitor #(
                 O_frame_id <= S_sample_payload[2*TIME_WIDTH +: 10];
                 O_total_us <= S_total_delta;
                 O_isp_us <= S_isp_delta;
-                O_buffer_us <= S_buffer_delta;
+                O_buffer_us <= S_shared_delta;
                 S_sample_stage <= 0;
             end
         end

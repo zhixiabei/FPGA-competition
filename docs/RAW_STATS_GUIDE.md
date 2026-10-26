@@ -1,5 +1,10 @@
 # 2026-10-15：当前观看版及诊断入口
 
+2026-10-21 补充：默认画面已是 K1 十三模式；九区数字表继续默认关闭。
+新增分阶段限幅、RAW 百分位与 AWB 状态的独立源帧诊断入口，
+开启方法和字段见 [本轮实施记录](BACKLIGHT_AWB_HISTOGRAM_RESULTS.md)。
+它与下面的九区静态数字表是不同入口，都不能冒充 DDR 当前显示帧的同帧统计。
+
 当前 `SHOW_RAW_STATS=0`，K1 切换彩色／边缘。现有 LSC 和白平衡保留，
 RGB 对照及 LIVE/HOLD 校准已移除。曝光由 LSC 前 RAW10 统计闭环控制。
 以下 RAW10 表是独立诊断入口，不能代替 HDMI 实际输出的色偏测量。
@@ -96,7 +101,8 @@ K1 仍切换彩色/边缘。
   复用 `osd_char_lib` 字形，字符显示放大到 32×32 像素格；E/G 也复用该转换器。
 - `sim/run_raw_stats.ps1`：分区数值、Bayer 排列、异常帧、实际 CDC 与 HDMI 逐像素检查。
   `-HdmiOnly` 只检查最终显示与邮箱，包括 E/G 成对更新、AL/AW/AS、帧序号环绕和复位。
-- `verification/prepare_handfixed_project.py --output build/handfixed_project_new`：冻结当前源码，生成独立综合入口 `synthesis_only.tcl`。完整构建使用 `build_firmware.cmd`，具体命令见 `HANDCNN_FIXED_ROI_BACKGROUND.md`。
+- `verification/run_image_quality_build.ps1`：冻结源码到 TEMP，整机综合及布局布线，
+  默认不生成 bit；`-GenerateBit` 可在最终时序通过后生成，脚本不下载。
 
 仿真输出 `raw_stats_hdmi.ppm` 是合成读数的 HDMI 预览，不是实物标定数据。
 

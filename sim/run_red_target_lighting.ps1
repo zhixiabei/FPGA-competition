@@ -22,7 +22,8 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tb_red_target_detect_96.sv') `
 Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir
 try {
-    & (Join-Path $SimBin 'xvlog.bat') -sv red_target_detect_96.v tb_red_target_detect_96.sv `
+    & (Join-Path $SimBin 'xvlog.bat') -sv -d RED_MULTI_PORTABLE_RAM `
+        red_target_detect_96.v tb_red_target_detect_96.sv `
         -log xvlog.log *> compile_console.log
     if ($LASTEXITCODE -ne 0) { throw 'XSim compile failed; see compile_console.log' }
 

@@ -46,9 +46,11 @@ module tb_target_frame_alignment;
     integer buffered_mode_checks = 0;
     integer effect_config_checks = 0, buffered_effect_checks = 0;
     integer invalid_effect_checks = 0, no_target_effect_checks = 0;
-    integer spatial_checks [0:8];
+    integer spatial_checks [0:12];
     integer emboss_clip_checks = 0, scharr_clip_checks = 0, cartoon_clip_checks = 0;
     integer inverse_clip_checks = 0, morph_clip_checks = 0;
+    integer binary_clip_checks = 0, erosion_clip_checks = 0;
+    integer dilation_clip_checks = 0, close_clip_checks = 0;
     integer actual_write_slot = -1, actual_read_slot = -1;
     integer request_count = 0;
     reg request_seen = 0;
@@ -85,25 +87,27 @@ module tb_target_frame_alignment;
             else if (id == 28) mode = 2;
             else if (id == 30) mode = 7;
             else if (id == 31) mode = 8;
+            else if (id >= 32 && id <= 35) mode = id-23;
             else mode = (id + id/9) % 9;
             frame_effect_config = {mode, 8'd0};
         end
     endfunction
     function automatic integer frame_xmin(input integer id);
-        frame_xmin = (id >= 26 && id <= 31) ? 1268 : 300 + id * 7;
+        frame_xmin = (id >= 26 && id <= 35) ? 1268 : 300 + id * 7;
     endfunction
     function automatic integer frame_xmax(input integer id);
-        frame_xmax = (id >= 26 && id <= 31) ? 1279 : frame_xmin(id)+40;
+        frame_xmax = (id >= 26 && id <= 35) ? 1279 : frame_xmin(id)+40;
     endfunction
     function automatic integer frame_ymin(input integer id);
-        frame_ymin = (id >= 26 && id <= 31) ? 710 : 180 + (id % 7) * 4;
+        frame_ymin = (id >= 26 && id <= 35) ? 710 : 180 + (id % 7) * 4;
     endfunction
     function automatic integer frame_ymax(input integer id);
-        frame_ymax = (id >= 26 && id <= 31) ? 719 : frame_ymin(id)+30;
+        frame_ymax = (id >= 26 && id <= 35) ? 719 : frame_ymin(id)+30;
     endfunction
     function automatic integer spatial_offset(input [3:0] mode);
         spatial_offset = (mode == 2 || mode == 6 || mode == 7) ? 3 :
-                         (mode == 4 || mode == 8) ? 1 : 0;
+                         (mode == 4 || mode == 8 || mode == 10 || mode == 11) ? 1 :
+                         mode == 12 ? 3 : 0;
     endfunction
     function automatic integer display_x(input integer value, input [3:0] mode);
         integer shifted;
@@ -214,6 +218,14 @@ module tb_target_frame_alignment;
                     inverse_clip_checks = inverse_clip_checks+1;
                 if (id == 31 && x1 == 1279 && y1 == 719)
                     morph_clip_checks = morph_clip_checks+1;
+                if (id == 32 && x1 == 1279 && y1 == 719)
+                    binary_clip_checks = binary_clip_checks+1;
+                if (id == 33 && x1 == 1279 && y1 == 719)
+                    erosion_clip_checks = erosion_clip_checks+1;
+                if (id == 34 && x1 == 1279 && y1 == 719)
+                    dilation_clip_checks = dilation_clip_checks+1;
+                if (id == 35 && x1 == 1279 && y1 == 719)
+                    close_clip_checks = close_clip_checks+1;
             end else if ((!ref_valid[slot] && dut.S_target_slots[slot][72:0] !== 73'd0) ||
                          (ref_valid[slot] && dut.S_target_slots[slot][72] !== 1'b0))
                 $fatal(1, "No-target or invalid slot retains old target slot=%0d frame=%0d",
@@ -276,7 +288,7 @@ module tb_target_frame_alignment;
             // Published results and slot invalidation must retain this frame.
             detection_request = ~motion_mode;
             effect_request = frame_effect_config(id);
-            effect_request[11:8] = effect_request[11:8] == 4'd8 ?
+            effect_request[11:8] = effect_request[11:8] == 4'd12 ?
                 4'd0 : effect_request[11:8] + 4'd1;
             effect_config = effect_request;
             edge_mode = effect_config[11:8] == 2;
@@ -547,7 +559,7 @@ module tb_target_frame_alignment;
         force dut.u_video_in.I_mipi_rx_error = camera_error;
         force dut.u_video_in.I_display_pause = camera_pause;
 
-        for (integer mode_index = 0; mode_index < 9; mode_index = mode_index+1)
+        for (integer mode_index = 0; mode_index < 13; mode_index = mode_index+1)
             spatial_checks[mode_index] = 0;
         reset_test();
         for (integer id = 0; id < 18; id = id+1) begin
@@ -581,7 +593,7 @@ module tb_target_frame_alignment;
 
         // A reset after populated tables must erase every prior target.
         reset_test();
-        for (integer id = 20; id < 32; id = id+1) begin
+        for (integer id = 20; id < 36; id = id+1) begin
             start_camera(id, id % 6);
             check_invalidation();
             display_frame(id % 4);
@@ -597,26 +609,29 @@ module tb_target_frame_alignment;
         diagnostic_send(4'hF, 8'h00);
         diagnostic_send(4'h0, 8'h00);
         test_actual_status();
-        if (write_events < 32 || display_checks < 32 ||
-            result_checks < 30 || invalidate_checks < 31 ||
+        if (write_events < 36 || display_checks < 36 ||
+            result_checks < 34 || invalidate_checks < 35 ||
             diagnostic_checks != 14 || actual_status_checks != 19 ||
             red_display_checks == 0 || motion_display_checks == 0 ||
             buffered_mode_checks == 0 || effect_config_checks < 59 ||
             buffered_effect_checks == 0 || invalid_effect_checks == 0 ||
             no_target_effect_checks == 0 || emboss_clip_checks == 0 ||
             scharr_clip_checks == 0 || cartoon_clip_checks == 0 ||
-            inverse_clip_checks == 0 || morph_clip_checks == 0)
+            inverse_clip_checks == 0 || morph_clip_checks == 0 ||
+            binary_clip_checks == 0 || erosion_clip_checks == 0 ||
+            dilation_clip_checks == 0 || close_clip_checks == 0)
             $fatal(1, "Coverage counters did not reach required scenarios");
-        for (integer mode_index = 0; mode_index < 9; mode_index=mode_index+1)
+        for (integer mode_index = 0; mode_index < 13; mode_index=mode_index+1)
             if (spatial_checks[mode_index] == 0)
                 $fatal(1, "Spatial compensation was not exercised mode=%0d", mode_index);
-        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d effect_config=%0d buffered_effect=%0d invalid_effect=%0d no_target_effect=%0d display_modes=0..8 emboss_clip=%0d scharr_clip=%0d cartoon_clip=%0d inverse_clip=%0d morph_clip=%0d",
+        $display("TARGET_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d result=%0d invalidation=%0d mailbox=%0d diagnostic=%0d actual_status=%0d red_display=%0d motion_display=%0d buffered_mode=%0d effect_config=%0d buffered_effect=%0d invalid_effect=%0d no_target_effect=%0d display_modes=0..12 emboss_clip=%0d scharr_clip=%0d cartoon_clip=%0d inverse_clip=%0d morph_clip=%0d binary_clip=%0d erosion_clip=%0d dilation_clip=%0d close_clip=%0d",
             write_events, read_events, display_checks, result_checks,
             invalidate_checks, request_count, diagnostic_checks, actual_status_checks,
             red_display_checks, motion_display_checks, buffered_mode_checks,
             effect_config_checks, buffered_effect_checks, invalid_effect_checks,
             no_target_effect_checks, emboss_clip_checks, scharr_clip_checks, cartoon_clip_checks,
-            inverse_clip_checks, morph_clip_checks);
+            inverse_clip_checks, morph_clip_checks, binary_clip_checks,
+            erosion_clip_checks, dilation_clip_checks, close_clip_checks);
         $finish;
     end
 
@@ -640,12 +655,14 @@ module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0, DE
 endmodule
 module auto_exposure_control #(
     parameter TARGET_LOW=0, TARGET_HIGH=0, DARK_FAST=0, BRIGHT_FAST=0,
-    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0
+    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0,
+    HIGHLIGHT_ENABLE=0, FIXED_SAMPLE_COUNT=0, CHECK_BRIGHT_COUNT=1
 ) (input wire [127:0] I_clk, I_rst, I_cam_cfg_done, I_ae_cfg_done,
-    I_stats_valid, I_sum_y, I_sample_count, I_bright_count,
-    O_ae_req, O_ae, O_ag);
+    I_stats_valid, I_sum_y, I_sample_count, I_bright_count, I_p95,
+    O_ae_req, O_ae, O_ag, O_awb_hold);
 endmodule
-module ae_stats_cdc(input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
+module ae_stats_cdc #(parameter WIDTH=64)
+    (input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
     I_src_valid, I_src_data, O_dst_valid, O_dst_data);
 endmodule
 module uicfgcs520 #(parameter CLK_DIV=0)
@@ -674,9 +691,9 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
     (input wire [127:0] I_native_clk, I_rst_n, I_data, I_data_valid,
     I_data_start, I_data_end, axis_tvalid, axis_tdata, axis_tuser, axis_tlast);
 endmodule
-module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
+module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, IQ_DIAGNOSTIC_ENABLE=0)
     (input wire [127:0] axi4s_video_aclk, I_rst_n, I_effect_config, I_motion_mode_async,
-    I_color_mode_async,
+    I_color_mode_async, I_awb_hold_async,
     I_tlast, I_tuser, I_tdata, I_tvalid, I_tdest, O_tready, O_tdata,
     O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
@@ -686,9 +703,11 @@ module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0)
     O_target_result_frame_id, O_target_multi_valid, O_target_multi_hold,
     O_target_multi_boxes, O_target_multi_overflow,
     O_edge_mode_active, O_effect_config, I_tready,
-    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count,
-    O_cnn_result_valid, O_cnn_class, O_cnn_busy, O_cnn_overrun,
-    O_latency_frame_id);
+    O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count, O_ae_p95,
+    O_iq_diag_valid, O_iq_diag_data,
+    O_latency_frame_id,
+    output wire [7:0] O_target_multi_shapes);
+    assign O_target_multi_shapes = 8'd0;
 endmodule
 module mc_to_user_interface(input wire [127:0] I_clk, I_rst_n,
     I_ddr_user_wr_en, I_ddr_user_rd_en, I_ddr_user_addr, I_ddr_user_wr_data,

@@ -29,6 +29,9 @@ $sources = @(
     'user_source\hdl_source\isp\demosaic_4x_2_0\bilinear_interpolation.v',
     'sim\tb_isp_motion_camera.sv'
 )
+if (Test-Path -LiteralPath (Join-Path $projectRoot 'user_source\hdl_source\isp\iq_diagnostic_stats.v')) {
+    $sources += 'user_source\hdl_source\isp\iq_diagnostic_stats.v'
+}
 foreach ($tool in @('vsim.exe', 'vlog.exe')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ModelSimBin $tool) -PathType Leaf)) {
         throw "ModelSim tool is missing: $tool"
@@ -66,6 +69,13 @@ $primitiveSource = Join-Path $simulationDir 'ph1p_logic_dram.v'
 [IO.File]::WriteAllText($primitiveSource,
     $primitiveModule.Value + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 $compiledSources += $primitiveSource
+$sourceHashes = foreach ($source in $compiledSources) {
+    [pscustomobject]@{
+        File = Split-Path -Leaf $source
+        SHA256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+    }
+}
+$sourceHashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv') -NoTypeInformation
 $tclSources = ($compiledSources | ForEach-Object { '{' + $_.Replace('\', '/') + '}' }) -join ' '
 $broken = [int] $ExpectBrokenLast.IsPresent
 $awbHash = (Get-FileHash -LiteralPath (Join-Path $simulationDir 'awb.v') -Algorithm SHA256).Hash

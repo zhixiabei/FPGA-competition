@@ -21,14 +21,12 @@ module tb_color_target_mixer;
     integer sample_x, sample_y;
 
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_RED_MASK(MASK_VIEW),
-        .SHOW_CNN(0)) dut (
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_RED_MASK(MASK_VIEW)) dut (
         .I_clk(clk),.I_rst_n(rst_n),.I_video_de(de),
         .I_effect_mode(4'd0),.I_effect_param(8'd0),
         .I_video_user(user),.I_video_last(last),
         .I_video_hsync(hs),.I_video_vsync(vs),
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0),
-        .I_cnn_result_valid(1'b0),.I_cnn_class(3'd1),
         .I_video_rd_data(rgb),.O_video_rd_en(rd),
         .I_target_result_ready(target_ready),.I_target_found(target_found),
         .I_target_motion_mode(1'b0),.I_target_color_mode(2'd0),

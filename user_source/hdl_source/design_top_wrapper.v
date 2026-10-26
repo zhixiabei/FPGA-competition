@@ -2,15 +2,18 @@
 
 module design_top_wrapper #(
     parameter integer ENABLE_EDGE = 0, // Reset default only; button selects at runtime.
-    parameter integer RED_MULTI_ENABLE = 0, // Reserved; auxiliary detectors removed.
+    parameter integer RED_MULTI_ENABLE = 1,
     parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
     parameter integer SHOW_RAW_STATS = 0, // RAW diagnostics.
-    parameter integer ENABLE_HANDCNN = 1 // Fixed ROI + hand7; UART weights required after reset.
+    parameter integer ENABLE_HANDCNN = 0, // Enabled by the model project generator.
+    parameter integer FRUIT_SWITCH_CONTROL = 0, // SW2 level controls the fruit candidate.
+    parameter integer IQ_DIAGNOSTIC_ENABLE = 0 // Optional CSI-clock ChipWatcher probes.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
     input wire        I_resnet_uart_rx,
     output wire       O_resnet_uart_tx,
+    input wire        I_fruit_switch, // Board SW2 (B4), high runs fruit recognition.
       
     output wire       O_cam_scl,
     inout  wire       IO_cam_sda,
@@ -19,10 +22,10 @@ module design_top_wrapper #(
       
     inout wire [1:0]  I_button,
     input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
-    input wire        I_detect_key_n, // Board K2 (A9), reserved; detection is ResNet only.
+    input wire        I_detect_key_n, // Board K2 (A9), active low.
     input wire        I_effect_key_n, // Board K3 (B9), reserved.
     input wire        I_latency_switch, // Board SW1 (A4), high to show latency panel.
-    input wire        I_param_key_n, // Board K4 (C7), toggle fixed-ROI CNN.
+    input wire        I_param_key_n, // Board K4 (C7), reserved.
 
     output wire       O_screen_pwm,
     output wire       O_tmds_ch0_p,
@@ -60,6 +63,9 @@ module design_top_wrapper #(
 		
 	wire        	S_pll_lock;
     wire        	S_rst_n;
+    wire [1:0]  S_detection_mode_requested;
+    wire        S_motion_mode_requested = S_detection_mode_requested == 2'b11;
+    wire [1:0]  S_color_mode_requested = S_detection_mode_requested;
 	reg  [17:0] 	S_cam_power_cnt;
 	reg         	S_cam_pwdnb;
 	reg         	S_cam_i2c_ready;
@@ -106,22 +112,77 @@ module design_top_wrapper #(
     wire [127:0] S_hand_rgb_data;
     wire S_hand_rgb_valid,S_hand_rgb_sof;
     wire [48:0] S_hand_box_hdmi;
+    wire S_cnn_result_valid_hdmi;
+    wire [2:0] S_cnn_class_hdmi;
+    wire [31:0] S_resnet_probe_status_hdmi;
 	wire 			S_ISP_O_tlast ;
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
+    wire            S_iq_diag_valid;
+    wire [127:0]    S_iq_diag_data;
 
+    // Per-frame selected red/motion result from the AWB RGB stream.
+    wire        S_ISP_target_result_ready;
+    wire        S_ISP_target_found;
+    wire [11:0] S_ISP_target_xmin;
+    wire [11:0] S_ISP_target_xmax;
+    wire [11:0] S_ISP_target_ymin;
+    wire [11:0] S_ISP_target_ymax;
+    wire [11:0] S_ISP_target_center_x;
+    wire [11:0] S_ISP_target_center_y;
+    wire [23:0] S_ISP_target_pixels;
+    wire        S_ISP_target_frame_toggle;
+    wire        S_ISP_target_motion_mode;
+    wire [1:0]  S_ISP_target_color_mode;
+    wire [9:0]  S_ISP_target_result_frame_id;
+    wire [3:0]  S_ISP_target_multi_valid, S_ISP_target_multi_hold;
+    wire [191:0] S_ISP_target_multi_boxes;
+    wire [7:0] S_ISP_target_multi_shapes;
+    wire        S_ISP_target_multi_overflow;
+    wire        S_ISP_motion_mode_active;
+    wire [1:0]  S_ISP_color_mode_active;
+    wire        S_ISP_edge_mode_active;
     wire [11:0] S_ISP_effect_config;
-    wire        S_cnn_result_valid_hdmi;
-    wire [2:0]  S_cnn_class_hdmi;
-    wire [31:0] S_resnet_probe_status_hdmi;
+    reg [11:0]  S_target_frame_effect_config;
     wire        S_ISP_ae_stats_valid;
     wire [31:0] S_ISP_ae_sum_y;
     wire [15:0] S_ISP_ae_sample_count;
     wire [15:0] S_ISP_ae_bright_count;
+    wire [4:0] S_ISP_ae_p95;
+    wire S_awb_hold;
     wire        S_ae_stats_valid;
-    wire [63:0] S_ae_stats_data;
+    wire [68:0] S_ae_stats_data;
 
-    // Buffered video slots retain their display configuration.
+    // Keep boxes aligned to each buffered frame's causal window position.
+    // Match each display pipeline's causal window shift. CLOSE MASK shares
+    // the shape input: a majority window followed by dilation and erosion.
+    wire [1:0] S_target_spatial_shift =
+        (S_target_frame_effect_config[11:8] == 4'd2 ||
+         S_target_frame_effect_config[11:8] == 4'd6 ||
+         S_target_frame_effect_config[11:8] == 4'd7) ? 2'd3 :
+        (S_target_frame_effect_config[11:8] == 4'd4 ||
+         S_target_frame_effect_config[11:8] == 4'd8 ||
+         S_target_frame_effect_config[11:8] == 4'd10 ||
+         S_target_frame_effect_config[11:8] == 4'd11) ? 2'd1 :
+        S_target_frame_effect_config[11:8] == 4'd12 ? 2'd3 : 2'd0;
+    wire [12:0] S_target_shift_xmin = {1'b0,S_ISP_target_xmin} + {11'd0,S_target_spatial_shift};
+    wire [12:0] S_target_shift_xmax = {1'b0,S_ISP_target_xmax} + {11'd0,S_target_spatial_shift};
+    wire [12:0] S_target_shift_ymin = {1'b0,S_ISP_target_ymin} + {11'd0,S_target_spatial_shift};
+    wire [12:0] S_target_shift_ymax = {1'b0,S_ISP_target_ymax} + {11'd0,S_target_spatial_shift};
+    wire [11:0] S_target_display_xmin =
+        (S_target_shift_xmin > 13'd1279 ? 12'd1279 : S_target_shift_xmin[11:0]);
+    wire [11:0] S_target_display_xmax =
+        (S_target_shift_xmax > 13'd1279 ? 12'd1279 : S_target_shift_xmax[11:0]);
+    wire [11:0] S_target_display_ymin =
+        (S_target_shift_ymin > 13'd719 ? 12'd719 : S_target_shift_ymin[11:0]);
+    wire [11:0] S_target_display_ymax =
+        (S_target_shift_ymax > 13'd719 ? 12'd719 : S_target_shift_ymax[11:0]);
+    wire [12:0] S_target_display_center_x_sum =
+        {1'b0,S_target_display_xmin} + {1'b0,S_target_display_xmax};
+    wire [12:0] S_target_display_center_y_sum =
+        {1'b0,S_target_display_ymin} + {1'b0,S_target_display_ymax};
+
+    // Associate each target result with the DDR slot that holds its image.
     wire [1:0] S_write_frame_slot;
     wire [1:0] S_read_frame_slot;
     wire S_write_frame_start, S_read_frame_start, S_display_frame_start;
@@ -130,7 +191,59 @@ module design_top_wrapper #(
     wire S_latency_sample_strobe, S_latency_sample_valid;
     wire [9:0] S_latency_frame_id;
     wire [19:0] S_latency_total_us, S_latency_isp_us, S_latency_buffer_us;
-    wire [11:0] S_effect_config_hdmi;
+    (* async_reg = "true" *) reg [1:0] S_write_slot_meta;
+    (* async_reg = "true" *) reg [1:0] S_write_slot_sync;
+    (* async_reg = "true" *) reg [1:0] S_read_slot_meta;
+    (* async_reg = "true" *) reg [1:0] S_read_slot_sync;
+
+    // The frame's effect configuration travels with its target coordinates
+    // and DDR slot, held stable until HDMI acknowledges the full snapshot.
+    reg [88:0] S_target_mailbox;
+    reg S_target_request;
+    reg S_target_ack;
+    reg S_target_frame_pending;
+    reg S_target_frame_motion_mode;
+    reg [5:0] S_target_frame_wait;
+    (* async_reg = "true" *) reg S_target_ack_meta;
+    (* async_reg = "true" *) reg S_target_ack_sync;
+    (* async_reg = "true" *) reg S_target_toggle_meta;
+    (* async_reg = "true" *) reg S_target_toggle_sync;
+    reg [85:0] S_target_slots [0:3];
+    reg [3:0] S_target_slots_valid;
+    integer S_target_slot_index;
+    wire S_bridge_ready, S_bridge_motion, S_bridge_found;
+    wire [1:0] S_bridge_color_mode;
+    wire [11:0] S_bridge_effect_config;
+    wire [11:0] S_bridge_xmin, S_bridge_xmax, S_bridge_ymin, S_bridge_ymax;
+    wire [11:0] S_bridge_center_x, S_bridge_center_y;
+    wire [3:0] S_bridge_multi_valid, S_bridge_multi_hold;
+    wire [191:0] S_bridge_multi_boxes;
+    wire [7:0] S_bridge_multi_shapes;
+    wire S_bridge_multi_overflow;
+    wire S_target_result_valid_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_ready : S_target_slots_valid[S_read_slot_sync];
+    wire [85:0] S_target_display_result = S_target_slots[S_read_slot_sync];
+    wire [11:0] S_effect_config_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_effect_config : S_target_display_result[85:74];
+    wire S_target_motion_mode_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_motion : S_target_display_result[73];
+    wire [1:0] S_target_color_mode_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_color_mode : 2'b00;
+    wire S_target_found_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_found : S_target_display_result[72];
+    wire [11:0] S_target_xmin_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_xmin : S_target_display_result[71:60];
+    wire [11:0] S_target_xmax_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_xmax : S_target_display_result[59:48];
+    wire [11:0] S_target_ymin_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_ymin : S_target_display_result[47:36];
+    wire [11:0] S_target_ymax_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_ymax : S_target_display_result[35:24];
+    wire [11:0] S_target_center_x_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_center_x : S_target_display_result[23:12];
+    wire [11:0] S_target_center_y_hdmi = RED_MULTI_ENABLE ?
+        S_bridge_center_y : S_target_display_result[11:0];
+
 
     wire        S_ddr_clk;
     wire        S_hdmi_pixel_clk;
@@ -168,10 +281,10 @@ module design_top_wrapper #(
     wire        S_vo_dbg_fifo_rd_en;
     wire        S_vo_dbg_fifo_empty;
 
+    reg [1:0] S_video_calib_sync;
+    reg S_video_ddr_started;
+    wire S_video_ddr_rst_n;
     wire        S_init_calib_complete; 
-    reg [1:0]   S_video_calib_sync;
-    reg         S_video_ddr_started;
-    wire        S_video_ddr_rst_n;
     wire[24:0]  S_mc_app_addr;          
     wire[2:0]   S_mc_app_cmd;           
     wire        S_mc_app_en;            
@@ -459,6 +572,87 @@ module design_top_wrapper #(
         end
     end
 
+    // Legacy test configuration only; production uses target_frame_bridge.
+    // Keep the original register hierarchy for the single-target regression.
+    always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
+        if(!S_rst_n) begin
+            S_write_slot_meta <= 2'd0;
+            S_write_slot_sync <= 2'd0;
+            S_target_mailbox <= 89'd0;
+            S_target_request <= 1'b0;
+            S_target_frame_pending <= 1'b0;
+            S_target_frame_motion_mode <= 1'b0;
+            S_target_frame_effect_config <= DEFAULT_EFFECT_CONFIG;
+            S_target_frame_wait <= 6'd0;
+            S_target_ack_meta <= 1'b0;
+            S_target_ack_sync <= 1'b0;
+        end else if (!RED_MULTI_ENABLE) begin
+            S_write_slot_meta <= S_write_frame_slot;
+            S_write_slot_sync <= S_write_slot_meta;
+            S_target_ack_meta <= S_target_ack;
+            S_target_ack_sync <= S_target_ack_meta;
+            if(S_ISP_O_tuser) begin
+                S_target_frame_pending <= 1'b1;
+                S_target_frame_motion_mode <= S_ISP_motion_mode_active;
+                S_target_frame_effect_config <= S_ISP_effect_config;
+                S_target_frame_wait <= 6'd0;
+            end else if(S_target_frame_pending && S_target_frame_wait != 6'd31)
+                S_target_frame_wait <= S_target_frame_wait + 1'b1;
+
+            if(S_ISP_target_result_ready &&
+               (S_target_request == S_target_ack_sync)) begin
+                S_target_mailbox <= {S_target_frame_effect_config,
+                    S_ISP_target_motion_mode,
+                    1'b1, S_write_slot_sync, S_ISP_target_found,
+                    S_target_display_xmin, S_target_display_xmax,
+                    S_target_display_ymin, S_target_display_ymax,
+                    S_target_display_center_x_sum[12:1],
+                    S_target_display_center_y_sum[12:1]};
+                S_target_request <= ~S_target_request;
+                S_target_frame_pending <= 1'b0;
+            end else if(S_target_frame_pending && S_target_frame_wait == 6'd31 &&
+                        (S_target_request == S_target_ack_sync)) begin
+                // Invalidate reused slot metadata after the DDR frame-start
+                // synchronizer has assigned the write slot.  A truncated
+                // frame must not retain the box from four frames earlier.
+                // 32 CSI clocks covers the existing DDR/CSI sync latency.
+                S_target_mailbox <= {S_target_frame_effect_config,
+                    S_target_frame_motion_mode,
+                    1'b0, S_write_slot_sync, 73'd0};
+                S_target_request <= ~S_target_request;
+                S_target_frame_pending <= 1'b0;
+            end
+        end
+    end
+
+    // The displayed slot is selected during vertical blanking by video_out;
+    // it is stable well before hdmi_mixer latches the geometry at pixel (0,0).
+    // Keep one result per DDR slot so the box follows the stored frame rather
+    // than the camera's newer, still-undisplayed frame.
+    always @(posedge S_hdmi_pixel_clk or negedge S_hdmi_rst_n) begin
+        if(!S_hdmi_rst_n) begin
+            S_target_toggle_meta <= 1'b0;
+            S_target_toggle_sync <= 1'b0;
+            S_target_ack <= 1'b0;
+            S_read_slot_meta <= 2'd0;
+            S_read_slot_sync <= 2'd0;
+            S_target_slots_valid <= 4'd0;
+            for(S_target_slot_index=0; S_target_slot_index<4; S_target_slot_index=S_target_slot_index+1)
+                S_target_slots[S_target_slot_index] <= {DEFAULT_EFFECT_CONFIG,74'd0};
+        end else if (!RED_MULTI_ENABLE) begin
+            S_target_toggle_meta <= S_target_request;
+            S_target_toggle_sync <= S_target_toggle_meta;
+            S_read_slot_meta <= S_read_frame_slot;
+            S_read_slot_sync <= S_read_slot_meta;
+            if(S_target_toggle_sync != S_target_ack) begin
+                S_target_slots[S_target_mailbox[74:73]] <=
+                    {S_target_mailbox[88:77], S_target_mailbox[76], S_target_mailbox[72:0]};
+                S_target_slots_valid[S_target_mailbox[74:73]] <= S_target_mailbox[75];
+                S_target_ack <= S_target_toggle_sync;
+            end
+        end
+    end
+
     assign S_lane_error_any = |S_lane_error;
 
     assign S_vo_dbg_fifo_rst = 1'b0;
@@ -546,6 +740,17 @@ module design_top_wrapper #(
 	
 
   
+    video_mode_control #(
+        .DEBOUNCE_CYCLES(1000000),
+        .DEFAULT_MODE(0)
+    ) u_detection_mode_control (
+        .I_clk(I_sys_clk),
+        .I_rst_n(S_rst_n),
+        .I_key_n(I_detect_key_n),
+        .O_detection_mode(S_detection_mode_requested),
+        .O_edge_mode()
+    );
+
     wire [3:0] S_effect_mode_requested;
     wire [7:0] S_effect_param_requested;
     wire [11:0] S_effect_config_csi;
@@ -572,12 +777,12 @@ module design_top_wrapper #(
         .O_dst_data(S_effect_config_csi)
     );
 
-  ae_stats_cdc u_ae_stats_cdc (
+  ae_stats_cdc #(.WIDTH(69)) u_ae_stats_cdc (
       .I_src_clk(S_csi_rx_clk),
       .I_dst_clk(S_24m_clk),
       .I_rst_n(S_rst_n),
       .I_src_valid(S_ISP_ae_stats_valid),
-      .I_src_data({S_ISP_ae_sum_y,S_ISP_ae_sample_count,S_ISP_ae_bright_count}),
+      .I_src_data({S_ISP_ae_p95,S_ISP_ae_sum_y,S_ISP_ae_sample_count,S_ISP_ae_bright_count}),
       .O_dst_valid(S_ae_stats_valid),
       .O_dst_data(S_ae_stats_data)
   );
@@ -591,7 +796,11 @@ module design_top_wrapper #(
       .BRIGHT_FAST(144),
       .GAIN_MAX(176),
       .SETTLE_FRAMES(3),
-      .AVERAGE_FRAMES(6)
+      .AVERAGE_FRAMES(6), .HIGHLIGHT_ENABLE(1),
+      .FIXED_SAMPLE_COUNT(28800),
+      // The complete-frame publisher guarantees near_count <= sample_count.
+      // Near/clip diagnostics stay in the source domain; AE uses P95.
+      .CHECK_BRIGHT_COUNT(0)
   ) u_auto_exposure (
       .I_clk(S_24m_clk),
       .I_rst(~S_rst_n),
@@ -601,6 +810,8 @@ module design_top_wrapper #(
       .I_sum_y(S_ae_stats_data[63:32]),
       .I_sample_count(S_ae_stats_data[31:16]),
       .I_bright_count(S_ae_stats_data[15:0]),
+      .I_p95(S_ae_stats_data[68:64]),
+      .O_awb_hold(S_awb_hold),
       .O_ae_req(S_ae_req),
       .O_ae(S_ae),
       .O_ag(S_ag)
@@ -811,7 +1022,16 @@ end else begin: no_raw_diagnostics
     assign S_ae_readout_data = 28'd0;
 end endgenerate
 
-    video_latency_monitor u_video_latency (
+    wire S_bridge_write_complete, S_latency_write_complete;
+    video_ddr_write_progress u_ddr_write_progress (
+        .I_clk(S_ddr_clk), .I_rst_n(S_rst_n),
+        .I_write_start(S_write_frame_start), .I_write_word(S_vi_ddr_wr_en),
+        .O_bridge_complete(S_bridge_write_complete),
+        .O_latency_complete(S_latency_write_complete)
+    );
+    video_latency_monitor #(
+        .USE_EXTERNAL_WRITE_PROGRESS(1)
+    ) u_video_latency (
         .I_time_clk(I_sys_clk), .I_csi_clk(S_csi_rx_clk),
         .I_ddr_clk(S_ddr_clk), .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
         .I_raw_sof(S_raw_tuser), .I_raw_valid(S_raw_tvalid),
@@ -824,35 +1044,57 @@ end endgenerate
         .I_display_frame_start(S_display_frame_start),
         .O_sample_strobe(S_latency_sample_strobe), .O_sample_valid(S_latency_sample_valid),
         .O_frame_id(S_latency_frame_id), .O_total_us(S_latency_total_us),
-        .O_isp_us(S_latency_isp_us), .O_buffer_us(S_latency_buffer_us)
+        .O_isp_us(S_latency_isp_us), .O_buffer_us(S_latency_buffer_us),
+        .I_write_complete(S_latency_write_complete)
     );
 
-    // Only the 12-bit display setting travels with each buffered frame.
-    // Detector coordinates, multi-target slots and result mailboxes are gone.
-    effect_frame_bridge #(
-        .DEFAULT_EFFECT_CONFIG(DEFAULT_EFFECT_CONFIG)
-    ) u_effect_frame_bridge (
+    target_frame_bridge #(
+        .DEFAULT_EFFECT_CONFIG(DEFAULT_EFFECT_CONFIG),
+        .COMPACT_MODE_PAYLOAD(1),
+        .USE_EXTERNAL_WRITE_PROGRESS(1)
+    ) u_target_frame_bridge (
         .I_csi_clk(S_csi_rx_clk), .I_ddr_clk(S_ddr_clk),
         .I_hdmi_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
-        .I_frame_start(S_ISP_O_tuser), .I_effect_config(S_ISP_effect_config),
+        .I_frame_start(S_ISP_O_tuser), .I_frame_id(S_isp_frame_id),
+        .I_effect_config(S_ISP_effect_config), .I_motion_mode(S_ISP_motion_mode_active),
+        .I_color_mode(S_ISP_color_mode_active),
+        .I_result_ready(S_ISP_target_result_ready),
+        .I_result_frame_id(S_ISP_target_result_frame_id),
+        .I_result_found(S_ISP_target_found), .I_result_motion_mode(S_ISP_target_motion_mode),
+        .I_result_color_mode(S_ISP_target_color_mode),
+        .I_result_xmin(S_ISP_target_xmin), .I_result_xmax(S_ISP_target_xmax),
+        .I_result_ymin(S_ISP_target_ymin), .I_result_ymax(S_ISP_target_ymax),
+        .I_result_center_x(S_ISP_target_center_x), .I_result_center_y(S_ISP_target_center_y),
+        .I_multi_valid(S_ISP_target_multi_valid), .I_multi_hold(S_ISP_target_multi_hold),
+        .I_multi_boxes(S_ISP_target_multi_boxes), .I_multi_overflow(S_ISP_target_multi_overflow),
+        .I_multi_shapes(S_ISP_target_multi_shapes),
         .I_write_start(S_write_frame_start), .I_write_slot(S_write_start_slot),
+        .I_write_word(S_vi_ddr_wr_en),
         .I_read_start(S_read_frame_start), .I_read_slot(S_video_out_rp),
-        .O_effect_config(S_effect_config_hdmi)
+        .O_ready(S_bridge_ready), .O_effect_config(S_bridge_effect_config),
+        .O_motion_mode(S_bridge_motion), .O_color_mode(S_bridge_color_mode),
+        .O_found(S_bridge_found),
+        .O_xmin(S_bridge_xmin), .O_xmax(S_bridge_xmax),
+        .O_ymin(S_bridge_ymin), .O_ymax(S_bridge_ymax),
+        .O_center_x(S_bridge_center_x), .O_center_y(S_bridge_center_y),
+        .O_multi_valid(S_bridge_multi_valid), .O_multi_hold(S_bridge_multi_hold),
+        .O_multi_boxes(S_bridge_multi_boxes), .O_multi_shapes(S_bridge_multi_shapes),
+        .O_multi_overflow(S_bridge_multi_overflow),
+        .I_write_complete(S_bridge_write_complete)
     );
 
 //ISP算法顶层模块
 isp_top #(
         .ENABLE_EDGE(ENABLE_EDGE),
-        .ENABLE_GESTURE(0), // Retired embedded CNN cannot be selected by this top.
-        .RED_MULTI_ENABLE(0),
-        .ENABLE_TARGET_DETECTION(0),
-        .ENABLE_HANDCNN_TAP(ENABLE_HANDCNN != 0)
+        .RED_MULTI_ENABLE(RED_MULTI_ENABLE),
+        .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE),
+        .ENABLE_HANDCNN_TAP(ENABLE_HANDCNN)
     ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
 .I_effect_config (S_effect_config_csi),
-.I_motion_mode_async(1'b0),
-.I_color_mode_async(2'd0),
+.I_motion_mode_async(S_motion_mode_requested),
+.I_color_mode_async(S_color_mode_requested),
 .I_tlast         (S_raw_tlast	),
 .I_tuser         (S_raw_tuser	),
 .I_tdata         (S_raw_tdata	),
@@ -860,20 +1102,63 @@ isp_top #(
 .I_tdest         (S_raw_frame_id),
 .O_tready        (S_ISP_O_tready),
 .O_tdata         (S_ISP_O_tdata ),
-.O_hand_rgb_data (S_hand_rgb_data),
+.O_hand_rgb_data(S_hand_rgb_data),
 .O_hand_rgb_valid(S_hand_rgb_valid),
-.O_hand_rgb_sof  (S_hand_rgb_sof),
+.O_hand_rgb_sof(S_hand_rgb_sof),
 .O_tlast         (S_ISP_O_tlast ),
 .O_tuser         (S_ISP_O_tuser ),
 .O_tvalid        (S_ISP_O_tvalid),
+.O_target_result_ready (S_ISP_target_result_ready),
+.O_target_found        (S_ISP_target_found),
+.O_target_xmin         (S_ISP_target_xmin),
+.O_target_xmax         (S_ISP_target_xmax),
+.O_target_ymin         (S_ISP_target_ymin),
+.O_target_ymax         (S_ISP_target_ymax),
+.O_target_center_x     (S_ISP_target_center_x),
+.O_target_center_y     (S_ISP_target_center_y),
+.O_target_pixels       (S_ISP_target_pixels),
+.O_target_frame_toggle (S_ISP_target_frame_toggle),
+.O_target_motion_mode  (S_ISP_target_motion_mode),
+.O_target_color_mode   (S_ISP_target_color_mode),
+.O_motion_mode_active  (S_ISP_motion_mode_active),
+.O_color_mode_active   (S_ISP_color_mode_active),
+.O_target_result_frame_id(S_ISP_target_result_frame_id),
+.O_target_multi_valid  (S_ISP_target_multi_valid),
+.O_target_multi_hold   (S_ISP_target_multi_hold),
+.O_target_multi_boxes  (S_ISP_target_multi_boxes),
+.O_target_multi_shapes (S_ISP_target_multi_shapes),
+.O_target_multi_overflow(S_ISP_target_multi_overflow),
+.O_edge_mode_active    (S_ISP_edge_mode_active),
 .O_effect_config       (S_ISP_effect_config),
 .O_ae_stats_valid      (S_ISP_ae_stats_valid),
 .O_ae_sum_y            (S_ISP_ae_sum_y),
 .O_ae_sample_count     (S_ISP_ae_sample_count),
 .O_ae_bright_count     (S_ISP_ae_bright_count),
+.O_ae_p95              (S_ISP_ae_p95),
+.I_awb_hold_async      (S_awb_hold),
+.O_iq_diag_valid       (S_iq_diag_valid),
+.O_iq_diag_data        (S_iq_diag_data),
 .O_latency_frame_id   (S_isp_frame_id),
 .I_tready        ()
   );
+
+    generate if (IQ_DIAGNOSTIC_ENABLE != 0) begin : iq_diagnostics
+        // Retain an actual register endpoint for ChipWatcher. Sample valid
+        // and data together on S_csi_rx_clk; these are source-frame snapshots.
+        // This entire branch is absent from the default production build.
+        (* keep="true", preserve="true" *) reg valid;
+        (* keep="true", preserve="true" *) reg [127:0] data;
+        always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
+            if (!S_rst_n) begin
+                valid <= 1'b0;
+                data <= 128'd0;
+            end else begin
+                valid <= S_iq_diag_valid;
+                if (S_iq_diag_valid)
+                    data <= S_iq_diag_data;
+            end
+        end
+    end endgenerate
 
     wire S_rnet_mem_valid,S_rnet_mem_write,S_rnet_mem_ready,S_rnet_rsp_valid,S_rnet_memory_error;
     wire [31:0] S_rnet_mem_addr;
@@ -897,8 +1182,9 @@ generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
     wire [11:0] x1,y1,x2,y2;
     wire [15:0] result_frame;
     wire [31:0] probe_status;
-    handfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1)) u_handcnn(
-        .key4_n(I_param_key_n),
+    handfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),
+        .SWITCH_CONTROL(FRUIT_SWITCH_CONTROL)) u_handcnn(
+        .key4_n(I_param_key_n),.run_switch(I_fruit_switch),
         .clk(S_ddr_clk),.rst_n(S_rst_n),.calibrated(S_init_calib_complete),.memory_error(S_rnet_memory_error),
         .uart_rx(I_resnet_uart_rx),.uart_tx(O_resnet_uart_tx),
         .frame_start(raw_sof),.frame_slot(raw_slot),.video_write(raw_write),.video_addr(raw_addr),.video_data(raw_data),
@@ -1004,7 +1290,7 @@ end endgenerate
 
     mc_to_user_interface u_mc_to_user_interface(
         .I_clk                   ( S_ddr_clk               ),
-        .I_rst_n                 ( S_video_ddr_rst_n       ),
+        .I_rst_n                 ( S_video_ddr_rst_n    ),
 
         .I_ddr_user_wr_en        ( S_ddr_user_wr_en        ),
         .I_ddr_user_rd_en        ( S_ddr_user_rd_en        ),
@@ -1139,23 +1425,17 @@ end endgenerate
         .IMG_WIDTH  ( 1280 ),
         .IMG_HEIGHT ( 720  ),
         .DEBUG_MODE ( 0    ),
-        .SHOW_CAMERA_STATUS ( 0 ), // Remove the four camera-status blocks.
-        .SHOW_COLOR_TARGET  ( 0 ), // ResNet is the only active detector.
-        .MULTI_TARGET_ENABLE( 0 ),
+        .SHOW_CAMERA_STATUS ( 0 ), // Hide camera verification dots and fault-code overlay.
+        .SHOW_COLOR_TARGET  ( 1 ),
+        .MULTI_TARGET_ENABLE( RED_MULTI_ENABLE ),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
         .SHOW_LATENCY       ( 1 ),
         .LATENCY_SWITCH_ENABLE( 1 ),
         .SHOW_EFFECT_LABEL  ( 1 ),
-        // The current model consumes the whole frame, not a centered crop.
-        .CNN_FULL_FRAME_INPUT ( 1 ),
+        .SHOW_CNN(ENABLE_HANDCNN),
         .HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),
-        // Keep the last completed result while the next inference computes.
-        // The second status row distinguishes loading/capture/inference/errors.
-        // Hand-CNN and ResNet refresh on completed results, without expiry.
-        .CNN_RESULT_TIMEOUT_FRAMES ( (ENABLE_HANDCNN != 0) ? 0 : 60 ),
+        .CNN_RESULT_TIMEOUT_FRAMES(0),
         .SHOW_RESNET_RUNTIME ( ENABLE_HANDCNN != 0 ? 1 : 0 ),
-        // The resource probe has no classifier: its class remains NOTHING.
-        .SHOW_RESNET_PROBE  ( 0 ),
         .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
@@ -1179,6 +1459,7 @@ end endgenerate
         .I_latency_total_us(S_latency_total_us),
         .I_latency_isp_us(S_latency_isp_us),
         .I_latency_buffer_us(S_latency_buffer_us),
+        .I_cnn_enable(FRUIT_SWITCH_CONTROL != 0 ? I_fruit_switch : 1'b1),
         .I_cnn_result_valid(S_cnn_result_valid_hdmi),
         .I_cnn_class(S_cnn_class_hdmi),
         .I_hand_box_valid(S_hand_box_hdmi[48]),
@@ -1187,20 +1468,21 @@ end endgenerate
         .O_display_frame_start(S_display_frame_start),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),
-        .I_target_result_ready ( 1'b0 ),
-        .I_target_found        ( 1'b0 ),
-        .I_target_motion_mode  ( 1'b0 ),
-        .I_target_color_mode   ( 2'd0 ),
-        .I_target_xmin         ( 12'd0 ),
-        .I_target_xmax         ( 12'd0 ),
-        .I_target_ymin         ( 12'd0 ),
-        .I_target_ymax         ( 12'd0 ),
-        .I_target_center_x     ( 12'd0 ),
-        .I_target_center_y     ( 12'd0 ),
-        .I_target_multi_valid  ( 4'd0 ),
-        .I_target_multi_hold   ( 4'd0 ),
-        .I_target_multi_boxes  ( 192'd0 ),
-        .I_target_multi_overflow( 1'b0 ),
+        .I_target_result_ready ( S_target_result_valid_hdmi ),
+        .I_target_found        ( S_target_found_hdmi ),
+        .I_target_motion_mode  ( S_target_motion_mode_hdmi ),
+        .I_target_color_mode   ( S_target_color_mode_hdmi ),
+        .I_target_xmin         ( S_target_xmin_hdmi ),
+        .I_target_xmax         ( S_target_xmax_hdmi ),
+        .I_target_ymin         ( S_target_ymin_hdmi ),
+        .I_target_ymax         ( S_target_ymax_hdmi ),
+        .I_target_center_x     ( S_target_center_x_hdmi ),
+        .I_target_center_y     ( S_target_center_y_hdmi ),
+        .I_target_multi_valid  ( S_bridge_multi_valid ),
+        .I_target_multi_hold   ( S_bridge_multi_hold ),
+        .I_target_multi_boxes  ( S_bridge_multi_boxes ),
+        .I_target_multi_shapes ( S_bridge_multi_shapes ),
+        .I_target_multi_overflow( S_bridge_multi_overflow ),
         .O_hdmi_vsync    ( S_hdmi_out_vsync   ),
         .O_hdmi_hsync    ( S_hdmi_out_hsync   ),
         .O_hdmi_de       ( S_hdmi_out_de      ),

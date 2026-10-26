@@ -1,7 +1,9 @@
 // KEY4 is active low. One debounced press toggles continuous recognition;
 // release and long holds never produce additional toggles. Reset is stopped.
+// LEVEL_CONTROL follows the debounced active-low input instead of toggling.
 module handfixed_key_control #(
-    parameter integer DEBOUNCE_CYCLES=1333334
+    parameter integer DEBOUNCE_CYCLES=1333334,
+    parameter integer LEVEL_CONTROL=0
 )(
     input wire clk,rst_n,key_n,
     output reg enabled
@@ -20,7 +22,8 @@ module handfixed_key_control #(
         else if(key_sync==stable) count<=0;
         else if(count==DEBOUNCE_CYCLES-1) begin
             count<=0;stable<=key_sync;
-            if(!key_sync) enabled<=!enabled;
+            if(LEVEL_CONTROL!=0) enabled<=!key_sync;
+            else if(!key_sync) enabled<=!enabled;
         end else count<=count+1'b1;
     end
 endmodule

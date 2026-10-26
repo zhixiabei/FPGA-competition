@@ -1,12 +1,16 @@
 param(
     [string]$Python='E:/Python314/python.exe',
     [string]$Td='E:/TD_6.2.1_Engineer_6.2.168.116/bin/td_commands_prompt.exe',
-    [switch]$Fruit
+    [switch]$Fruit,
+    [string]$Project=''
 )
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
 $taskOutput=Join-Path $taskRoot 'build/gesture/td'
 if($Fruit){$taskOutput=Join-Path $taskRoot 'build/fruit/td'}
+if($Project){
+    $taskOutput=if([IO.Path]::IsPathRooted($Project)){$Project}else{Join-Path $taskRoot $Project}
+}
 $taskPreviousProject=$env:HANDFIXED_BUILD_PROJECT
 $taskPreviousFruit=$env:FRUITFIXED_BUILD
 try {

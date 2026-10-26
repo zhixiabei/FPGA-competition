@@ -1,4 +1,4 @@
-// Nine display modes, with ISP-precomputed spatial effects; two clocks.
+// Thirteen display modes, with ISP-precomputed spatial effects; two clocks.
 module display_effects_rgb888 (
     input  wire        I_clk,
     input  wire        I_rst_n,
@@ -16,6 +16,10 @@ module display_effects_rgb888 (
     localparam [3:0] MODE_CARTOON    = 4'd6;
     localparam [3:0] MODE_EDGE_INVERSE = 4'd7;
     localparam [3:0] MODE_MORPH_EDGE   = 4'd8;
+    localparam [3:0] MODE_BINARY       = 4'd9;
+    localparam [3:0] MODE_EROSION      = 4'd10;
+    localparam [3:0] MODE_DILATION     = 4'd11;
+    localparam [3:0] MODE_CLOSE_MASK   = 4'd12;
 
     reg [23:0] rgb_d;
     reg [7:0] luma_d;
@@ -74,7 +78,8 @@ module display_effects_rgb888 (
         case (mode_d)
             MODE_GRAYSCALE: effect_comb = {luma_d, luma_d, luma_d};
             MODE_EDGE, MODE_EMBOSS, MODE_CARTOON,
-            MODE_MORPH_EDGE: effect_comb = rgb_d;
+            MODE_MORPH_EDGE, MODE_BINARY, MODE_EROSION,
+            MODE_DILATION, MODE_CLOSE_MASK: effect_comb = rgb_d;
             MODE_NEGATIVE, MODE_EDGE_INVERSE: effect_comb = ~rgb_d;
             MODE_COLOR_KEEP: effect_comb = keep_color_d ? rgb_d :
                                          {luma_d, luma_d, luma_d};

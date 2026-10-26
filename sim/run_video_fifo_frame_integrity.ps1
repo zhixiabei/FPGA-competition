@@ -19,7 +19,6 @@ $sources = @(
     'user_source\hdl_source\isp\data96_128\data96_128.v',
     'user_source\hdl_source\video_in.v',
     'user_source\hdl_source\video_out.v',
-    'user_source\hdl_source\handcnn\handcnn_snapshot.v',
     'user_source\ip_source\w128_d512_fifo\w128_d512_fifo.v',
     'user_source\ip_source\w128_d512_fifo\soft_fifo_al_4057d6b76aa6.v',
     'sim\tb_video_fifo_frame_integrity.sv'
@@ -67,19 +66,23 @@ onbreak {resume}
 vlib work
 vlog -sv $tclSources
 foreach phase {0.3 4.3 9.3 14.3} {
-    vsim -onfinish stop -t ps -gH=32 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
+    vsim -t ps -gH=32 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
+    onfinish stop
     run -all
     quit -sim
 }
-vsim -onfinish stop -t ps -gH=720 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=9.3 work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR {+EXPORT=$tclDir}
+vsim -t ps -gH=720 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=9.3 work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR {+EXPORT=$tclDir}
+onfinish stop
 run -all
 quit -sim
 foreach mode {color edge} {
-    vsim -onfinish stop -t ps work.tb_video_fifo_frame_reader "+MEM=$tclDir/ddr_`${mode}.memh" "+REF=$tclDir/reference_`${mode}.memh" +FRAMES=1
+    vsim -t ps work.tb_video_fifo_frame_reader "+MEM=$tclDir/ddr_`${mode}.memh" "+REF=$tclDir/reference_`${mode}.memh" +FRAMES=1
+    onfinish stop
     run -all
     quit -sim
 }
-vsim -onfinish stop -t ps work.tb_video_fifo_frame_reader +STRESS +FRAMES=2
+vsim -t ps work.tb_video_fifo_frame_reader +STRESS +FRAMES=2
+onfinish stop
 run -all
 quit -sim
 quit -code 0 -force

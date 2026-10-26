@@ -14,13 +14,13 @@ module hdmi_mixer #(
     parameter integer SHOW_LATENCY = 0,
     parameter integer LATENCY_SWITCH_ENABLE = 0,
     parameter integer SHOW_EFFECT_LABEL = 0,
-    parameter integer SHOW_CNN = 1,
+    parameter integer SHOW_CNN = 0,
     parameter integer CNN_FULL_FRAME_INPUT = 0,
     parameter integer HANDCNN_DYNAMIC_ROI = 0,
     parameter integer SHOW_RESNET_PROBE = 0,
     parameter integer SHOW_RESNET_RUNTIME = 0,
-    parameter integer MULTI_TARGET_ENABLE = 0,
-    parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60
+    parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60,
+    parameter integer MULTI_TARGET_ENABLE = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -45,8 +45,10 @@ module hdmi_mixer #(
     input wire [19:0] I_latency_total_us,
     input wire [19:0] I_latency_isp_us,
     input wire [19:0] I_latency_buffer_us,
-    input wire        I_cnn_result_valid,
-    input wire [2:0]  I_cnn_class,
+
+    input wire I_cnn_enable,
+    input wire I_cnn_result_valid,
+    input wire [2:0] I_cnn_class,
     input wire I_hand_box_valid,
     input wire [47:0] I_hand_box,
     input wire [31:0] I_resnet_probe_status,
@@ -71,6 +73,7 @@ module hdmi_mixer #(
     input wire [3:0]  I_target_multi_hold,
     // Slot i occupies i*48+:48, with {ymax,ymin,xmax,xmin}.
     input wire [191:0] I_target_multi_boxes,
+    input wire [7:0] I_target_multi_shapes,
     input wire        I_target_multi_overflow,
 
     output reg        O_hdmi_vsync,
@@ -93,7 +96,25 @@ module hdmi_mixer #(
     reg [11:0] S_y_1d;
     reg [11:0] S_y_2d;
 
+    reg [2:0] S_cnn_class;
     reg [3:0] S_effect_mode;
+    wire S_cnn_visible;
+    generate if (SHOW_CNN != 0) begin: cnn_visibility
+        (* async_reg = "true" *) reg enable_meta, enable_sync;
+        reg enable_active;
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if (!I_rst_n) begin
+                enable_meta<=0;enable_sync<=0;enable_active<=0;
+            end else begin
+                enable_meta<=I_cnn_enable;enable_sync<=enable_meta;
+                if(I_video_user) enable_active<=enable_sync;
+            end
+        end
+        assign S_cnn_visible=enable_active;
+    end else begin: no_cnn_visibility
+        assign S_cnn_visible=1'b0;
+    end endgenerate
+
     wire S_latency_visible;
     generate if (LATENCY_SWITCH_ENABLE != 0) begin: latency_switch
         (* async_reg = "true" *) reg show_meta, show_sync;
@@ -122,8 +143,6 @@ module hdmi_mixer #(
             S_effect_mode <= I_effect_mode;
         end
     end
-
-    reg [2:0] S_cnn_class;
 
     // USER accompanies the first pixel: bypass the active registers on that
     // edge so the whole frame uses one coherent configuration, including SOF.
@@ -258,6 +277,9 @@ module hdmi_mixer #(
     reg [CNN_AGE_WIDTH-1:0] S_cnn_result_age;
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
+            S_cnn_class <= 3'd1;
+            S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
+        end else if (SHOW_CNN != 0 && !S_cnn_visible) begin
             S_cnn_class <= 3'd1;
             S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
         end else if (I_cnn_result_valid) begin
@@ -419,8 +441,46 @@ module hdmi_mixer #(
         end
     endfunction
 
+    function [7:0] F_target_shape_char;
+        input [1:0] shape;
+        input [1:0] char_index;
+        begin
+            case (shape)
+                2'd1: begin
+                    case (char_index)
+                        0: F_target_shape_char = "S";
+                        1: F_target_shape_char = "Q";
+                        default: F_target_shape_char = "R";
+                    endcase
+                end
+                2'd2: begin
+                    case (char_index)
+                        0: F_target_shape_char = "T";
+                        1: F_target_shape_char = "R";
+                        default: F_target_shape_char = "I";
+                    endcase
+                end
+                2'd3: begin
+                    case (char_index)
+                        0: F_target_shape_char = "C";
+                        1: F_target_shape_char = "I";
+                        default: F_target_shape_char = "R";
+                    endcase
+                end
+                default: begin
+                    case (char_index)
+                        0: F_target_shape_char = "U";
+                        1: F_target_shape_char = "N";
+                        default: F_target_shape_char = "K";
+                    endcase
+                end
+            endcase
+        end
+    endfunction
+
     generate if (MULTI_TARGET_ENABLE != 0) begin: multi_target
         reg [3:0] valid, held;
+        reg [7:0] shapes;
         reg overflow;
         reg [11:0] xmin [0:3], xmax [0:3], ymin [0:3], ymax [0:3];
         reg [3:0] label_valid, label_compact;
@@ -436,6 +496,8 @@ module hdmi_mixer #(
         reg [1:0] box_slot, label_slot;
         reg [11:0] label_local_x, label_local_y;
         reg [7:0] label_char;
+        wire [12:0] full_width = S_target_motion_mode ? 13'd128 : 13'd192;
+        wire [12:0] compact_width = S_target_motion_mode ? 13'd64 : 13'd128;
 
         assign S_multi_count = {2'd0,valid[0]} + {2'd0,valid[1]} +
                                {2'd0,valid[2]} + {2'd0,valid[3]};
@@ -451,12 +513,12 @@ module hdmi_mixer #(
         // Four labels take at most 128 clocks to place. Starting at row 16
         // keeps the scan behind layout, including worst-case rejected slots.
         always @(*) begin
-            candidate_width = layout_attempt[4] ? 13'd64 : 13'd128;
+            candidate_width = layout_attempt[4] ? compact_width : full_width;
             anchor_x = {1'b0,xmin[layout_slot]};
             box_right = {1'b0,xmax[layout_slot]};
             candidate_x = anchor_x;
             candidate_y = 13'd16;
-            candidate_valid = IMG_WIDTH >= 128 && IMG_HEIGHT >= 32;
+            candidate_valid = IMG_WIDTH >= candidate_width && IMG_HEIGHT >= 32;
             if (candidate_x+candidate_width > IMG_WIDTH)
                 candidate_x = IMG_WIDTH-candidate_width;
             case (layout_attempt[3:2])
@@ -517,7 +579,7 @@ module hdmi_mixer #(
                 if (label_valid[peer_index] &&
                     F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
                         {1'b0,label_x[peer_index]},{1'b0,label_y[peer_index]},
-                        label_compact[peer_index] ? 13'd64 : 13'd128,13'd16))
+                        label_compact[peer_index] ? compact_width : full_width,13'd16))
                     candidate_valid = 1'b0;
         end
 
@@ -525,6 +587,7 @@ module hdmi_mixer #(
             if (!I_rst_n) begin
                 valid <= 4'd0;
                 held <= 4'd0;
+                shapes <= 8'd0;
                 overflow <= 1'b0;
                 label_valid <= 4'd0;
                 label_compact <= 4'd0;
@@ -539,6 +602,7 @@ module hdmi_mixer #(
                 end
             end else if (I_video_user) begin
                 held <= I_target_motion_mode ? 4'd0 : I_target_multi_hold;
+                shapes <= I_target_motion_mode ? 8'd0 : I_target_multi_shapes;
                 overflow <= I_target_result_ready && !I_target_motion_mode &&
                             I_target_multi_overflow;
                 label_valid <= 4'd0;
@@ -620,7 +684,7 @@ module hdmi_mixer #(
                 if (label_valid[render_index] && S_video_de_2d &&
                     S_x_2d >= label_x[render_index] &&
                     {1'b0,S_x_2d} < {1'b0,label_x[render_index]}+
-                        (label_compact[render_index] ? 13'd64 : 13'd128) &&
+                        (label_compact[render_index] ? compact_width : full_width) &&
                     S_y_2d >= label_y[render_index] &&
                     {1'b0,S_y_2d} < {1'b0,label_y[render_index]}+13'd16) begin
                     label_hit = 1'b1;
@@ -629,21 +693,44 @@ module hdmi_mixer #(
                     label_local_y = S_y_2d-label_y[render_index];
                 end
             end
-            if (label_compact[label_slot]) begin
-                case (label_local_x[6:4])
+            if (S_target_motion_mode && label_compact[label_slot]) begin
+                case (label_local_x[7:4])
                     0: label_char = 8'h31+{6'd0,label_slot};
                     2: label_char = held[label_slot] ? "H" : "O";
                     3: label_char = held[label_slot] ? " " : "K";
                     default: label_char = " ";
                 endcase
-            end else begin
-                case (label_local_x[6:4])
+            end else if (S_target_motion_mode) begin
+                case (label_local_x[7:4])
                     0: label_char = 8'h31+{6'd0,label_slot};
                     2: label_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
                     3: label_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);
                     4: label_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,2);
                     6: label_char = held[label_slot] ? "H" : "O";
                     7: label_char = held[label_slot] ? " " : "K";
+                    default: label_char = " ";
+                endcase
+            end else if (label_compact[label_slot]) begin
+                case (label_local_x[7:4])
+                    0: label_char = 8'h31+{6'd0,label_slot};
+                    2: label_char = F_target_shape_char(shapes[2*label_slot +: 2],0);
+                    3: label_char = F_target_shape_char(shapes[2*label_slot +: 2],1);
+                    4: label_char = F_target_shape_char(shapes[2*label_slot +: 2],2);
+                    6: label_char = held[label_slot] ? "H" : "O";
+                    7: label_char = held[label_slot] ? " " : "K";
+                    default: label_char = " ";
+                endcase
+            end else begin
+                case (label_local_x[7:4])
+                    0: label_char = 8'h31+{6'd0,label_slot};
+                    2: label_char = F_target_mode_char(1'b0,S_target_color_mode,0);
+                    3: label_char = F_target_mode_char(1'b0,S_target_color_mode,1);
+                    4: label_char = F_target_mode_char(1'b0,S_target_color_mode,2);
+                    6: label_char = F_target_shape_char(shapes[2*label_slot +: 2],0);
+                    7: label_char = F_target_shape_char(shapes[2*label_slot +: 2],1);
+                    8: label_char = F_target_shape_char(shapes[2*label_slot +: 2],2);
+                    10: label_char = held[label_slot] ? "H" : "O";
+                    11: label_char = held[label_slot] ? " " : "K";
                     default: label_char = " ";
                 endcase
             end
@@ -662,7 +749,7 @@ module hdmi_mixer #(
 
     // Bottom-left panel: RED/GRN/BLU/MOV plus target status.
     // Uses the existing character ROM; coordinates are zero-based decimals.
-    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && S_video_de_2d &&
+    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && !S_cnn_visible && S_video_de_2d &&
         (S_x_2d >= TARGET_TEXT_X) &&
         (S_x_2d < TARGET_TEXT_X+((MULTI_TARGET_ENABLE != 0) ? 240 : 368)) &&
         (S_y_2d >= TARGET_TEXT_Y) && (S_y_2d < TARGET_TEXT_Y+16);
@@ -736,13 +823,18 @@ module hdmi_mixer #(
             6: S_effect_name = "CARTOON     ";
             7: S_effect_name = "SCHARR INV  ";
             8: S_effect_name = "MORPH EDGE  ";
+            9: S_effect_name = "BINARY      ";
+            10: S_effect_name = "EROSION     ";
+            11: S_effect_name = "DILATION    ";
+            12: S_effect_name = "CLOSE MASK  ";
             default: S_effect_name = "COLOR GAMMA ";
         endcase
         S_effect_char = " ";
         if (S_effect_char_index == 0)
-            S_effect_char = "0";
+            S_effect_char = S_effect_mode >= 4'd10 ? "1" : "0";
         else if (S_effect_char_index == 1)
-            S_effect_char = 8'h30 + {4'd0,S_effect_mode};
+            S_effect_char = 8'h30 + (S_effect_mode >= 4'd10 ?
+                {4'd0,S_effect_mode}-8'd10 : {4'd0,S_effect_mode});
         else if (S_effect_char_index >= 3 && S_effect_char_index <= 14)
             S_effect_char = S_effect_name[95-8*(S_effect_char_index-3) -: 8];
     end
@@ -752,7 +844,7 @@ module hdmi_mixer #(
     // implicit nets and the synthesized panel becomes undriven.
     localparam CNN_TEXT_X = 16;
     localparam CNN_TEXT_Y = 16;
-    wire S_cnn_panel_on = (SHOW_CNN != 0) && S_video_de_2d &&
+    wire S_cnn_panel_on = S_cnn_visible && S_video_de_2d &&
         (S_x_2d >= CNN_TEXT_X) &&
         (S_x_2d < CNN_TEXT_X+(SHOW_RESNET_PROBE != 0 ? 320 : SHOW_RESNET_RUNTIME != 0 ? 256 : 192)) &&
         (S_y_2d >= CNN_TEXT_Y) && (S_y_2d < CNN_TEXT_Y+(SHOW_RESNET_RUNTIME != 0 ? 32 : 16));
@@ -778,7 +870,7 @@ module hdmi_mixer #(
     localparam integer CNN_ROI_HEIGHT = CNN_FULL_FRAME_INPUT ? IMG_HEIGHT : CNN_ROI_SIDE;
     localparam integer CNN_ROI_X = (IMG_WIDTH-CNN_ROI_WIDTH)/2;
     localparam integer CNN_ROI_Y = (IMG_HEIGHT-CNN_ROI_HEIGHT)/2;
-    wire S_legacy_cnn_roi_on = (SHOW_CNN != 0) && (SHOW_RESNET_PROBE == 0) &&
+    wire S_legacy_cnn_roi_on = S_cnn_visible && (SHOW_RESNET_PROBE == 0) &&
         S_video_de_2d &&
         S_x_2d >= CNN_ROI_X && S_x_2d < CNN_ROI_X+CNN_ROI_WIDTH &&
         S_y_2d >= CNN_ROI_Y && S_y_2d < CNN_ROI_Y+CNN_ROI_HEIGHT &&
@@ -791,7 +883,7 @@ module hdmi_mixer #(
             (!(CNN_RESULT_TIMEOUT_FRAMES != 0 && S_cnn_result_age>=CNN_RESULT_TIMEOUT_FRAMES-1) || I_cnn_result_valid),I_hand_box};
     end
     wire [11:0] hx1=S_hand_box[11:0],hx2=S_hand_box[23:12],hy1=S_hand_box[35:24],hy2=S_hand_box[47:36];
-    wire S_hand_roi_on=SHOW_CNN && S_hand_box[48] && S_video_de_2d &&
+    wire S_hand_roi_on=S_cnn_visible && S_hand_box[48] && S_video_de_2d &&
         S_x_2d>=hx1 && S_x_2d<=hx2 && S_y_2d>=hy1 && S_y_2d<=hy2 &&
         (S_x_2d<hx1+2 || S_x_2d+2>hx2 || S_y_2d<hy1+2 || S_y_2d+2>hy2);
     wire S_cnn_roi_on=HANDCNN_DYNAMIC_ROI ? S_hand_roi_on : S_legacy_cnn_roi_on;
@@ -914,7 +1006,7 @@ module hdmi_mixer #(
         assign S_raw_alert=1'b0;
     end endgenerate
 
-    wire S_latency_panel, S_latency_text, S_latency_graph, S_latency_alert;
+    wire S_latency_panel, S_latency_text, S_latency_alert;
     generate if (SHOW_LATENCY != 0) begin: latency_readout
         video_latency_osd u_osd (
             .I_clk(I_clk), .I_rst_n(I_rst_n),
@@ -925,12 +1017,11 @@ module hdmi_mixer #(
             .I_de(S_video_de_1d && S_latency_visible),
             .I_x(S_x_1d), .I_y(S_y_1d),
             .O_panel(S_latency_panel), .O_text(S_latency_text),
-            .O_graph(S_latency_graph), .O_alert(S_latency_alert)
+            .O_alert(S_latency_alert)
         );
     end else begin: no_latency_readout
         assign S_latency_panel=1'b0;
         assign S_latency_text=1'b0;
-        assign S_latency_graph=1'b0;
         assign S_latency_alert=1'b0;
     end endgenerate
 
@@ -1656,24 +1747,23 @@ module hdmi_mixer #(
                     O_hdmi_data <= S_cnn_text_on ? 24'h40ff80 : 24'h101010;
                 else if(S_latency_panel)
                     O_hdmi_data <= S_latency_text ?
-                        (S_latency_alert ? 24'hffb040 : 24'hffffff) :
-                        S_latency_graph ? (S_latency_alert ? 24'hff4040 : 24'h40e0a0) : 24'h101418;
+                        (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
                 else if(S_raw_panel)
                     O_hdmi_data <= S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
                 else if(S_osd_hit)
                     O_hdmi_data <= S_osd_color;
                 else if(S_target_panel_on)
                     O_hdmi_data <= S_target_text_on ? 24'hfff200 : 24'h101010;
-                else if(SHOW_COLOR_TARGET && S_follow_panel_on)
+                else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_follow_panel_on)
                     O_hdmi_data <= S_follow_text_on ? S_follow_color : 24'h101010;
-                else if(SHOW_COLOR_TARGET && S_multi_box_on)
+                else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_multi_box_on)
                     O_hdmi_data <= S_multi_box_color;
                 else if((MULTI_TARGET_ENABLE == 0) &&
-                        SHOW_COLOR_TARGET && S_video_de_2d && S_target_box_on)
+                        SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_box_on)
                     O_hdmi_data <= 24'hff3030;
                 else if(((MULTI_TARGET_ENABLE == 0) ||
                         (S_target_motion_mode && S_multi_count != 0)) &&
-                        SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
+                        SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_cross_on)
                     O_hdmi_data <= 24'hfff200;
                 else if(S_cnn_roi_on)
                     O_hdmi_data <= 24'h40ff80;

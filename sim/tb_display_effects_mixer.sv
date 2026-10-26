@@ -4,7 +4,8 @@
 module tb_display_effects_mixer;
     localparam integer W = 576;
     localparam integer H = 224;
-    localparam integer PLAN_FRAMES = 27;
+    localparam integer MODE_COUNT = 13;
+    localparam integer PLAN_FRAMES = MODE_COUNT*3;
     reg src_clk = 0;
     reg hdmi_clk = 0;
     always #10 src_clk = ~src_clk;
@@ -36,11 +37,11 @@ module tb_display_effects_mixer;
     integer osd_pixels = 0, box_pixels = 0, status_pixels = 0;
     integer changed_pixels = 0, ignored_parameter_frames = 0;
     integer requests = 0;
-    integer mode_pixels [0:8];
-    integer mode_osd_pixels [0:8];
-    integer mode_box_pixels [0:8];
-    integer mode_status_pixels [0:8];
-    integer mode_label_pixels [0:8];
+    integer mode_pixels [0:MODE_COUNT-1];
+    integer mode_osd_pixels [0:MODE_COUNT-1];
+    integer mode_box_pixels [0:MODE_COUNT-1];
+    integer mode_status_pixels [0:MODE_COUNT-1];
+    integer mode_label_pixels [0:MODE_COUNT-1];
     integer label_checks = 0, label_glyphs = 0;
     integer removed_parameter_checks = 0;
 
@@ -49,8 +50,7 @@ module tb_display_effects_mixer;
         .I_src_data(source_config), .O_dst_data(requested_config)
     );
     hdmi_mixer #(.IMG_WIDTH(W), .IMG_HEIGHT(H),
-        .SHOW_CAMERA_STATUS(1), .SHOW_COLOR_TARGET(1), .SHOW_EFFECT_LABEL(1),
-        .SHOW_CNN(0)) dut (
+        .SHOW_CAMERA_STATUS(1), .SHOW_COLOR_TARGET(1), .SHOW_EFFECT_LABEL(1)) dut (
         .I_clk(hdmi_clk), .I_rst_n(rst_n),
         .I_video_vsync(vs), .I_video_hsync(hs), .I_video_de(de),
         .I_video_user(user), .I_video_last(last),
@@ -62,7 +62,6 @@ module tb_display_effects_mixer;
         .I_latency_sample_strobe(1'b0), .I_latency_sample_valid(1'b0),
         .I_latency_total_us(20'd0), .I_latency_isp_us(20'd0),
         .I_latency_buffer_us(20'd0),
-        .I_cnn_result_valid(1'b0), .I_cnn_class(3'd1),
         .O_video_rd_en(rd), .O_display_frame_start(frame_start),
         .I_video_rd_data(rgb),
         .I_target_result_ready(1'b1), .I_target_found(1'b1),
@@ -100,7 +99,7 @@ module tb_display_effects_mixer;
             y = (77*r + 150*g + 29*b + 128) / 256;
             case (mode)
                 1: begin r=y; g=y; b=y; end
-                2,4,6,8: begin r=r; g=g; b=b; end
+                2,4,6,8,9,10,11,12: begin r=r; g=g; b=b; end
                 3,7: begin r=255-r; g=255-g; b=255-b; end
                 5: begin
                     if (!((r>=24 && r>=g+6 && r>=b+6 &&
@@ -120,8 +119,9 @@ module tb_display_effects_mixer;
 
     function automatic [11:0] frame_config(input integer frame_index);
         begin
-            frame_config = {4'(frame_index%9),
-                frame_index<9 ? 8'd128 : frame_index<18 ? 8'd0 : 8'd255};
+            frame_config = {4'(frame_index%MODE_COUNT),
+                frame_index<MODE_COUNT ? 8'd128 :
+                frame_index<MODE_COUNT*2 ? 8'd0 : 8'd255};
         end
     endfunction
 
@@ -139,6 +139,10 @@ module tb_display_effects_mixer;
                 6: name = "CARTOON     ";
                 7: name = "SCHARR INV  ";
                 8: name = "MORPH EDGE  ";
+                9: name = "BINARY      ";
+                10: name = "EROSION     ";
+                11: name = "DILATION    ";
+                12: name = "CLOSE MASK  ";
                 default: name = "COLOR GAMMA ";
             endcase
             label_char = " ";
@@ -331,6 +335,10 @@ module tb_display_effects_mixer;
                         // Camera-side emboss is already a grayscale RGB stream.
                         emboss_shade=(xx*3+yy*7+128)%256;
                         rgb={3{8'(emboss_shade)}};
+                    end else if(planned_mode>=9 && planned_mode<=12) begin
+                        // The shared camera-side color-mask pipeline supplies
+                        // binary pixels; HDMI only retains their exact values.
+                        rgb=((xx/11+yy/7)%2) ? 24'hffffff : 24'h000000;
                     end else begin
                         rgb={8'((xx*3+yy*7+64)%256), 8'((xx*5+yy*11+96)%256),
                              8'((xx*13+yy*17+128)%256)};
@@ -357,7 +365,7 @@ module tb_display_effects_mixer;
 
     initial begin
         for (integer i=0; i<4096; i=i+1) published[i]=0;
-        for (integer i=0; i<9; i=i+1) begin
+        for (integer i=0; i<MODE_COUNT; i=i+1) begin
             mode_pixels[i]=0; mode_osd_pixels[i]=0;
             mode_box_pixels[i]=0; mode_status_pixels[i]=0;
             mode_label_pixels[i]=0;
@@ -381,14 +389,14 @@ module tb_display_effects_mixer;
         repeat (6) @(negedge hdmi_clk); rst_n=1;
         planned_mode=0; planned_param=128;
         wait_config({4'd0,8'd128}); blank(16); display_frame(); blank(16);
-        for (integer i=0; i<9; i=i+1) begin
+        for (integer i=0; i<MODE_COUNT; i=i+1) begin
             if (mode_pixels[i]<W*H || mode_osd_pixels[i]==0 ||
                 mode_box_pixels[i]==0 || mode_status_pixels[i]==0 ||
                 mode_label_pixels[i]<240*16)
                 $fatal(1, "Incomplete per-mode pixel/overlay coverage for mode %0d",i);
         end
         if (pixels!=(PLAN_FRAMES+1)*W*H || frames!=PLAN_FRAMES+1 ||
-            first_pixels!=PLAN_FRAMES+1 || ignored_parameter_frames!=18 ||
+            first_pixels!=PLAN_FRAMES+1 || ignored_parameter_frames!=MODE_COUNT*2 ||
             snapshots<PLAN_FRAMES-1 || requests!=PLAN_FRAMES+3 ||
             osd_pixels==0 || box_pixels==0 || status_pixels==0 ||
             label_checks!=(PLAN_FRAMES+1)*240*16 || label_glyphs<1000 ||
@@ -396,7 +404,7 @@ module tb_display_effects_mixer;
             changed_pixels<100000)
             $fatal(1, "Incomplete mixer/effect integration coverage: pixels=%0d frames=%0d snapshots=%0d requests=%0d",
                    pixels,frames,snapshots,requests);
-        $display("DISPLAY_EFFECTS_MIXER_PASS modes=9 pixels=%0d frames=%0d first_pixels=%0d ignored_parameter_frames=%0d snapshots=%0d requests=%0d osd=%0d box=%0d status=%0d changed=%0d label=%0d glyphs=%0d removed_parameter=%0d default=COLOR_GAMMA emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1",
+        $display("DISPLAY_EFFECTS_MIXER_PASS modes=13 pixels=%0d frames=%0d first_pixels=%0d ignored_parameter_frames=%0d snapshots=%0d requests=%0d osd=%0d box=%0d status=%0d changed=%0d label=%0d glyphs=%0d removed_parameter=%0d default=COLOR_GAMMA emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1 mask_precomputed=1",
                  pixels,frames,first_pixels,ignored_parameter_frames,snapshots,requests,
                  osd_pixels,box_pixels,status_pixels,changed_pixels,label_checks,label_glyphs,
                  removed_parameter_checks);

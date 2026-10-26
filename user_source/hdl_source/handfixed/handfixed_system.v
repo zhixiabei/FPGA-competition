@@ -4,10 +4,12 @@
 module handfixed_system #(
     parameter integer KEY4_CONTROL=0,
     parameter integer BACKGROUND_CONTROL=0,
+    parameter integer SWITCH_CONTROL=0,
     parameter integer KEY_DEBOUNCE_CYCLES=1333334
 )(
     input wire clk,rst_n,calibrated,uart_rx,memory_error,
     input wire key4_n,
+    input wire run_switch,
     output wire uart_tx,
     input wire frame_start,
     input wire [1:0] frame_slot,
@@ -30,10 +32,15 @@ module handfixed_system #(
 );
     localparam IDLE=0,CLASS_PREP=4,CLASSIFY=5,DECISION=6;
     reg [2:0] state;
+    wire background_ready,foreground;
     wire key_enabled;
-    wire run_enabled=(KEY4_CONTROL!=0) ? key_enabled : 1'b1;
-    handfixed_key_control #(.DEBOUNCE_CYCLES(KEY_DEBOUNCE_CYCLES)) key_control(
-        .clk(clk),.rst_n(rst_n),.key_n(key4_n),.enabled(key_enabled));
+    wire run_requested=(KEY4_CONTROL!=0 || SWITCH_CONTROL!=0) ? key_enabled : 1'b1;
+    // A switch already ON at startup first acquires a complete background.
+    wire run_enabled=run_requested &&
+                     (SWITCH_CONTROL==0 || BACKGROUND_CONTROL==0 || background_ready);
+    handfixed_key_control #(.DEBOUNCE_CYCLES(KEY_DEBOUNCE_CYCLES),
+        .LEVEL_CONTROL(SWITCH_CONTROL)) key_control(
+        .clk(clk),.rst_n(rst_n),.key_n(SWITCH_CONTROL!=0 ? !run_switch : key4_n),.enabled(key_enabled));
     reg run_previous,discard_compute,discard_capture;
     wire stop_event=run_previous && !run_enabled;
     wire monitor_enabled=run_enabled || (BACKGROUND_CONTROL!=0);
@@ -83,7 +90,6 @@ module handfixed_system #(
     wire has_texture;
     wire green_valid,green_row_end;
     wire [7:0] green_pixel;
-    wire background_ready,foreground;
     generate if(BACKGROUND_CONTROL!=0) begin: background_control
         handfixed_background background(.clk(clk),.rst_n(rst_n),.run_enabled(run_enabled),
             .start(pp_start),.scan_background(background_job),.done(pp_done),

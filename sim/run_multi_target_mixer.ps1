@@ -39,7 +39,8 @@ onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
 vlog -sv $tclSources
-vsim -novopt -onfinish stop -t ps work.tb_multi_target_mixer
+vsim -t ps work.tb_multi_target_mixer
+onfinish stop
 run -all
 quit -sim
 quit -code 0 -force

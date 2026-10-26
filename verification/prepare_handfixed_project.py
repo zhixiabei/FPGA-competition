@@ -1,4 +1,4 @@
-"""Freeze a fixed-region CNN candidate project; synthesis only, no bitstream."""
+"""Freeze fixed-region CNN sources and project files without running FPGA tools."""
 import argparse
 import hashlib
 import json
@@ -42,6 +42,13 @@ def main():
             if group.tag == 'IP_FILE':
                 shutil.copytree(source.parent, target.parent, dirs_exist_ok=True)
             data = source.read_bytes()
+            if source.name == 'design_top_wrapper.v':
+                text = data.decode('utf-8')
+                text = text.replace('parameter integer ENABLE_HANDCNN = 0,',
+                                    'parameter integer ENABLE_HANDCNN = 1,', 1)
+                data = text.encode('utf-8')
+            elif source.name == 'anlogic_edge_osd.sdc':
+                data += b'\n' + (ROOT/'user_source/constraints_source/cnn_optional.sdc').read_bytes()
             target.write_bytes(data)
             element.attrib['Path'] = target.as_posix()
             inventory.append(dict(source=str(source), snapshot=str(target), sha256=hashlib.sha256(data).hexdigest()))

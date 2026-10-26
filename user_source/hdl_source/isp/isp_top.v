@@ -1,10 +1,6 @@
 module isp_top #(
     parameter integer ENABLE_EDGE = 1, // Reset default, not a generate-time bypass.
     parameter integer RED_MULTI_ENABLE = 0,
-    parameter integer ENABLE_GESTURE = 0, // Reserved; embedded classifier retired.
-    parameter integer ENABLE_HANDCNN_TAP = 0,
-    // Top-level production disables this branch; legacy ISP tests retain it.
-    parameter integer ENABLE_TARGET_DETECTION = 1,
     // LSC_PROFILE_RGB_20261015: small residual fit from 15 PRE-WB RGB regions.
     // Preserve global channel ratios; fit the six intermediate regions too.
     // Nodes 1..9 are row-major; Gr/Gb share each fitted scale.
@@ -13,12 +9,15 @@ module isp_top #(
     parameter integer LSC_MESH_CURVE_ENABLE = 1,
     parameter [71:0] LSC_MESH_GR_Q8 = {8'd240,8'd192,8'd221,8'd241,8'd161,8'd218,8'd233,8'd177,8'd212},
     parameter [71:0] LSC_MESH_GB_Q8 = {8'd224,8'd195,8'd214,8'd219,8'd161,8'd206,8'd220,8'd183,8'd208},
-    parameter [80:0] LSC_MESH_B_Q8 = {9'd291,9'd261,9'd272,9'd291,9'd255,9'd277,9'd291,9'd272,9'd281}
+    parameter [80:0] LSC_MESH_B_Q8 = {9'd291,9'd261,9'd272,9'd291,9'd255,9'd277,9'd291,9'd272,9'd281},
+    parameter integer ENABLE_HANDCNN_TAP = 0,
+    parameter integer IQ_DIAGNOSTIC_ENABLE = 0
 ) (
     input 			axi4s_video_aclk,
     input 			I_rst_n			,
     input [11:0]    I_effect_config,
     input           I_motion_mode_async,
+    input           I_awb_hold_async,
     input [1:0]     I_color_mode_async,
     input 			I_tlast			,
     input 			I_tuser			,
@@ -26,9 +25,9 @@ module isp_top #(
     input 			I_tvalid		,
     input [9:0] 	I_tdest			,
     input 			O_tready		,
-    output [127:0] 	O_tdata			,
     output [127:0] O_hand_rgb_data,
-    output O_hand_rgb_valid,O_hand_rgb_sof,
+    output O_hand_rgb_valid, O_hand_rgb_sof,
+    output [127:0] 	O_tdata			,
     output 			O_tlast			,
     output 			O_tuser			,
     output 			O_tvalid		,
@@ -51,6 +50,7 @@ module isp_top #(
     output [3:0]    O_target_multi_valid,
     output [3:0]    O_target_multi_hold,
     output [191:0]  O_target_multi_boxes,
+    output [7:0]    O_target_multi_shapes,
     output          O_target_multi_overflow,
     output          O_edge_mode_active,
     output [11:0]   O_effect_config,
@@ -58,11 +58,10 @@ module isp_top #(
     output [31:0]   O_ae_sum_y,
     output [15:0]   O_ae_sample_count,
     output [15:0]   O_ae_bright_count,
-    output          O_cnn_result_valid,
-    output [2:0]    O_cnn_class,
-    output          O_cnn_busy,
-    output          O_cnn_overrun,
-    output reg [9:0] O_latency_frame_id
+    output [4:0]    O_ae_p95,
+    output reg [9:0] O_latency_frame_id,
+    output          O_iq_diag_valid,
+    output [127:0]  O_iq_diag_data
 );
  
 wire         m_aixs_tvalid;  //synthesis keep 
@@ -95,6 +94,7 @@ wire         m_aixs_tvalid;  //synthesis keep
     wire         edge_O_tuser;  //synthesis keep
     wire [ 95:0] edge_O_tdata;  //synthesis keep
     wire         edge_O_tvalid;  //synthesis keep
+    wire [3:0]   target_mask_pixels;
     assign awb_O_tready = O_tready;
   assign O_tdata  = awb_O_tdata_128;
   assign O_tlast  = awb_O_tlast    ;
@@ -120,7 +120,21 @@ wire         m_aixs_tvalid;  //synthesis keep
  
 wire [39:0] lsc_data;
 wire lsc_valid, lsc_user, lsc_last, lsc_ready;
+wire [3:0] lsc_diag_clip_new;
+wire [4:0] ae_diag_p5, ae_diag_p50, ae_diag_p99;
+wire [15:0] ae_diag_clip_count;
+wire wb_diag_valid, wb_diag_user, wb_diag_last, wb_diag_stats_valid;
+wire [95:0] wb_diag_data;
+wire [7:0] wb_diag_clip_new;
+wire [10:0] wb_diag_gain_r, wb_diag_gain_b;
+wire wb_diag_candidate_valid;
+wire [15:0] wb_diag_sample_count;
 wire [9:0] demosaic_frame_id;
+(* async_reg="true" *) reg awb_hold_meta, awb_hold_sync;
+always @(posedge axi4s_video_aclk or negedge I_rst_n) begin
+    if (!I_rst_n) begin awb_hold_meta<=1; awb_hold_sync<=1; end
+    else begin awb_hold_meta<=I_awb_hold_async; awb_hold_sync<=awb_hold_meta; end
+end
 reg [9:0] lsc_frame_id_1d, lsc_frame_id_2d, lsc_frame_id_3d;
 reg [9:0] rgb_frame_id;
 always @(posedge axi4s_video_aclk or negedge I_rst_n) begin
@@ -144,7 +158,8 @@ ae_frame_stats_raw10_4x #(
     .IMG_WIDTH(1280),
     .IMG_HEIGHT(720),
     .BLACK_LEVEL(0),
-    .CLIP_LEVEL(192)
+    .CLIP_LEVEL(192), .BRIGHT_LEVEL(248),
+    .HISTOGRAM_ENABLE(1), .HIST_BIN_BITS(5), .HOLD_OUTPUTS(0)
 ) u_ae_frame_stats (
     .I_clk(axi4s_video_aclk),
     .I_rst_n(I_rst_n),
@@ -155,19 +170,23 @@ ae_frame_stats_raw10_4x #(
     .O_stats_valid(O_ae_stats_valid),
     .O_sum_y(O_ae_sum_y),
     .O_sample_count(O_ae_sample_count),
-    .O_bright_count(O_ae_bright_count)
+    .O_bright_count(O_ae_bright_count), .O_p95(O_ae_p95),
+    .O_p5(ae_diag_p5), .O_p50(ae_diag_p50), .O_p99(ae_diag_p99),
+    .O_clip_count(ae_diag_clip_count)
 );
 
 lsc_raw10_4x #(
     .IMG_WIDTH(1280), .IMG_HEIGHT(720), .BAYER_MODE("BGGR"), .ENABLE(LSC_ENABLE),
     .MESH_ENABLE(1), .MESH_CURVE_ENABLE(LSC_MESH_CURVE_ENABLE),
     .MESH_GR_Q8(LSC_MESH_GR_Q8),
-    .MESH_GB_Q8(LSC_MESH_GB_Q8), .MESH_B_Q8(LSC_MESH_B_Q8)
+    .MESH_GB_Q8(LSC_MESH_GB_Q8), .MESH_B_Q8(LSC_MESH_B_Q8),
+    .DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
 ) u_lsc (
     .I_clk(axi4s_video_aclk), .I_rst_n(I_rst_n),
     .I_tdata(I_tdata), .I_tvalid(I_tvalid), .I_tuser(I_tuser), .I_tlast(I_tlast),
     .I_tready(I_tready), .O_tdata(lsc_data), .O_tvalid(lsc_valid),
-    .O_tuser(lsc_user), .O_tlast(lsc_last), .O_tready(lsc_ready)
+    .O_tuser(lsc_user), .O_tlast(lsc_last), .O_tready(lsc_ready),
+    .O_diag_clip_new(lsc_diag_clip_new)
 );
 
 demosaic #(
@@ -201,10 +220,12 @@ data128_96 u_data128_96 (
 
 awb #(
     .IMG_HEIGHT(720),
-    .IMG_WIDTH (1280)
+    .IMG_WIDTH (1280), .CONFIDENCE_ENABLE(1),
+    .DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
 ) u_awb (
     .I_clk   (axi4s_video_aclk),
     .I_rst_n (I_rst_n),
+    .I_hold(awb_hold_sync),
     .I_tlast (m_aixs_tlast),
     .I_tuser (m_aixs_tuser),
     .I_tdata (m_aixs_tdata_96),
@@ -214,15 +235,61 @@ awb #(
     .O_tuser (awb_O_tuser ),
     .O_tdata (awb_O_tdata ),
     .O_tvalid(awb_O_tvalid),
-    .O_tready(awb_O_tready)
+    .O_tready(awb_O_tready),
+    .O_diag_valid(wb_diag_valid), .O_diag_user(wb_diag_user),
+    .O_diag_last(wb_diag_last), .O_diag_data(wb_diag_data),
+    .O_diag_clip_new(wb_diag_clip_new), .O_diag_gain_r_q8(wb_diag_gain_r),
+    .O_diag_gain_b_q8(wb_diag_gain_b), .O_diag_candidate_valid(wb_diag_candidate_valid),
+    .O_diag_stats_valid(wb_diag_stats_valid), .O_diag_sample_count(wb_diag_sample_count)
 );
 
-// Recognition runs in the DDR-backed fixed-ROI HandCNN.
-// Keep the old ISP result ports inactive for interface compatibility.
-assign O_cnn_result_valid = 1'b0;
-assign O_cnn_class = 3'd1;
-assign O_cnn_busy = 1'b0;
-assign O_cnn_overrun = 1'b0;
+generate if (IQ_DIAGNOSTIC_ENABLE != 0) begin : iq_diagnostics
+    // Histogram/statistics and math-stage WB packets are source-frame tagged
+    // snapshots, not metadata associated with an HDMI/DDR displayed slot.
+    reg raw_user_d;
+    reg [9:0] raw_stats_frame_id;
+    reg [9:0] wb_frame_id_d0, wb_frame_id_d1;
+    always @(posedge axi4s_video_aclk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            raw_user_d<=0; raw_stats_frame_id<=0;
+            wb_frame_id_d0<=0; wb_frame_id_d1<=0;
+        end else begin
+            raw_user_d<=I_tuser;
+            if (I_tuser && !raw_user_d) raw_stats_frame_id<=I_tdest;
+            wb_frame_id_d0<=m_aixs_tuser ? demosaic_frame_id : rgb_frame_id;
+            wb_frame_id_d1<=wb_frame_id_d0;
+        end
+    end
+    iq_diagnostic_stats #(
+        .ENABLE(1), .IMG_WIDTH(1280), .IMG_HEIGHT(720), .BAYER_MODE("BGGR"),
+        .BLACK_LEVEL(0)
+    ) u_stats (
+        .I_clk(axi4s_video_aclk), .I_rst_n(I_rst_n),
+        .I_raw_valid(I_tvalid), .I_raw_user(I_tuser), .I_raw_last(I_tlast),
+        .I_raw_data(I_tdata), .I_raw_frame_id(I_tdest),
+        .I_lsc_valid(lsc_valid), .I_lsc_user(lsc_user), .I_lsc_last(lsc_last),
+        .I_lsc_data(lsc_data), .I_lsc_clip_new(lsc_diag_clip_new),
+        .I_lsc_frame_id(lsc_frame_id_3d),
+        .I_rgb_valid(m_aixs_tvalid), .I_rgb_user(m_aixs_tuser), .I_rgb_last(m_aixs_tlast),
+        .I_rgb_data(m_aixs_tdata_96), .I_rgb_frame_id(demosaic_frame_id),
+        .I_awb_valid(wb_diag_valid), .I_awb_user(wb_diag_user), .I_awb_last(wb_diag_last),
+        .I_awb_data(wb_diag_data), .I_awb_clip_new(wb_diag_clip_new),
+        .I_awb_frame_id(wb_frame_id_d1),
+        .I_awb_gain_r_q8(wb_diag_gain_r), .I_awb_gain_b_q8(wb_diag_gain_b),
+        .I_awb_stats_valid(wb_diag_stats_valid),
+        .I_awb_candidate_valid(wb_diag_candidate_valid),
+        .I_awb_sample_count(wb_diag_sample_count),
+        .I_hist_valid(O_ae_stats_valid), .I_hist_frame_id(raw_stats_frame_id),
+        .I_hist_p5(ae_diag_p5), .I_hist_p50(ae_diag_p50),
+        .I_hist_p95(O_ae_p95), .I_hist_p99(ae_diag_p99),
+        .I_hist_count(O_ae_sample_count), .I_hist_near_count(O_ae_bright_count),
+        .I_hist_clip_count(ae_diag_clip_count),
+        .O_diag_valid(O_iq_diag_valid), .O_diag_data(O_iq_diag_data)
+    );
+end else begin : no_iq_diagnostics
+    assign O_iq_diag_valid=1'b0;
+    assign O_iq_diag_data=128'd0;
+end endgenerate
 
 rgb_edge_switch_96 #(
     .IMG_WIDTH (1280),
@@ -237,6 +304,7 @@ rgb_edge_switch_96 #(
     .I_tuser (awb_O_tuser),
     .I_tdata (awb_O_tdata),
     .I_tvalid(awb_O_tvalid),
+    .I_mask_pixels(target_mask_pixels),
     .O_tlast (edge_O_tlast),
     .O_tuser (edge_O_tuser),
     .O_tdata (edge_O_tdata),
@@ -245,7 +313,6 @@ rgb_edge_switch_96 #(
     .O_effect_config(O_effect_config)
 );
 
-generate if (ENABLE_TARGET_DETECTION != 0) begin: legacy_targets
 target_detect_switch_96 #(
     .IMG_WIDTH (1280),
     .IMG_HEIGHT(720),
@@ -259,6 +326,7 @@ target_detect_switch_96 #(
     .I_rst_n(I_rst_n),
     .I_motion_mode_async(I_motion_mode_async),
     .I_color_mode_async(I_color_mode_async),
+    .I_effect_config(I_effect_config),
     .I_tuser(awb_O_tuser),
     .I_tlast(awb_O_tlast),
     .I_tvalid(awb_O_tvalid),
@@ -282,29 +350,10 @@ target_detect_switch_96 #(
     .O_multi_valid(O_target_multi_valid),
     .O_multi_hold(O_target_multi_hold),
     .O_multi_boxes(O_target_multi_boxes),
+    .O_multi_shapes(O_target_multi_shapes),
+    .O_mask_pixels(target_mask_pixels),
     .O_multi_overflow(O_target_multi_overflow)
 );
-end else begin: no_targets
-    assign target_result_ready = 1'b0;
-    assign target_found = 1'b0;
-    assign target_xmin = 12'd0;
-    assign target_xmax = 12'd0;
-    assign target_ymin = 12'd0;
-    assign target_ymax = 12'd0;
-    assign target_center_x = 12'd0;
-    assign target_center_y = 12'd0;
-    assign target_pixels = 24'd0;
-    assign target_frame_toggle = 1'b0;
-    assign O_target_motion_mode = 1'b0;
-    assign O_target_color_mode = 2'd0;
-    assign O_motion_mode_active = 1'b0;
-    assign O_color_mode_active = 2'd0;
-    assign O_target_result_frame_id = 10'd0;
-    assign O_target_multi_valid = 4'd0;
-    assign O_target_multi_hold = 4'd0;
-    assign O_target_multi_boxes = 192'd0;
-    assign O_target_multi_overflow = 1'b0;
-end endgenerate
 
 
     generate if(ENABLE_HANDCNN_TAP) begin: handcnn_color_tap

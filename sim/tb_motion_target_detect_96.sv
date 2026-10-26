@@ -486,12 +486,16 @@ module tb_target_detect_switch_96;
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_motion_mode_async(request_motion),
         .I_color_mode_async(request_motion ? 2'd3 : 2'd0),
+        .I_effect_config(12'd0), .I_frame_id(10'd0),
         .I_tuser(tuser), .I_tlast(tlast), .I_tvalid(tvalid), .I_tdata(tdata),
         .O_result_ready(ready), .O_found(found),
         .O_xmin(xmin), .O_xmax(xmax), .O_ymin(ymin), .O_ymax(ymax),
         .O_center_x(center_x), .O_center_y(center_y), .O_pixels(pixels),
         .O_frame_toggle(frame_toggle), .O_target_motion_mode(result_motion),
-        .O_motion_mode_active(active_motion)
+        .O_motion_mode_active(active_motion), .O_target_color_mode(),
+        .O_color_mode_active(), .O_result_frame_id(),
+        .O_multi_valid(), .O_multi_hold(), .O_multi_boxes(), .O_multi_shapes(),
+        .O_multi_overflow(), .O_mask_pixels()
     );
 
     task automatic queue_result(input integer mode, input integer detect,
@@ -508,7 +512,8 @@ module tb_target_detect_switch_96;
 
     // Scene 0 is uniformly red; scene 1 is uniformly gray; scene 2 adds
     // a four-by-four block gray object. The red results have closed-form
-    // interior coordinates, and motion geometry is independent of red.
+    // interior coordinates. Three centred 3x3 binary windows require a
+    // complete radius-three support; motion geometry is independent of red.
     task automatic drive_frame(input integer scene, input integer mode,
                                input integer mid_request, input bit early_sof);
         integer y, group_index, lane, px;
@@ -591,11 +596,11 @@ module tb_target_detect_switch_96;
     initial begin
         repeat (5) @(negedge clk); rst_n = 1;
         repeat (8) @(negedge clk);
-        queue_result(0, 1, (W-2)*(H-2), 1, W-2, 1, H-2);
+        queue_result(0, 1, (W-6)*(H-6), 3, W-4, 3, H-4);
         drive_frame(0, 0, 1, 0);
         queue_result(1, 0, 0, 0, 0, 0, 0);
         drive_frame(0, 1, 0, 0);
-        queue_result(0, 1, (W-2)*(H-2), 1, W-2, 1, H-2);
+        queue_result(0, 1, (W-6)*(H-6), 3, W-4, 3, H-4);
         drive_frame(0, 0, 1, 0);
         await_results();
         queue_result(1, 0, W*H, 0, 0, 0, 0);

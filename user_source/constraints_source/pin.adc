@@ -17,10 +17,9 @@ set_pin_assignment { I_mode_key_n } { LOCATION = D5; IOSTANDARD = LVCMOS33; PULL
 set_pin_assignment { I_detect_key_n } { LOCATION = A9; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 set_pin_assignment { I_effect_key_n } { LOCATION = B9; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 set_pin_assignment { I_latency_switch } { LOCATION = A4; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
+# HX1P35B pin allocation table: SW2=B4. High enables fruit recognition.
+set_pin_assignment { I_fruit_switch } { LOCATION = B4; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
 set_pin_assignment { I_param_key_n } { LOCATION = C7; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
-# USB UART, board example 16_uart_rs232: RX=J1 TX=H1.
-set_pin_assignment { I_resnet_uart_rx } { LOCATION = J1; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
-set_pin_assignment { O_resnet_uart_tx } { LOCATION = H1; IOSTANDARD = LVCMOS33; }
 
 set_pin_assignment	{ O_screen_pwm } 		{ LOCATION = R11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLDOWN; }
 set_pin_assignment	{ O_tmds_ch0_p }		{ LOCATION = G16; IOSTANDARD = TMDS33; PULLTYPE = NONE; }

@@ -1,4 +1,4 @@
-// Frame-boundary RGB/Scharr/emboss/cartoon/morphology camera selector.
+// Frame-boundary RGB/spatial-effect/color-mask camera selector.
 // The synchronized mode/parameter snapshot commits on input SOF, including
 // SOF before the first valid beat. Data, markers and configuration all have
 // eleven registered clocks of latency, and bubbles advance all paths.
@@ -11,6 +11,7 @@ module rgb_edge_switch_96 #(
     input wire I_clk,input wire I_rst_n,input wire [11:0] I_effect_config,
     input wire I_tlast,input wire I_tuser,input wire [95:0] I_tdata,
     input wire I_tvalid,
+    input wire [3:0] I_mask_pixels,
     output wire O_tlast,output wire O_tuser,output wire [95:0] O_tdata,
     output wire O_tvalid,output wire O_edge_mode,
     output wire [11:0] O_effect_config
@@ -23,6 +24,13 @@ module rgb_edge_switch_96 #(
     wire [95:0] rgb_delayed;
     reg [11:0] config_delay [0:LATENCY-1];
     wire [95:0] edge_data,emboss_data,cartoon_data,morph_data;
+    // The detector shares its binary windows with the shape engine. Its
+    // four mask bits already have the same eleven-clock latency as this
+    // selector; expand only at the output, with lane 0 displayed first.
+    wire [95:0] mask_data = {{24{I_mask_pixels[0]}},
+                             {24{I_mask_pixels[1]}},
+                             {24{I_mask_pixels[2]}},
+                             {24{I_mask_pixels[3]}}};
     integer i;
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
@@ -89,7 +97,9 @@ module rgb_edge_switch_96 #(
                    O_effect_config[11:8]==4'd7) ? edge_data :
                   O_effect_config[11:8]==4'd4 ? emboss_data :
                   O_effect_config[11:8]==4'd6 ? cartoon_data :
-                  O_effect_config[11:8]==4'd8 ? morph_data : rgb_delayed;
+                  O_effect_config[11:8]==4'd8 ? morph_data :
+                  (O_effect_config[11:8]>=4'd9 &&
+                   O_effect_config[11:8]<=4'd12) ? mask_data : rgb_delayed;
     assign O_effect_config=config_delay[LATENCY-1];
     assign O_edge_mode=O_effect_config[11:8]==4'd2;
 endmodule

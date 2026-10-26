@@ -1,11 +1,7 @@
 # Shared full TD flow. The small entry scripts select the GUI project to build.
 set source_root [file normalize [file join [file dirname [info script]] ..]]
-set build_dir [file join $source_root td_project ${sc520_project}_Runs]
-set bit_dir [file join $source_root td_project anlogic_edge_osd_Runs best_result]
-set bit_path [file join $bit_dir ${sc520_project}.bit]
-if {[file exists $bit_path]} {error "Existing final bitstream: $bit_path; move it before an intentional rebuild"}
+set build_dir [file join $source_root build td $sc520_project]
 file mkdir $build_dir
-file mkdir $bit_dir
 # TD resolves the .al source paths against the process working directory.
 # Keep the same sibling depth as td_project; place deliverables in build_dir.
 cd [file join $source_root verification]
@@ -41,10 +37,10 @@ if {[catch {
     report_clock_utilization -file [file join $build_dir clock_utilization.txt]
     export_db [file join $build_dir ${sc520_project}_pr.db]
     commit_param -step bitgen
-    bitgen -bit $bit_path
+    bitgen -bit [file join $build_dir ${sc520_project}.bit]
     puts "SC520_BUILD_PASS: $sc520_project"
     puts "Internal build output: $build_dir"
-    puts "Bitstream output: $bit_path"
+    puts "Use build_firmware.cmd to update the TD best_result programming bitstream."
 } detail]} {
     puts stderr "SC520_BUILD_FAIL: $sc520_project: $detail"
     exit 1

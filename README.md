@@ -1,38 +1,52 @@
-# FPGA 水果与手势识别
+# PH1P35 图像处理与水果识别
 
-仅保留当前草莓五分类水果识别，以及最后的 hand7 手势识别（KEY4 启停、背景判断）。
+本次将 `main` 的图像处理链路与 `master` 的 RGB128 水果识别整合。保留 main 的曝光、白平衡、RAW 直方图、十三种显示模式、颜色与形状多目标检测、运动检测及延迟面板。
 
-## 下载文件
+水果识别使用 **SW2（B4）直接启停**。本次只修改源码、生成工程文件并做静态检查，未编译、仿真、布局布线、生成 bit 或烧录；现有 bit 不包含此次修改。
 
-两份 bit 统一放在 `td_project/anlogic_edge_osd_Runs/best_result/`：
+## 控制方式
 
-| 功能 | bit 文件 | 配套 DDR 权重 |
-|---|---|---|
-| 苹果、香蕉、葡萄、橘子、草莓 | `fruitfixed_candidate.bit` | `build/fruit/weights/model.bin` |
-| PEACE、PUNCH、STOP；背景输出 NOTHING | `anlogic_edge_osd.bit` | `build/gesture/weights/model.bin` |
+| 控件 | 功能 |
+|---|---|
+| K1（D5） | 循环 main 的十三种显示模式 |
+| K2（A9） | 红色、绿色、蓝色、运动检测循环 |
+| SW1（A4） | 延迟面板显示/隐藏 |
+| SW2（B4） | 新水果工程中：ON 连续识别，OFF 恢复 main 检测显示 |
+| K4（C7） | 水果工程无需按 K4；独立手势工程仍使用 K4 启停 |
 
-在 TD Programmer 下载所需功能的 bit 后，在根目录执行对应命令：
+水果五分类为苹果、香蕉、葡萄、橘子、草莓；低置信度输出 `UNKNOWN`，草莓标签为 `STRAWBR`。输入来自显示特效处理前的彩色 ISP 流，使用中央 480×480 固定框。切换显示在 HDMI 帧边界生效；关闭识别后，已开始的 DDR 工作完成后丢弃旧结果，不复位共享 DDR。
+
+## 工程入口
+
+| 工程 | 内容 |
+|---|---|
+| `td_project/anlogic_edge_osd.al` | main 图像功能，默认 `ENABLE_HANDCNN=0`，不依赖本机模型文件 |
+| `td_project/anlogic_sc520_capture.al` | 同样的图像功能，视频顶层封装 |
+| `build/fruit/td_main_sw2/handfixed_candidate.al` | 本次新生成的 main + RGB128 水果 + SW2 工程，尚未编译 |
+| `build/fruit/td/handfixed_candidate.al` | 先前冻结的水果工程与报告，原有 KEY4 版本 |
+| `build/gesture/td/handfixed_candidate.al` | 先前冻结的独立手势工程与报告 |
+
+`build/` 不进入 Git。新电脑需另行复制 `build/fruit/weights/` 模型包，再运行以下**仅生成文件**的命令。输出目录必须尚不存在，避免覆盖冻结工程：
 
 ```powershell
-# 水果
-powershell -NoProfile -ExecutionPolicy Bypass -File verification/load_handfixed_uart.ps1 -Fruit -WinUsb
-# 手势
-powershell -NoProfile -ExecutionPolicy Bypass -File verification/load_handfixed_uart.ps1 -WinUsb
+python -B verification/prepare_fruit128_project.py --model build/fruit/weights --output build/fruit/td_main_sw2
 ```
 
-清空识别框，等待约 1～2 秒，再按 KEY4 启动。复位、断电或重新下载 bit 后需要重新加载权重。
+该入口只复制源码、转换 RGB128 模块并生成 `.al`、约束快照及清单，不调用 FPGA 工具。新工程同时包含 main 和水果逻辑，资源与时序尚未验证，不能沿用任一旧工程的物理验收结果。
 
-## 保留的源码与模型
+仅做静态检查：
 
-- 水果工程：`build/fruit/td/handfixed_candidate.al`，现有工程沿用原目录名。
-- 手势主工程：`td_project/anlogic_edge_osd.al`；最终冻结工程及物理报告在 `build/gesture/td/`。
-- 当前水果训练权重：`build/fruit/training/model.pt`。
-- 最后手势训练权重：`build/gesture/training/model.pt`。
-- 水果数据集：`E:\aaa\FPGA-competition-main\fruits5_strawberry_clean_20261025`。
-- 手势数据集：`build/gesture/data/`。
+```powershell
+python -B verification/check_merge_readiness.py --project build/fruit/td_main_sw2/handfixed_candidate.al
+```
 
-水果训练在 PyCharm 直接运行 `verification/train_fruitcnn128.py`，解释器使用 `.conda/fruitcuda/python.exe`；默认已指向草莓数据集。摄像头测试配置为 **Test Fruits Camera CUDA**。
+未来单独获准构建时，`build_firmware.cmd` 默认使用 main 图像工程；`-Fruit` 指向新的 `td_main_sw2`，`-Gesture` 指向旧手势工程。此次未执行这些构建入口。
 
-`build/` 顶层仅保留 `fruit/` 和 `gesture/` 两个目录，分别收纳当前两版的模型、工程源码、测试证据及必要数据，不保存 bit。旧水果版本、试训模型和重复训练启动入口已删除。清理清单及文件哈希在 `build/fruit/records/`。
+## 模型与历史制品
 
-说明见 [水果上板](docs/FRUITCNN128_FPGA.md)、[水果训练](docs/FRUITCNN128_TRAINING.md)、[手势使用](docs/HANDCNN_FIXED_ROI_BACKGROUND.md)。
+- 水果模型：`build/fruit/training/model.pt`，配套量化包：`build/fruit/weights/`。
+- 原水果 bit：`td_project/anlogic_edge_osd_Runs/best_result/fruitfixed_candidate.bit`。
+- 原手势 bit：`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。
+- 旧 bit、权重和物理报告的对应关系见 [水果历史说明](docs/FRUITCNN128_FPGA.md) 与 [手势说明](docs/HANDCNN_FIXED_ROI_BACKGROUND.md)。旧 bit 的开关行为仍以旧版说明为准。
+
+源码和 Git 合并准备说明见 [main/master 整合记录](docs/MASTER_MAIN_MERGE.md)，main 原有功能详见 [代码导航](docs/CODE_MAP.md)、[显示模式](docs/VIDEO_MODE_SWITCH.md)、[颜色与形状](docs/COLOR_SHAPE.md)。main 合并前首页保存在 [历史文档](docs/history/MAIN_BEFORE_FRUIT_MERGE.md)。

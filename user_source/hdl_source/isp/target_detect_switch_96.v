@@ -15,6 +15,7 @@ module target_detect_switch_96 #(
     input wire I_rst_n,
     input wire I_motion_mode_async,
     input wire [1:0] I_color_mode_async,
+    input wire [11:0] I_effect_config,
     input wire I_tuser,
     input wire I_tlast,
     input wire I_tvalid,
@@ -38,6 +39,8 @@ module target_detect_switch_96 #(
     output wire [3:0] O_multi_valid,
     output wire [3:0] O_multi_hold,
     output wire [191:0] O_multi_boxes,
+    output wire [7:0] O_multi_shapes,
+    output wire [3:0] O_mask_pixels,
     output wire O_multi_overflow
 );
     localparam integer FRAME_BEATS = IMG_WIDTH * IMG_HEIGHT / 4;
@@ -46,6 +49,7 @@ module target_detect_switch_96 #(
     reg [1:0] color_sync_d;
     reg active_motion, completion_motion;
     reg [1:0] active_color, completion_color;
+    reg [3:0] active_mask_view_mode;
     reg user_d, frame_pending, frame_open;
     reg [COUNT_BITS-1:0] beat_count;
     wire frame_marker = I_tuser && !user_d;
@@ -59,12 +63,17 @@ module target_detect_switch_96 #(
             color_meta <= 0; color_sync <= 0; color_sync_d <= 0;
             active_motion <= 0; completion_motion <= 0;
             active_color <= 0; completion_color <= 0;
+            active_mask_view_mode <= 0;
             user_d <= 0; frame_pending <= 0; frame_open <= 0; beat_count <= 0;
         end else begin
             color_meta <= I_color_mode_async;
             color_sync <= color_meta;
             color_sync_d <= color_sync;
             user_d <= I_tuser;
+            // Match the display selector's AWB-SOF configuration commit,
+            // including an early marker before the first valid RGB beat.
+            if (I_tuser)
+                active_mask_view_mode <= I_effect_config[11:8];
             if (frame_marker) begin
                 active_motion <= frame_mode == 2'b11;
                 active_color <= frame_mode == 2'b11 ? 2'b00 : frame_mode;
@@ -87,6 +96,7 @@ module target_detect_switch_96 #(
     wire multi_ready, multi_overflow;
     wire [3:0] multi_valid, multi_hold;
     wire [191:0] multi_boxes;
+    wire [7:0] multi_shapes;
     wire [9:0] multi_frame_id;
     red_target_detect_96 #(
         .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
@@ -97,6 +107,8 @@ module target_detect_switch_96 #(
         .I_tuser(I_tuser), .I_tvalid(I_tvalid), .I_tdata(I_tdata),
         .I_color_mode(frame_marker ?
             (frame_mode == 2'b11 ? 2'b00 : frame_mode) : active_color),
+        .I_mask_view_mode(I_tuser ? I_effect_config[11:8] : active_mask_view_mode),
+        .O_mask_pixels(O_mask_pixels),
         .O_result_ready(red_ready), .O_found(red_found),
         .O_xmin(red_xmin), .O_xmax(red_xmax), .O_ymin(red_ymin), .O_ymax(red_ymax),
         .O_center_x(red_cx), .O_center_y(red_cy), .O_pixels(red_pixels),
@@ -107,6 +119,7 @@ module target_detect_switch_96 #(
              ((frame_mode == 2'b11 ? 2'b00 : frame_mode) != active_color))),
         .O_multi_ready(multi_ready), .O_multi_valid(multi_valid),
         .O_multi_hold(multi_hold), .O_multi_boxes(multi_boxes),
+        .O_multi_shapes(multi_shapes),
         .O_multi_frame_id(multi_frame_id), .O_multi_overflow(multi_overflow)
     );
     wire raw_motion_ready, raw_motion_found, raw_motion_toggle, motion_scene_change;
@@ -181,6 +194,7 @@ module target_detect_switch_96 #(
             assign O_multi_valid = 4'd0;
             assign O_multi_hold = 4'd0;
             assign O_multi_boxes = 192'd0;
+            assign O_multi_shapes = 8'd0;
             assign O_multi_overflow = 1'b0;
         end else begin : gen_multi_result
             reg [9:0] active_id, completion_id, motion_id_1d, motion_id_2d;
@@ -240,18 +254,19 @@ module target_detect_switch_96 #(
             reg [23:0] pixels;
             reg [3:0] valid, hold;
             reg [191:0] boxes;
+            reg [7:0] shapes;
             always @(posedge I_clk or negedge I_rst_n) begin
                 if (!I_rst_n) begin
                     pending_motion<=0; pending_valid<=0;
                     ready<=0; found<=0; result_motion<=0; result_color<=0; result_toggle<=0;
                     result_id<=0; xmin<=0; xmax<=0; ymin<=0; ymax<=0;
-                    cx<=0; cy<=0; pixels<=0; valid<=0; hold<=0; boxes<=0; overflow<=0;
+                    cx<=0; cy<=0; pixels<=0; valid<=0; hold<=0; boxes<=0; shapes<=0; overflow<=0;
                 end else begin
                     ready<=0;
                     if (red_selected) begin
                         ready<=1; result_motion<=0; result_color<=context_color[multi_frame_id[1:0]]; result_id<=multi_frame_id;
                         found<=|multi_valid; valid<=multi_valid; hold<=multi_hold;
-                        boxes<=multi_boxes; overflow<=multi_overflow; pixels<=0;
+                        boxes<=multi_boxes; shapes<=multi_shapes; overflow<=multi_overflow; pixels<=0;
                         xmin<=first_box[11:0]; xmax<=first_box[23:12];
                         ymin<=first_box[35:24]; ymax<=first_box[47:36];
                         cx<=red_center_x[12:1]; cy<=red_center_y[12:1];
@@ -263,7 +278,7 @@ module target_detect_switch_96 #(
                         ready<=1; result_motion<=1; result_color<=0;
                         {result_id,found,xmin,xmax,ymin,ymax,cx,cy,pixels}<=
                             pending_valid ? pending_motion : new_motion;
-                        valid<=0; hold<=0; boxes<=0; overflow<=0;
+                        valid<=0; hold<=0; boxes<=0; shapes<=0; overflow<=0;
                         result_toggle<=!result_toggle;
                         pending_valid<=pending_valid && motion_selected;
                         if (pending_valid && motion_selected) pending_motion<=new_motion;
@@ -280,7 +295,8 @@ module target_detect_switch_96 #(
             assign O_ymin=ymin; assign O_ymax=ymax;
             assign O_center_x=cx; assign O_center_y=cy; assign O_pixels=pixels;
             assign O_multi_valid=valid; assign O_multi_hold=hold;
-            assign O_multi_boxes=boxes; assign O_multi_overflow=overflow;
+            assign O_multi_boxes=boxes; assign O_multi_shapes=shapes;
+            assign O_multi_overflow=overflow;
         end
     endgenerate
 endmodule
@@ -340,12 +356,18 @@ module motion_result_stabilizer #(
 
     function [11:0] smooth_coordinate;
         input [11:0] previous, current;
-        reg [12:0] difference, step;
+        reg signed [12:0] difference;
+        reg signed [13:0] biased_difference, step;
         begin
-            difference = current >= previous ? current-previous : previous-current;
-            step = (difference + 13'd3) >> 2;
-            smooth_coordinate = difference <= DEADBAND ? previous :
-                current >= previous ? previous + step : previous - step;
+            difference = $signed({1'b0,current}) - $signed({1'b0,previous});
+            // Negative arithmetic shifts round away from zero; positive
+            // steps need the bias to retain the same rounding.
+            biased_difference = {difference[12],difference} +
+                (difference[12] ? 14'sd0 : 14'sd3);
+            step = biased_difference >>> 2;
+            smooth_coordinate =
+                difference >= -DEADBAND && difference <= DEADBAND ?
+                previous : $signed({1'b0,previous}) + step;
         end
     endfunction
 

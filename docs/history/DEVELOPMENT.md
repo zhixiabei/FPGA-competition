@@ -1,10 +1,8 @@
-> 历史记录：文中的旧模型、脚本和输出目录已按当前清理要求移除。现行入口见仓库 README 与 HANDCNN_FIXED_ROI_BACKGROUND.md。
-
 # 安路 PH1P35 边缘检测 + OSD 合并工程
 
 > 本文为截至 2026-10-16 的开发历史，保留当时的参数、验证数字及路径。
 > 整理时已删除旧 `exports/` 导出；其中的旧 bit 地址不再使用。
-> 当前烧录文件固定为 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`，使用入口见
+> 该历史版本曾使用单独的烧录副本；当前唯一烧录文件见
 > [工程首页](../../README.md)，报告集中在 `build/release/`。
 
 当前生产链路保留现有 RAW10 LSC 和白平衡；彩色 RGB 对照及 LIVE/HOLD

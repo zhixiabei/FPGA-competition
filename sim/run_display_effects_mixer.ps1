@@ -43,7 +43,8 @@ onbreak {resume}
 vlib work
 vlog -sv $tclSources
 foreach top {tb_display_effects_mixer tb_color_target_mixer} {
-    vsim -novopt -onfinish stop -t ps work.`$top
+    vsim -t ps work.`$top
+    onfinish stop
     run -all
     quit -sim
 }

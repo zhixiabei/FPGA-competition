@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 module tb_display_effect_control;
+    localparam integer MODE_COUNT = 13;
     reg clk = 0;
     always #10 clk = ~clk;
     reg rst_n = 0;
@@ -80,7 +81,7 @@ module tb_display_effect_control;
         integer index, expected;
         begin
             for (index = 0; index < 16; index = index + 1) begin
-                expected = ((index < 9 ? index : 0) + offset) % 9;
+                expected = ((index < MODE_COUNT ? index : 0) + offset) % MODE_COUNT;
                 checks = checks + 1;
                 if (default_mode[index] !== expected[3:0] ||
                     default_param[index] !== 8'd0)
@@ -108,7 +109,7 @@ module tb_display_effect_control;
     initial begin
         reset_controls();
         for (step_index = 0; step_index < 3; step_index = step_index + 1) begin
-            for (mode_index = 0; mode_index < 9; mode_index = mode_index + 1) begin
+            for (mode_index = 0; mode_index < MODE_COUNT; mode_index = mode_index + 1) begin
                 check(mode_index);
                 press_k1();
             end
@@ -128,7 +129,7 @@ module tb_display_effect_control;
 
         // K3/K4 chatter, qualified presses and long holds do nothing in every mode.
         reset_controls();
-        for (mode_index = 0; mode_index < 9; mode_index = mode_index + 1) begin
+        for (mode_index = 0; mode_index < MODE_COUNT; mode_index = mode_index + 1) begin
             for (key_index = 1; key_index <= 2; key_index = key_index + 1) begin
                 hold_one(key_index, 0, 2); hold_one(key_index, 1, 2);
                 hold_one(key_index, 0, 2); hold_one(key_index, 1, 16);
@@ -163,10 +164,10 @@ module tb_display_effect_control;
             $fatal(1, "DEBOUNCE_CYCLES=1 repeats while held");
         fast_prev_key_n = 1;
         repeat (4) @(negedge clk);
-        for (step_index = 0; step_index < 9; step_index = step_index + 1) begin
+        for (step_index = 0; step_index < MODE_COUNT; step_index = step_index + 1) begin
             fast_prev_key_n = 0;
             repeat (4) @(negedge clk);
-            if (fast_mode !== (step_index + 2) % 9 || fast_param !== 0)
+            if (fast_mode !== (step_index + 2) % MODE_COUNT || fast_param !== 0)
                 $fatal(1, "DEBOUNCE_CYCLES=1 K1 wrap/rearm failed");
             fast_prev_key_n = 1;
             repeat (4) @(negedge clk);
@@ -179,7 +180,7 @@ module tb_display_effect_control;
         default_effect_key_n = 0; default_param_key_n = 0;
         repeat (50) @(negedge clk);
         check_defaults(0);
-        for (step_index = 0; step_index < 9; step_index = step_index + 1) begin
+        for (step_index = 0; step_index < MODE_COUNT; step_index = step_index + 1) begin
             default_prev_key_n = 0;
             repeat (4) @(negedge clk);
             check_defaults(step_index + 1);
@@ -188,7 +189,7 @@ module tb_display_effect_control;
             default_prev_key_n = 1;
             repeat (4) @(negedge clk);
         end
-        $display("DISPLAY_EFFECT_CONTROL_PASS checks=%0d modes=9 k1_cycles=3 bounce_keys=1 hold_keys=1 debounce_min=1 defaults=16 k3_ignored=1 k4_ignored=1 param_zero=1",
+        $display("DISPLAY_EFFECT_CONTROL_PASS checks=%0d modes=13 k1_cycles=3 bounce_keys=1 hold_keys=1 debounce_min=1 defaults=16 k3_ignored=1 k4_ignored=1 param_zero=1",
                  checks);
         $finish;
     end

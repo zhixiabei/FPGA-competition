@@ -51,51 +51,28 @@ wire [95:0] selected_data;
 rgb_edge_switch_96 #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.DEFAULT_EDGE_MODE(0)) u_selector(
 .I_clk(camera_clk),.I_rst_n(rst_n),
 .I_effect_config({edge_mode ? 4'd2 : 4'd0,8'd0}),
+.I_mask_pixels(4'd0),
 .I_tlast(awb_last),.I_tuser(awb_user),.I_tdata(awb_data),.I_tvalid(awb_valid),
 .O_tlast(selected_last),.O_tuser(selected_user),.O_tdata(selected_data),
-.O_tvalid(selected_valid),.O_edge_mode(selected_mode));
+.O_tvalid(selected_valid),.O_edge_mode(selected_mode),.O_effect_config());
 wire packed_user,packed_valid;wire [127:0] packed_data;
 data_96bit_to_128bit u_packer(
 .I_clk(camera_clk),.I_rst_n(rst_n),.I_96b_frame_start(selected_user),
 .I_96b_valid(selected_valid),.I_96b_data(selected_data),
 .O_128b_frame_start(packed_user),.O_128b_valid(packed_valid),.O_128b_data(packed_data));
 wire writer_busy,ddr_write;wire [1:0] read_slot,write_slot;
-wire write_start;wire [1:0] write_start_slot;
 wire [24:0] write_address;wire [127:0] write_data;
 integer ddr_cycle=0;
 wire ddr_ready=!READY_GAPS || ddr_cycle%19!=0;
-video_in #(.FRAME_STRIDE_NATIVE(1572864)) u_video_in(
+video_in u_video_in(
 .I_rst_n(rst_n),.I_camera_clk(camera_clk),.I_camera_frame_start(packed_user),
 .I_camera_valid(packed_valid),.I_camera_data(packed_data),.I_mipi_rx_error(1'b0),
 .I_ddr_clk(ddr_clk),.I_display_pause(1'b0),.I_video_out_rd_busy(1'b0),
 .O_video_in_wr_busy(writer_busy),.O_video_out_rp(read_slot),.O_write_frame_slot(write_slot),
-.O_write_frame_start(write_start),.O_write_start_slot(write_start_slot),
 .O_ddr_user_wr_en(ddr_write),.O_ddr_user_addr(write_address),
 .O_ddr_user_wr_data(write_data),.I_ddr_user_ready(ddr_ready));
 reg [23:0] reference_pixels[0:PIXELS-1];
 reg [127:0] stored_words[0:WORDS-1];
-reg snapshot_start=0;
-wire snapshot_valid,snapshot_done,snapshot_busy,snapshot_failed;
-wire [31:0] snapshot_address;
-wire [127:0] snapshot_data;
-wire snapshot_ready=ddr_cycle%7!=0;
-integer snapshot_words=0,snapshot_frames=0;
-handcnn_snapshot #(.BEATS(WORDS)) u_snapshot(
-    .clk(ddr_clk),.rst_n(rst_n),.start(snapshot_start),.SNAPSHOT_BASE(32'h03d13840),
-    .frame_start(write_start),.frame_slot(write_start_slot),.video_write(ddr_write),
-    .video_addr(write_address),.video_data(write_data),.mem_valid(snapshot_valid),
-    .mem_addr(snapshot_address),.mem_data(snapshot_data),.mem_ready(snapshot_ready),
-    .done(snapshot_done),.busy(snapshot_busy),.failed(snapshot_failed),.captured_beats(),.written_beats());
-always @(posedge ddr_clk) begin
-    if(snapshot_start) snapshot_words=0;
-    if(snapshot_valid && snapshot_ready) begin
-        if(snapshot_address!==32'h03d13840+snapshot_words*16 ||
-           snapshot_data!==stored_words[snapshot_words])
-            $fatal(1,"real camera snapshot mismatch beat=%0d",snapshot_words);
-        snapshot_words=snapshot_words+1;
-    end
-    if(snapshot_done) snapshot_frames=snapshot_frames+1;
-end
 integer capture_frame=-1,capture_pixels=0,packed_words=0;
 integer ddr_frame=-1,committed_words=0,first_mismatch=-1,mismatched_words=0;
 integer byte_checks=0,prefix_index=-1,fifo_reset_overlaps=0,fifo_full_errors=0;
@@ -203,7 +180,7 @@ always @(posedge ddr_clk) begin
     end
     // The real DDR user interface samples these registered signals at this edge.
     if(rst_n && ddr_write) begin
-        address_index=(write_address-ddr_frame*1572864)/8;
+        address_index=(write_address-ddr_frame*7000000)/8;
         if(address_index!=committed_words || address_index<0 || address_index>=WORDS)
             $fatal(1,"Wrong DDR frame address index %0d expected%0d frame%0d addr%0d",address_index,committed_words,ddr_frame,write_address);
         if(committed_words==0 && ddr_frame==0) prefix_index=write_data[127:104];
@@ -226,8 +203,6 @@ end
 reg [95:0] next_group;
 task automatic send_frame(input integer mode_value);
     begin
-        @(negedge ddr_clk);snapshot_start=1;
-        @(negedge ddr_clk);snapshot_start=0;
         @(negedge camera_clk);edge_mode=mode_value;
         repeat(200)@(negedge camera_clk);
         for(clear_index=0;clear_index<WORDS;clear_index=clear_index+1)
@@ -248,9 +223,6 @@ task automatic send_frame(input integer mode_value);
             repeat(1404)@(negedge camera_clk);
         end
         repeat(3000)@(negedge ddr_clk);
-        if(snapshot_busy || snapshot_failed || snapshot_words!=WORDS || snapshot_frames!=mode_value+1)
-            $fatal(1,"real camera did not produce complete snapshot got=%0d expected=%0d frames=%0d failed=%0d",snapshot_words,WORDS,snapshot_frames,snapshot_failed);
-        $display("RESNET18_CAMERA_SNAPSHOT_PASS H=%0d mode=%0d beats=%0d",H,mode_value,snapshot_words);
         if(capture_pixels!=PIXELS || packed_words!=WORDS || awb_pixels!=PIXELS || fifo_full_errors!=0)
             $fatal(1,"Incomplete upstream frame/capture/packer or FIFO overflow");
         if(mode_value==1 && (edge_pixels==0 || edge_pixels>=PIXELS))
@@ -306,7 +278,7 @@ module tb_video_fifo_frame_reader;
   integer ddr_cycles=0, stress=0, request_index=0;
   wire ready=(!stress || ((ddr_cycles%13)!=0));
   wire writer_busy=hold_read || (stress && ((ddr_cycles%1024)<200));
-  video_out #(.FRAME_STRIDE_NATIVE(1572864)) dut(.I_rst_n(rst_n), .I_ddr_clk(ddr_clk),
+  video_out dut(.I_rst_n(rst_n), .I_ddr_clk(ddr_clk),
     .O_video_out_rd_busy(read_busy), .I_video_in_wr_busy(writer_busy),
     .I_video_out_rp(slot), .O_read_frame_slot(display_slot),
     .O_ddr_user_rd_en(read_cmd), .O_ddr_user_addr(read_addr),
@@ -330,8 +302,8 @@ module tb_video_fifo_frame_reader;
     integer frame_slot,word_index,b,byte_index,pix_index,channel;
     reg [23:0] pix; reg [127:0] packed_word;
     begin
-      frame_slot=addr/1572864;
-      word_index=(addr-frame_slot*1572864)/8;
+      frame_slot=addr/7000000;
+      word_index=(addr-frame_slot*7000000)/8;
       packed_word=0;
       if(use_external && word_index<WORDS) packed_word=external_mem[word_index];
       else begin

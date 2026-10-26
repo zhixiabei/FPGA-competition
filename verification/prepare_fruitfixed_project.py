@@ -139,8 +139,11 @@ def main():
 
     top_source = ROOT/'user_source/hdl_source/design_top_wrapper.v'
     top_target = sources/'user_source/hdl_source/design_top_wrapper.v'
-    top = replace_once(top_source.read_text(encoding='utf-8'), 'handfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1)) u_handcnn(',
-                       'fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1)) u_handcnn(')
+    top = top_target.read_text(encoding='utf-8')
+    top = replace_once(top, 'handfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),',
+                       'fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),')
+    top = replace_once(top, 'parameter integer FRUIT_SWITCH_CONTROL = 0,',
+                       'parameter integer FRUIT_SWITCH_CONTROL = 1,')
     top = replace_once(top, '.HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),',
                        '.HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),\n        .FRUIT_CNN(1),')
     top = replace_once(top, '.SHOW_RESNET_RUNTIME ( ENABLE_HANDCNN != 0 ? 1 : 0 ),',
@@ -165,7 +168,9 @@ def main():
     inventory_path.write_text(json.dumps(inventory, indent=2))
     (out/'candidate_config.json').write_text(json.dumps(dict(
         design='five_fruit_fixed_roi', classes=classes, display_labels=labels, roi=[400,120,480],
-        key4_control=True, background_control=True, model_sha256=config['model_sha256'],
+        key4_control=False, switch_control=True, switch_name='SW2', switch_pin='B4',
+        switch_active_high=True, reset_recognition='switch_level_after_background',
+        background_control=True, model_sha256=config['model_sha256'],
         model_directory=str(model), architecture=config.get('architecture'),
         classifier_sha256=config.get('classifier_sha256'),
         classifier_threshold=config['classifier_threshold'],

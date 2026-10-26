@@ -15,6 +15,7 @@ module tb_target_frame_bridge;
     reg [11:0] xmin = 0, xmax = 0, ymin = 0, ymax = 0, cx = 0, cy = 0;
     reg [3:0] multi_valid = 0, multi_hold = 0;
     reg [191:0] boxes = 0;
+    reg [7:0] shapes = 0;
     reg overflow = 0, write_start = 0, write_word = 0, read_start = 0;
     reg production_word = 0;
     reg [1:0] write_slot = 0, read_slot = 0;
@@ -23,6 +24,7 @@ module tb_target_frame_bridge;
     wire [11:0] out_config, out_xmin, out_xmax, out_ymin, out_ymax, out_cx, out_cy;
     wire [3:0] out_valid, out_hold;
     wire [191:0] out_boxes;
+    wire [7:0] out_shapes;
     integer checks = 0, wraps = 0, busy_checks = 0, freeze_checks = 0;
     integer shift_checks = 0, collision_checks = 0, production_checks = 0;
     integer i;
@@ -39,6 +41,7 @@ module tb_target_frame_bridge;
         .I_result_center_x(cx), .I_result_center_y(cy),
         .I_multi_valid(multi_valid), .I_multi_hold(multi_hold),
         .I_multi_boxes(boxes), .I_multi_overflow(overflow),
+        .I_multi_shapes(shapes),
         .I_write_start(write_start), .I_write_slot(write_slot), .I_write_word(write_word),
         .I_read_start(read_start), .I_read_slot(read_slot),
         .O_ready(ready), .O_effect_config(out_config), .O_motion_mode(out_motion),
@@ -46,7 +49,8 @@ module tb_target_frame_bridge;
         .O_found(found), .O_xmin(out_xmin), .O_xmax(out_xmax),
         .O_ymin(out_ymin), .O_ymax(out_ymax), .O_center_x(out_cx), .O_center_y(out_cy),
         .O_multi_valid(out_valid), .O_multi_hold(out_hold),
-        .O_multi_boxes(out_boxes), .O_multi_overflow(out_overflow)
+        .O_multi_boxes(out_boxes), .O_multi_overflow(out_overflow),
+        .O_multi_shapes(out_shapes)
     );
 
     // Keep the actual 172800-word production counter in this regression too.
@@ -62,6 +66,7 @@ module tb_target_frame_bridge;
         .I_result_center_x(cx), .I_result_center_y(cy),
         .I_multi_valid(multi_valid), .I_multi_hold(multi_hold),
         .I_multi_boxes(boxes), .I_multi_overflow(overflow),
+        .I_multi_shapes(shapes),
         .I_write_start(write_start), .I_write_slot(write_slot), .I_write_word(production_word),
         .I_read_start(read_start), .I_read_slot(read_slot),
         .O_ready(production_ready)
@@ -70,9 +75,17 @@ module tb_target_frame_bridge;
     function automatic integer offset_of(input [11:0] config_value);
         case (config_value[11:8])
             2, 6, 7: offset_of = 3;
-            4, 8: offset_of = 1;
+            4, 8, 10, 11: offset_of = 1;
+            12: offset_of = 3;
             default: offset_of = 0;
         endcase
+    endfunction
+    function automatic [7:0] source_shapes(input integer seed);
+        integer slot;
+        begin
+            for (slot=0; slot<4; slot=slot+1)
+                source_shapes[2*slot +: 2] = 2'((seed/10+slot)%4);
+        end
     endfunction
     function automatic [11:0] clipped(input integer value, input integer shift,
                                       input integer maximum);
@@ -141,6 +154,7 @@ module tb_target_frame_bridge;
             cx = seed+15; cy = seed+8;
             multi_valid = valids; multi_hold = holds;
             boxes = source_boxes(seed); overflow = over;
+            shapes = motion ? 8'd0 : source_shapes(seed);
             @(negedge csi_clk);
             result_ready = 0;
         end
@@ -172,6 +186,7 @@ module tb_target_frame_bridge;
             if (expected_ready) begin
                 if (found !== has_target || out_valid !== valids ||
                     out_hold !== holds || out_overflow !== over ||
+                    out_shapes !== (motion ? 8'd0 : source_shapes(seed)) ||
                     out_xmin !== clipped(seed,shift,1279) ||
                     out_xmax !== clipped(seed+30,shift,1279) ||
                     out_ymin !== clipped(seed,shift,719) ||
@@ -181,7 +196,7 @@ module tb_target_frame_bridge;
                     out_boxes !== expected_boxes(seed,config_value))
                     $fatal(1, "%s mismatched single/multi result seed=%0d",scenario,seed);
             end else if (found !== 0 || out_valid !== 0 || out_hold !== 0 ||
-                         out_overflow !== 0 || out_boxes !== 0) begin
+                         out_overflow !== 0 || out_boxes !== 0 || out_shapes !== 0) begin
                 $fatal(1, "%s invalid frame retained target flags",scenario);
             end
             checks = checks+1;
@@ -354,6 +369,16 @@ module tb_target_frame_bridge;
             $fatal(1,"Buffered color mode expected green, got %0d",out_color);
         color_mode=2'd0; result_color=2'd0;
 
+        // The four color-mask previews retain the same frame identity and
+        // shape tuple, with independent raw/one-window/three-window offsets.
+        for(i=9;i<=12;i=i+1) begin
+            source_frame(606+i-9,{4'(i),8'h5a},0); start_write(2); words(4);
+            send_result(606+i-9,0,1278,1,15,4,0); drain(); select_read(2);
+            check_output(1,{4'(i),8'h5a},0,1278,1,15,4,0,
+                "color-mask preview preserves shape tuple and spatial clipping");
+            shift_checks=shift_checks+1;
+        end
+
         source_frame(610,12'h800,0); start_write(3);
         send_result(610,0,200,1,3,0,0); drain();
         @(negedge ddr_clk); production_word = 1;
@@ -387,7 +412,7 @@ module tb_target_frame_bridge;
             $fatal(1,"Trailing words after reset manufactured a complete frame");
         production_checks = production_checks+1;
         if (wraps != 1 || busy_checks != 2 || freeze_checks != 2 ||
-            collision_checks != 2 || production_checks != 4 || shift_checks != 5)
+            collision_checks != 2 || production_checks != 4 || shift_checks != 9)
             $fatal(1,"Frame bridge coverage incomplete");
         $display("TARGET_FRAME_BRIDGE_PASS checks=%0d wrap=%0d busy=%0d freeze=%0d collision=%0d production=%0d shifts=%0d late=2000",
                  checks,wraps,busy_checks,freeze_checks,collision_checks,production_checks,shift_checks);

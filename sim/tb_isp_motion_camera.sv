@@ -19,6 +19,7 @@ module tb_isp_motion_camera #(
     wire [11:0] xmin,xmax,ymin,ymax,cx,cy;
     wire [23:0] target_pixels;
     isp_top #(.ENABLE_EDGE(0)) dut (
+        .I_awb_hold_async(1'b0),
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),
         .I_effect_config({4'd0,8'd0}),.I_motion_mode_async(1'b1),.I_color_mode_async(2'd3),
         .I_tlast(raw_last),.I_tuser(raw_user),.I_tdata(raw_data),
@@ -155,20 +156,20 @@ module tb_isp_motion_camera #(
                     awb_max_burst[awb_frame]=awb_burst;
                 if((^dut.awb_O_tdata)===1'bx) unknown_groups=unknown_groups+1;
             end else awb_burst=0;
-            if(dut.legacy_targets.u_target_detect_switch.u_motion.accept_beat) begin
-                if((^{dut.legacy_targets.u_target_detect_switch.u_motion.frame_bad,
-                    dut.legacy_targets.u_target_detect_switch.u_motion.beat_clean,
-                    dut.legacy_targets.u_target_detect_switch.u_motion.beat_compare,
-                    dut.legacy_targets.u_target_detect_switch.u_motion.reference_valid})===1'bx)
+            if(dut.u_target_detect_switch.u_motion.accept_beat) begin
+                if((^{dut.u_target_detect_switch.u_motion.frame_bad,
+                    dut.u_target_detect_switch.u_motion.beat_clean,
+                    dut.u_target_detect_switch.u_motion.beat_compare,
+                    dut.u_target_detect_switch.u_motion.reference_valid})===1'bx)
                     $fatal(1,"Unknown motion parser/reference state");
                 motion_count[awb_frame]=motion_count[awb_frame]+1;
-                if(dut.legacy_targets.u_target_detect_switch.u_motion.bad_line_marker)
+                if(dut.u_target_detect_switch.u_motion.bad_line_marker)
                     motion_bad_markers[awb_frame]=motion_bad_markers[awb_frame]+1;
-                if(dut.legacy_targets.u_target_detect_switch.u_motion.final_beat) begin
+                if(dut.u_target_detect_switch.u_motion.final_beat) begin
                     final_beat_sample=1;
                     final_frame_sample=awb_frame;
-                    final_clean[awb_frame]=dut.legacy_targets.u_target_detect_switch.u_motion.beat_clean;
-                    compared[awb_frame]=dut.legacy_targets.u_target_detect_switch.u_motion.beat_compare;
+                    final_clean[awb_frame]=dut.u_target_detect_switch.u_motion.beat_clean;
+                    compared[awb_frame]=dut.u_target_detect_switch.u_motion.beat_compare;
                 end
             end
             if(output_valid) begin
@@ -178,40 +179,40 @@ module tb_isp_motion_camera #(
                 if((^output_data)===1'bx)
                     $fatal(1,"Unknown packed pixel data");
             end
-            if(dut.legacy_targets.u_target_detect_switch.raw_motion_ready) begin
-                if((^{dut.legacy_targets.u_target_detect_switch.raw_motion_found,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_pixels,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_xmin,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_xmax,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_ymin,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_ymax,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_cx,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_cy,
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_toggle,
-                    dut.legacy_targets.u_target_detect_switch.u_motion.O_supported_blocks,
-                    dut.legacy_targets.u_target_detect_switch.u_motion.O_scene_change})===1'bx)
+            if(dut.u_target_detect_switch.raw_motion_ready) begin
+                if((^{dut.u_target_detect_switch.raw_motion_found,
+                    dut.u_target_detect_switch.raw_motion_pixels,
+                    dut.u_target_detect_switch.raw_motion_xmin,
+                    dut.u_target_detect_switch.raw_motion_xmax,
+                    dut.u_target_detect_switch.raw_motion_ymin,
+                    dut.u_target_detect_switch.raw_motion_ymax,
+                    dut.u_target_detect_switch.raw_motion_cx,
+                    dut.u_target_detect_switch.raw_motion_cy,
+                    dut.u_target_detect_switch.raw_motion_toggle,
+                    dut.u_target_detect_switch.u_motion.O_supported_blocks,
+                    dut.u_target_detect_switch.u_motion.O_scene_change})===1'bx)
                     $fatal(1,"Unknown raw motion result metadata");
                 if(raw_target_results>=FRAMES ||
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_toggle===previous_raw_toggle)
+                    dut.u_target_detect_switch.raw_motion_toggle===previous_raw_toggle)
                     $fatal(1,"Unexpected raw motion completion");
-                if(dut.legacy_targets.u_target_detect_switch.raw_motion_cx !==
-                        (int'(dut.legacy_targets.u_target_detect_switch.raw_motion_xmin)+
-                         int'(dut.legacy_targets.u_target_detect_switch.raw_motion_xmax))/2 ||
-                    dut.legacy_targets.u_target_detect_switch.raw_motion_cy !==
-                        (int'(dut.legacy_targets.u_target_detect_switch.raw_motion_ymin)+
-                         int'(dut.legacy_targets.u_target_detect_switch.raw_motion_ymax))/2)
+                if(dut.u_target_detect_switch.raw_motion_cx !==
+                        (int'(dut.u_target_detect_switch.raw_motion_xmin)+
+                         int'(dut.u_target_detect_switch.raw_motion_xmax))/2 ||
+                    dut.u_target_detect_switch.raw_motion_cy !==
+                        (int'(dut.u_target_detect_switch.raw_motion_ymin)+
+                         int'(dut.u_target_detect_switch.raw_motion_ymax))/2)
                     $fatal(1,"Raw motion center disagrees with its bounding box");
                 raw_results[raw_target_results]=raw_results[raw_target_results]+1;
-                raw_found[raw_target_results]=dut.legacy_targets.u_target_detect_switch.raw_motion_found;
-                raw_pixels[raw_target_results]=dut.legacy_targets.u_target_detect_switch.raw_motion_pixels;
-                raw_xmin[raw_target_results]=dut.legacy_targets.u_target_detect_switch.raw_motion_xmin;
-                raw_xmax[raw_target_results]=dut.legacy_targets.u_target_detect_switch.raw_motion_xmax;
-                raw_ymin[raw_target_results]=dut.legacy_targets.u_target_detect_switch.raw_motion_ymin;
-                raw_ymax[raw_target_results]=dut.legacy_targets.u_target_detect_switch.raw_motion_ymax;
-                raw_supported[raw_target_results]=dut.legacy_targets.u_target_detect_switch.u_motion.O_supported_blocks;
-                raw_scene_change[raw_target_results]=dut.legacy_targets.u_target_detect_switch.u_motion.O_scene_change;
+                raw_found[raw_target_results]=dut.u_target_detect_switch.raw_motion_found;
+                raw_pixels[raw_target_results]=dut.u_target_detect_switch.raw_motion_pixels;
+                raw_xmin[raw_target_results]=dut.u_target_detect_switch.raw_motion_xmin;
+                raw_xmax[raw_target_results]=dut.u_target_detect_switch.raw_motion_xmax;
+                raw_ymin[raw_target_results]=dut.u_target_detect_switch.raw_motion_ymin;
+                raw_ymax[raw_target_results]=dut.u_target_detect_switch.raw_motion_ymax;
+                raw_supported[raw_target_results]=dut.u_target_detect_switch.u_motion.O_supported_blocks;
+                raw_scene_change[raw_target_results]=dut.u_target_detect_switch.u_motion.O_scene_change;
                 raw_latency[raw_target_results]=cycle_number-awb_final_cycle[raw_target_results];
-                previous_raw_toggle=dut.legacy_targets.u_target_detect_switch.raw_motion_toggle;
+                previous_raw_toggle=dut.u_target_detect_switch.raw_motion_toggle;
                 raw_target_results=raw_target_results+1;
             end
             if(target_ready) begin
@@ -236,7 +237,7 @@ module tb_isp_motion_camera #(
         end
         #1;
         if(rst_n && final_beat_sample)
-            reference_after[final_frame_sample]=dut.legacy_targets.u_target_detect_switch.u_motion.reference_valid;
+            reference_after[final_frame_sample]=dut.u_target_detect_switch.u_motion.reference_valid;
     end
 
     task automatic tick(input bit v,input bit u,input bit l,input [39:0] d);

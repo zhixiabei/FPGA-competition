@@ -16,12 +16,13 @@ module tb_color_target_modes;
     ) dut (
         .I_clk(clk),.I_rst_n(rst_n),.I_tuser(user),.I_tvalid(valid),
         .I_tdata(data),.I_color_mode(color_mode),
+        .I_mask_view_mode(4'd0),.O_mask_pixels(),
         .O_result_ready(ready),.O_found(found),
         .O_xmin(xmin),.O_xmax(xmax),.O_ymin(ymin),.O_ymax(ymax),
         .O_center_x(),.O_center_y(),.O_pixels(),.O_frame_toggle(),
         .I_frame_id(frame_id),.I_multi_clear(1'b0),
         .O_multi_ready(),.O_multi_valid(),.O_multi_hold(),.O_multi_boxes(),
-        .O_multi_frame_id(),.O_multi_overflow()
+        .O_multi_shapes(),.O_multi_frame_id(),.O_multi_overflow()
     );
 
     function automatic [23:0] pixel_at;
@@ -68,6 +69,13 @@ module tb_color_target_modes;
         send_case(2'd0,24'hf02020,1'b1);
         send_case(2'd0,24'h20f020,1'b0);
         send_case(2'd1,24'h20f020,1'b1);
+        // Camera/AWB greens are often shifted away from pure green.
+        send_case(2'd1,24'h50961e,1'b1); // Yellow-green: (80,150,30).
+        send_case(2'd1,24'h1e7850,1'b1); // Cyan-green: (30,120,80).
+        send_case(2'd1,24'h64782d,1'b0); // Too little green saturation.
+        send_case(2'd1,24'hb4c814,1'b0); // Yellow, not green.
+        send_case(2'd1,24'h14c8b4,1'b0); // Cyan, not green.
+        send_case(2'd1,24'h646e64,1'b0); // Near-gray AWB noise.
         send_case(2'd1,24'h2020f0,1'b0);
         send_case(2'd2,24'h2020f0,1'b1);
         send_case(2'd2,24'hf02020,1'b0);

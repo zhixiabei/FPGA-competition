@@ -28,6 +28,13 @@ if (-not $primitiveModule.Success -or
 [System.IO.File]::WriteAllText((Join-Path $simulationDir 'ph1p_logic_dram.v'),
     $primitiveModule.Value + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false))
+$hashes = foreach ($name in @('awb.v','tb_awb_frame_adaptation.sv','ph1p_logic_dram.v')) {
+    [pscustomobject]@{
+        File = $name
+        SHA256 = (Get-FileHash -LiteralPath (Join-Path $simulationDir $name) -Algorithm SHA256).Hash
+    }
+}
+$hashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv') -NoTypeInformation
 Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir
 try {
@@ -40,8 +47,12 @@ try {
     & (Join-Path $SimBin 'xsim.bat') awb_frame_adaptation -runall `
         -log xsim.log *> simulate_console.log
     if ($LASTEXITCODE -ne 0) { throw 'AWB simulation failed; see simulate_console.log' }
+    $console = [IO.File]::ReadAllText((Join-Path $simulationDir 'simulate_console.log'))
     $pass = Select-String -LiteralPath simulate_console.log -Pattern '^AWB_FRAME_ADAPTATION_PASS'
-    if (-not $pass) { throw 'AWB regression did not pass; see simulate_console.log' }
+    if ($console -match '(?im)^\s*(?:FATAL_ERROR|Fatal|Error|ERROR|FATAL)\b' -or
+        @($pass).Count -ne 1) {
+        throw 'AWB regression did not pass; see simulate_console.log'
+    }
     $pass.Line
 } finally {
     Pop-Location

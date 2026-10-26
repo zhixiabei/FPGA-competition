@@ -15,7 +15,7 @@ module tb_awb_frame_adaptation;
         .I_clk(clk), .I_rst_n(rst_n), .I_tlast(last), .I_tuser(user),
         .I_tdata(data), .I_tvalid(valid), .I_tready(in_ready),
         .O_tlast(out_last), .O_tuser(out_user), .O_tdata(out_data),
-        .O_tvalid(out_valid), .O_tready(ready)
+        .O_tvalid(out_valid), .O_tready(ready), .I_hold(1'b0)
     );
 
     reg large_valid = 0, large_user = 0, large_last = 0;
@@ -27,7 +27,7 @@ module tb_awb_frame_adaptation;
         .I_tuser(large_user), .I_tdata(large_data), .I_tvalid(large_valid),
         .I_tready(), .O_tlast(large_out_last), .O_tuser(large_out_user),
         .O_tdata(large_out_data), .O_tvalid(large_out_valid),
-        .O_tready(1'b1)
+        .O_tready(1'b1), .I_hold(1'b0)
     );
 
     integer expected_r = 256, expected_b = 256;

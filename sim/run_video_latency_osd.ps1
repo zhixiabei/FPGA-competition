@@ -6,10 +6,7 @@ $root=Split-Path -Parent $PSScriptRoot
 $work=Join-Path $env:TEMP ('anlogic_video_latency_osd_'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 $sources=@('user_source/hdl_source/video_latency_osd.v',
-    'user_source/hdl_source/hdmi_mixer.v','user_source/hdl_source/osd_char_lib.v',
-    'user_source/hdl_source/gamma_lut_rgb888.v',
-    'user_source/hdl_source/display_effects_rgb888.v',
-    'sim/tb_video_latency_osd.sv')
+    'user_source/hdl_source/osd_char_lib.v','sim/tb_video_latency_osd.sv')
 foreach($relative in $sources) {
     Copy-Item -LiteralPath (Join-Path $root $relative) -Destination $work
 }
@@ -17,7 +14,7 @@ $script=@'
 onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
-vlog -sv video_latency_osd.v hdmi_mixer.v osd_char_lib.v gamma_lut_rgb888.v display_effects_rgb888.v tb_video_latency_osd.sv
+vlog -sv video_latency_osd.v osd_char_lib.v tb_video_latency_osd.sv
 vsim -t ps work.tb_video_latency_osd
 onfinish stop
 run -all
@@ -37,8 +34,7 @@ try {
     }
     Select-String -LiteralPath console.log -Pattern 'VIDEO_LATENCY_OSD_PASS' |
         ForEach-Object {$_.Line}
-    $previews=@('video_latency_history','video_latency_nominal',
-        'video_latency_overflow','video_latency_invalid')
+    $previews=@('video_latency_compact')
     if(-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
         throw "PNG preview conversion needs Python with Pillow: $Python"
     }

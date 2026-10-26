@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 
 module tb_display_effects_rgb888;
+    localparam integer MODE_COUNT = 13;
     reg clk = 0;
     always #5 clk = ~clk;
     reg rst_n = 0;
@@ -108,7 +109,8 @@ module tb_display_effects_rgb888;
             luma = reference_luma(value);
             case (mode_value)
                 4'd1: reference_rgb = {luma, luma, luma};
-                4'd2, 4'd4, 4'd6, 4'd8: reference_rgb = value;
+                4'd2, 4'd4, 4'd6, 4'd8, 4'd9, 4'd10, 4'd11, 4'd12:
+                    reference_rgb = value;
                 4'd3, 4'd7: reference_rgb = ~value;
                 4'd5: reference_rgb = reference_keep_color(value) ? value :
                                       {luma, luma, luma};
@@ -210,8 +212,8 @@ module tb_display_effects_rgb888;
                 apply_vector(24'h804020, mode_index[3:0], param_index[7:0]);
 
         // Spatial effects are computed before DDR and bypass Gamma.
-        // Cover every R/G combination and all blue values for all nine modes.
-        for (mode_index = 0; mode_index < 9; mode_index = mode_index + 1) begin
+        // Cover every R/G combination and all blue values for all modes.
+        for (mode_index = 0; mode_index < MODE_COUNT; mode_index = mode_index + 1) begin
             for (color_index = 0; color_index < 65536; color_index = color_index + 1) begin
                 sweep_red = color_index >> 8;
                 sweep_green = color_index;
@@ -248,13 +250,14 @@ module tb_display_effects_rgb888;
             apply_vector((rapid_index * 24'h51931d) ^ 24'h2ad575,
                          rapid_index[3:0], rapid_index[11:4]);
         flush_pipeline();
-        if (vectors != 600419 + boundary_vectors || comparisons != vectors ||
+        if (vectors != 8291 + MODE_COUNT*(65536+256) + boundary_vectors ||
+            comparisons != vectors ||
             hold_checks != vectors * 2 || boundary_vectors<60000 ||
             preserved_red==0 || preserved_green==0 || rejected_color==0)
             $fatal(1, "Display effect coverage counters are incomplete");
 
         // Reset suppresses the unreset Gamma ROM and clears both stages.
-        for (mode_index = 0; mode_index < 9; mode_index = mode_index + 1) begin
+        for (mode_index = 0; mode_index < MODE_COUNT; mode_index = mode_index + 1) begin
             @(negedge clk);
             effect_mode = mode_index[3:0];
             rgb = 24'h4a6b8c;
@@ -277,7 +280,7 @@ module tb_display_effects_rgb888;
                 $fatal(1, "Post-reset pixel was not delayed by two clocks");
         end
 
-        $display("DISPLAY_EFFECTS_RGB888_PASS vectors=%0d comparisons=%0d hold_checks=%0d modes=9 invalid_modes=7 params_ignored=256 rg_combinations=65536 latency_clocks=2 gamma_original_curve=1 emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1 color_boundaries=%0d preserved_red=%0d preserved_green=%0d rejected=%0d",
+        $display("DISPLAY_EFFECTS_RGB888_PASS vectors=%0d comparisons=%0d hold_checks=%0d modes=13 invalid_modes=3 params_ignored=256 rg_combinations=65536 latency_clocks=2 gamma_original_curve=1 emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1 mask_precomputed=1 color_boundaries=%0d preserved_red=%0d preserved_green=%0d rejected=%0d",
                  vectors, comparisons, hold_checks,boundary_vectors,
                  preserved_red,preserved_green,rejected_color);
         $finish;

@@ -1,4 +1,4 @@
-// K1 cycles nine display modes. K3/K4 inputs remain for interface compatibility.
+// K1 cycles thirteen display modes. K3/K4 retain their existing interfaces.
 // Outputs belong to I_clk. The HDMI path must transfer and commit them together.
 module display_effect_control #(
     parameter integer DEBOUNCE_CYCLES = 1000000,
@@ -14,7 +14,7 @@ module display_effect_control #(
 );
     localparam integer COUNT_WIDTH = (DEBOUNCE_CYCLES > 1)
                                       ? $clog2(DEBOUNCE_CYCLES) : 1;
-    localparam [3:0] MODE_COUNT = 4'd9;
+    localparam [3:0] MODE_COUNT = 4'd13;
     localparam [3:0] RESET_MODE = (DEFAULT_MODE < MODE_COUNT)
                                 ? DEFAULT_MODE : 4'd0;
 

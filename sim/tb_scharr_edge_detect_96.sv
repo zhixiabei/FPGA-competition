@@ -25,7 +25,7 @@ module tb_scharr_edge_detect_96 #(
     rgb_edge_switch_96 #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.EDGE_TH(TH),
         .DEFAULT_EDGE_MODE(0)) selector(
         .I_clk(clk),.I_rst_n(rst),.I_tvalid(valid),.I_tuser(user),.I_tlast(last),
-        .I_tdata(data),.I_effect_config({request,8'd0}),
+        .I_tdata(data),.I_effect_config({request,8'd0}),.I_mask_pixels(4'd0),
         .O_tvalid(sv),.O_tuser(su),
         .O_tlast(sl),.O_tdata(switch_data),.O_edge_mode(mode),
         .O_effect_config(switch_config));

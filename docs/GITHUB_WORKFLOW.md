@@ -1,8 +1,10 @@
 # GitHub 上传与后续更新
 
+2026-10-26 main/master 无共同祖先的处理、本地整合范围与后续合并方式见 [整合记录](MASTER_MAIN_MERGE.md)。水果权重与工程快照位于被忽略的 `build/`，迁移时需另外复制模型包。
+
 本工程的 .gitignore 已配置好。默认保留文件，只排除已知生成物；
 `build/` 和所有 `.bit` 不提交，文档位于 `docs/`，烧录文件在本机固定为
-`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。当前模型、训练数据和生成 ROM 位于本机 `build/`，Git 不包含这些资产。迁移到另一台电脑需同时复制 README 中列出的当前 HandCNN 资产，再运行 `build_firmware.cmd` 重编译保留的最终工程。此命令不覆盖已发布 bit。
+`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。克隆后运行根目录 `build_firmware.cmd` 重新生成。
 
 普通压缩软件和 GitHub 网页拖拽上传不会执行 .gitignore。使用 Git / GitHub Desktop 提交，或者按下文从 Git 导出干净 ZIP。
 

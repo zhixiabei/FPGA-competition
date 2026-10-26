@@ -120,19 +120,31 @@ module scharr_edge_detect_96 #(
     reg [95:0] morph_row_min,morph_row_max;
     reg [31:0] morph_min,morph_max;
     reg [31:0] morph_pipe[0:5];
-    integer morph_lane,morph_row,morph_stage;
+    genvar morph_row;
+    generate for(morph_row=0;morph_row<3;morph_row=morph_row+1) begin: g_morph_row
+        // Four overlapping triplets share the (b,c) and (d,e) extrema.
+        wire [7:0] a=gw[287-morph_row*24 -:8];
+        wire [7:0] b=gw[279-morph_row*24 -:8];
+        wire [7:0] c=gw[271-morph_row*24 -:8];
+        wire [7:0] d=gw[199-morph_row*24 -:8];
+        wire [7:0] e=gw[127-morph_row*24 -:8];
+        wire [7:0] f=gw[55-morph_row*24 -:8];
+        wire [7:0] bc_min=b<c ? b : c,bc_max=b>c ? b : c;
+        wire [7:0] de_min=d<e ? d : e,de_max=d>e ? d : e;
+        always @(posedge I_clk) begin
+            morph_row_min[95-morph_row*8 -:8]<=a<bc_min ? a : bc_min;
+            morph_row_min[71-morph_row*8 -:8]<=bc_min<d ? bc_min : d;
+            morph_row_min[47-morph_row*8 -:8]<=c<de_min ? c : de_min;
+            morph_row_min[23-morph_row*8 -:8]<=de_min<f ? de_min : f;
+            morph_row_max[95-morph_row*8 -:8]<=a>bc_max ? a : bc_max;
+            morph_row_max[71-morph_row*8 -:8]<=bc_max>d ? bc_max : d;
+            morph_row_max[47-morph_row*8 -:8]<=c>de_max ? c : de_max;
+            morph_row_max[23-morph_row*8 -:8]<=de_max>f ? de_max : f;
+        end
+    end endgenerate
+    integer morph_lane,morph_stage;
     always @(posedge I_clk) begin
         for(morph_lane=0;morph_lane<4;morph_lane=morph_lane+1) begin
-            for(morph_row=0;morph_row<3;morph_row=morph_row+1) begin
-                morph_row_min[95-morph_lane*24-morph_row*8 -:8]<=minimum3(
-                    gw[287-morph_lane*72-morph_row*24 -:8],
-                    gw[279-morph_lane*72-morph_row*24 -:8],
-                    gw[271-morph_lane*72-morph_row*24 -:8]);
-                morph_row_max[95-morph_lane*24-morph_row*8 -:8]<=maximum3(
-                    gw[287-morph_lane*72-morph_row*24 -:8],
-                    gw[279-morph_lane*72-morph_row*24 -:8],
-                    gw[271-morph_lane*72-morph_row*24 -:8]);
-            end
             morph_min[31-morph_lane*8 -:8]<=minimum3(
                 morph_row_min[95-morph_lane*24 -:8],
                 morph_row_min[87-morph_lane*24 -:8],
@@ -192,18 +204,19 @@ module scharr_edge_detect_96 #(
     function [14:0] magnitude_direction;
         input [25:0] g;
         reg [11:0] ax,ay;
-        reg [19:0] ax106,ay106;
+        reg [11:0] major,minor;
+        reg x_major;
+        reg [19:0] major106;
         reg [12:0] magnitude;
         reg [1:0] direction;
         begin
             ax=g[24:13];ay=g[11:0];
             // 106/256 approximates tan(22.5 degrees), without division.
-            ax106=({8'd0,ax}<<6)+({8'd0,ax}<<5)+
-                  ({8'd0,ax}<<3)+({8'd0,ax}<<1);
-            ay106=({8'd0,ay}<<6)+({8'd0,ay}<<5)+
-                  ({8'd0,ay}<<3)+({8'd0,ay}<<1);
-            if({ay,8'd0}<=ax106) direction=0;
-            else if({ax,8'd0}<=ay106) direction=2;
+            x_major=ax>=ay;
+            major=x_major ? ax : ay;minor=x_major ? ay : ax;
+            major106=({8'd0,major}<<6)+({8'd0,major}<<5)+
+                     ({8'd0,major}<<3)+({8'd0,major}<<1);
+            if({minor,8'd0}<=major106) direction=x_major ? 0 : 2;
             else direction=(g[25]==g[12]) ? 1 : 3;
             magnitude={1'b0,ax}+{1'b0,ay};
             magnitude_direction={magnitude,direction};

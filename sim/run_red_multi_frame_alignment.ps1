@@ -1,5 +1,6 @@
 param(
-    [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin'
+    [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
+    [switch] $CompactMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,7 +10,6 @@ $sources = @(
     'user_source\hdl_source\design_top_wrapper.v',
     'user_source\hdl_source\target_frame_bridge.v',
     'user_source\hdl_source\camera_diag_cdc.v',
-    'user_source\hdl_source\cnn\cnn_result_cdc.v',
     'user_source\hdl_source\video_in.v',
     'user_source\hdl_source\video_out.v',
     'user_source\hdl_source\video_latency_monitor.v',
@@ -56,7 +56,9 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Production multi-frame compile failed: $simulationDir\compile_console.log"
     }
+    $compactValue = if ($CompactMode) { 1 } else { 0 }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug all `
+        -generic_top ('"COMPACT_MODE=' + $compactValue + '"') `
         work.tb_red_multi_frame_alignment -s red_multi_frame_alignment -log xelab.log *> elaborate_console.log
     if ($LASTEXITCODE -ne 0) {
         throw "Production multi-frame elaboration failed: $simulationDir\elaborate_console.log"

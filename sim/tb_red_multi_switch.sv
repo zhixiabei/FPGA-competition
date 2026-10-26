@@ -17,13 +17,14 @@ module tb_red_multi_switch;
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_motion_mode_async(request_motion),
         .I_color_mode_async(request_motion ? 2'd3 : 2'd0),
+        .I_effect_config(12'd0), .O_mask_pixels(),
         .I_tuser(user), .I_tlast(last), .I_tvalid(valid), .I_tdata(data), .I_frame_id(frame_id),
         .O_result_ready(ready), .O_found(found), .O_xmin(xmin), .O_xmax(xmax),
         .O_ymin(ymin), .O_ymax(ymax), .O_center_x(cx), .O_center_y(cy), .O_pixels(pixels),
         .O_frame_toggle(toggle), .O_target_motion_mode(result_motion),
         .O_motion_mode_active(active_motion), .O_result_frame_id(result_id),
         .O_multi_valid(multi_valid), .O_multi_hold(multi_hold), .O_multi_boxes(boxes),
-        .O_multi_overflow(overflow)
+        .O_multi_shapes(), .O_multi_overflow(overflow)
     );
     reg seen [0:127], seen_mode [0:127], seen_found [0:127];
     reg [3:0] seen_multi [0:127], seen_hold [0:127];

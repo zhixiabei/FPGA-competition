@@ -1,5 +1,7 @@
 # 当前 RGB128 水果识别
 
+2026-10-26 新增 main + 水果 + SW2 源码工程：`build/fruit/td_main_sw2/handfixed_candidate.al`，SW2=B4，ON 连续识别、OFF 返回 main 检测显示，无需 KEY4。本轮未编译或烧录。以下 bit 哈希、KEY4 操作与物理报告仅对应原冻结版，详见 [整合记录](MASTER_MAIN_MERGE.md)。
+
 分类顺序：apple、banana、grape、orange、strawberry。第五类 HDMI 显示为 `STRAWBR`。
 
 ## 文件位置
