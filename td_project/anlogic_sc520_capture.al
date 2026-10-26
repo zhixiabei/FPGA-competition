@@ -509,6 +509,126 @@
                     <Attr Name="CompileOrder" Val="102"/>
                 </FileInfo>
             </File>
+            <File Path="../user_source/hdl_source/handcnn/handcnn_confidence.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1000"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handcnn/handcnn_core.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1001"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handcnn/handcnn_normalize.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1002"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handcnn/handcnn_snapshot.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1003"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/cnn/cnn_eram_byte_dp.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1004"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/resnet18/resnet18_memory_bridge.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1005"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/resnet18/resnet18_uart.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1006"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/resnet18/resnet18_weight_loader.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1007"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/resnet/resnet_ph1p_dsp.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1008"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handfixed/handfixed_background.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1009"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handfixed/handfixed_decode.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1010"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handfixed/handfixed_key_control.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1011"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handfixed/handfixed_preprocess.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1012"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handfixed/handfixed_result_filter.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1013"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/handfixed/handfixed_system.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="1014"/>
+                </FileInfo>
+            </File>
         </Verilog>
         <System_Verilog>
             <File Path="../user_source/hdl_source/mipi_dphy_rx/mipi_dphy_rx_ph1p_mipiio_wrapper.sv">

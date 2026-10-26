@@ -2,6 +2,8 @@
 
 [返回工程首页](../README.md)
 
+2026-10-26：在 main 图像链路上接回可选的固定框 CNN，水果由 SW2=B4 直接启停。根工程默认保留纯视频，新的水果快照工程同时保留颜色/形状/运动功能；本轮只做静态检查。入口和文件关系见 [整合记录](MASTER_MAIN_MERGE.md)。
+
 这是一个包含摄像头、图像算法、外部存储器和显示接口的完整 FPGA 工程。先理解数据经过哪几个模块，再沿着模块名找对应文件。FPGA 模块通过信号连接并行工作；文件顺序不是软件程序的执行顺序。
 
 本说明依据当前的 [TD 工程文件](../td_project/anlogic_edge_osd.al)、[系统顶层](../user_source/hdl_source/design_top_wrapper.v) 和 [ISP 顶层](../user_source/hdl_source/isp/isp_top.v) 整理。
@@ -583,4 +585,3 @@ Logo 的 `index_rom` 保存 160×160 原图第 34～127 行的颜色索引，
 当前 Scharr、多颜色目标/运动检测、帧桥、K1/K2 控制、十三项显示效果、延迟和 AE 模块均已登记到两个工程，K3/K4 引脚保留但无操作。主工程现有 77 个登记入口；上表的 AutoExcluded 状态按主工程记录。
 
 彩色工程 `td_project/anlogic_sc520_capture.al` 另加 [sc520_capture_top.v](../user_source/hdl_source/sc520_capture_top.v)，并使用自己的 `anlogic_sc520_capture.sdc`，共 78 个登记入口。旧文件在两份工程中的 AutoExcluded 标记可能不同，是否生成硬件仍以实例化和网表为准。该顶层以 `ENABLE_EDGE=0` 实例化系统顶层；主工程默认同样为 `ENABLE_EDGE=0`。此参数仅指定复位默认值；运行中均由 K1 单向循环选择算法。
-

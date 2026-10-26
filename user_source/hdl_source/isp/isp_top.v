@@ -10,6 +10,7 @@ module isp_top #(
     parameter [71:0] LSC_MESH_GR_Q8 = {8'd240,8'd192,8'd221,8'd241,8'd161,8'd218,8'd233,8'd177,8'd212},
     parameter [71:0] LSC_MESH_GB_Q8 = {8'd224,8'd195,8'd214,8'd219,8'd161,8'd206,8'd220,8'd183,8'd208},
     parameter [80:0] LSC_MESH_B_Q8 = {9'd291,9'd261,9'd272,9'd291,9'd255,9'd277,9'd291,9'd272,9'd281},
+    parameter integer ENABLE_HANDCNN_TAP = 0,
     parameter integer IQ_DIAGNOSTIC_ENABLE = 0
 ) (
     input 			axi4s_video_aclk,
@@ -24,6 +25,8 @@ module isp_top #(
     input 			I_tvalid		,
     input [9:0] 	I_tdest			,
     input 			O_tready		,
+    output [127:0] O_hand_rgb_data,
+    output O_hand_rgb_valid, O_hand_rgb_sof,
     output [127:0] 	O_tdata			,
     output 			O_tlast			,
     output 			O_tuser			,
@@ -352,6 +355,15 @@ target_detect_switch_96 #(
     .O_multi_overflow(O_target_multi_overflow)
 );
 
+
+    generate if(ENABLE_HANDCNN_TAP) begin: handcnn_color_tap
+        data_96bit_to_128bit raw_pack(
+            .I_clk(axi4s_video_aclk),.I_rst_n(I_rst_n),
+            .I_96b_frame_start(awb_O_tuser),.I_96b_valid(awb_O_tvalid),.I_96b_data(awb_O_tdata),
+            .O_128b_frame_start(O_hand_rgb_sof),.O_128b_valid(O_hand_rgb_valid),.O_128b_data(O_hand_rgb_data));
+    end else begin: no_handcnn_tap
+        assign O_hand_rgb_sof=0;assign O_hand_rgb_valid=0;assign O_hand_rgb_data=0;
+    end endgenerate
 
     data_96bit_to_128bit u_data_96bit_to_128bit(
         .I_clk              ( axi4s_video_aclk  ),

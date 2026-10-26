@@ -5,10 +5,15 @@ module design_top_wrapper #(
     parameter integer RED_MULTI_ENABLE = 1,
     parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
     parameter integer SHOW_RAW_STATS = 0, // RAW diagnostics.
+    parameter integer ENABLE_HANDCNN = 0, // Enabled by the model project generator.
+    parameter integer FRUIT_SWITCH_CONTROL = 0, // SW2 level controls the fruit candidate.
     parameter integer IQ_DIAGNOSTIC_ENABLE = 0 // Optional CSI-clock ChipWatcher probes.
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
+    input wire        I_resnet_uart_rx,
+    output wire       O_resnet_uart_tx,
+    input wire        I_fruit_switch, // Board SW2 (B4), high runs fruit recognition.
       
     output wire       O_cam_scl,
     inout  wire       IO_cam_sda,
@@ -104,6 +109,12 @@ module design_top_wrapper #(
 	
 	wire			S_ISP_O_tready;
 	wire [127:0]	S_ISP_O_tdata ;
+    wire [127:0] S_hand_rgb_data;
+    wire S_hand_rgb_valid,S_hand_rgb_sof;
+    wire [48:0] S_hand_box_hdmi;
+    wire S_cnn_result_valid_hdmi;
+    wire [2:0] S_cnn_class_hdmi;
+    wire [31:0] S_resnet_probe_status_hdmi;
 	wire 			S_ISP_O_tlast ;
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
@@ -232,7 +243,7 @@ module design_top_wrapper #(
         S_bridge_center_x : S_target_display_result[23:12];
     wire [11:0] S_target_center_y_hdmi = RED_MULTI_ENABLE ?
         S_bridge_center_y : S_target_display_result[11:0];
-	
+
 
     wire        S_ddr_clk;
     wire        S_hdmi_pixel_clk;
@@ -270,6 +281,9 @@ module design_top_wrapper #(
     wire        S_vo_dbg_fifo_rd_en;
     wire        S_vo_dbg_fifo_empty;
 
+    reg [1:0] S_video_calib_sync;
+    reg S_video_ddr_started;
+    wire S_video_ddr_rst_n;
     wire        S_init_calib_complete; 
     wire[24:0]  S_mc_app_addr;          
     wire[2:0]   S_mc_app_cmd;           
@@ -355,6 +369,21 @@ module design_top_wrapper #(
 	
     assign S_rst_n 		= S_pll_lock;
     assign S_hdmi_rst_n = S_pll_lock;
+
+    // Release the video DDR path synchronously only after initial DDR
+    // calibration. HDMI timing and camera configuration keep their own reset.
+    // Latch startup: a later calibration drop must not silently discard
+    // queued reads while the bridge/controller still retain their ownership.
+    always @(posedge S_ddr_clk or negedge S_rst_n) begin
+        if (!S_rst_n) begin
+            S_video_calib_sync <= 2'b00;
+            S_video_ddr_started <= 1'b0;
+        end else begin
+            S_video_calib_sync <= {S_video_calib_sync[0],S_init_calib_complete};
+            if (S_video_calib_sync[1]) S_video_ddr_started <= 1'b1;
+        end
+    end
+    assign S_video_ddr_rst_n = S_rst_n && S_video_ddr_started;
 
     always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
         if(!S_rst_n)
@@ -1058,7 +1087,8 @@ end endgenerate
 isp_top #(
         .ENABLE_EDGE(ENABLE_EDGE),
         .RED_MULTI_ENABLE(RED_MULTI_ENABLE),
-        .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
+        .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE),
+        .ENABLE_HANDCNN_TAP(ENABLE_HANDCNN)
     ) u_isp_top (
 .axi4s_video_aclk(S_csi_rx_clk),
 .I_rst_n         (S_rst_n),
@@ -1072,6 +1102,9 @@ isp_top #(
 .I_tdest         (S_raw_frame_id),
 .O_tready        (S_ISP_O_tready),
 .O_tdata         (S_ISP_O_tdata ),
+.O_hand_rgb_data(S_hand_rgb_data),
+.O_hand_rgb_valid(S_hand_rgb_valid),
+.O_hand_rgb_sof(S_hand_rgb_sof),
 .O_tlast         (S_ISP_O_tlast ),
 .O_tuser         (S_ISP_O_tuser ),
 .O_tvalid        (S_ISP_O_tvalid),
@@ -1127,8 +1160,74 @@ isp_top #(
         end
     end endgenerate
 
-    video_in u_video_in(
-        .I_rst_n              (  S_rst_n             ),
+    wire S_rnet_mem_valid,S_rnet_mem_write,S_rnet_mem_ready,S_rnet_rsp_valid,S_rnet_memory_error;
+    wire [31:0] S_rnet_mem_addr;
+    wire [127:0] S_rnet_mem_data,S_rnet_rsp_data;
+generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
+    wire raw_write,raw_sof;
+    wire [1:0] raw_slot;
+    wire [24:0] raw_addr;
+    wire [127:0] raw_data;
+    // FIFO crosses the color ISP stream to DDR clock. Its output is consumed
+    // by the private snapshot writer; it does not write the display slots.
+    video_in #(.FRAME_STRIDE_NATIVE(1572864)) raw_color_stream(
+        .I_rst_n(S_video_ddr_rst_n),.I_camera_clk(S_csi_rx_clk),
+        .I_camera_frame_start(S_hand_rgb_sof),.I_camera_valid(S_hand_rgb_valid),.I_camera_data(S_hand_rgb_data),
+        .I_mipi_rx_error(1'b0),.I_ddr_clk(S_ddr_clk),.I_display_pause(1'b0),.I_video_out_rd_busy(1'b0),
+        .O_video_in_wr_busy(),.O_video_out_rp(),.O_write_frame_slot(),
+        .O_write_frame_start(raw_sof),.O_write_start_slot(raw_slot),
+        .O_ddr_user_wr_en(raw_write),.O_ddr_user_addr(raw_addr),.O_ddr_user_wr_data(raw_data),.I_ddr_user_ready(1'b1));
+    wire result_valid,box_valid;
+    wire [2:0] result_class;
+    wire [11:0] x1,y1,x2,y2;
+    wire [15:0] result_frame;
+    wire [31:0] probe_status;
+    handfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),
+        .SWITCH_CONTROL(FRUIT_SWITCH_CONTROL)) u_handcnn(
+        .key4_n(I_param_key_n),.run_switch(I_fruit_switch),
+        .clk(S_ddr_clk),.rst_n(S_rst_n),.calibrated(S_init_calib_complete),.memory_error(S_rnet_memory_error),
+        .uart_rx(I_resnet_uart_rx),.uart_tx(O_resnet_uart_tx),
+        .frame_start(raw_sof),.frame_slot(raw_slot),.video_write(raw_write),.video_addr(raw_addr),.video_data(raw_data),
+        .mem_valid(S_rnet_mem_valid),.mem_write(S_rnet_mem_write),.mem_addr(S_rnet_mem_addr),.mem_data(S_rnet_mem_data),
+        .mem_ready(S_rnet_mem_ready),.mem_rsp_valid(S_rnet_rsp_valid),.mem_rsp_data(S_rnet_rsp_data),
+        .result_valid(result_valid),.result_class(result_class),.model_ready(),.operation(),.runtime_status(probe_status),
+        .box_valid(box_valid),.box_x1(x1),.box_y1(y1),.box_x2(x2),.box_y2(y2),.result_frame(result_frame));
+    camera_diag_cdc #(.WIDTH(32)) u_status_cdc(
+        .I_src_clk(S_ddr_clk),.I_dst_clk(S_hdmi_pixel_clk),.I_rst_n(S_rst_n),
+        .I_src_data(probe_status),.O_dst_data(S_resnet_probe_status_hdmi));
+    // Class, box and source frame share one acknowledged mailbox. HDMI
+    // commits this coherent result at its frame boundary.
+    reg [67:0] box_payload;
+    wire [67:0] result_hdmi;
+    reg [67:0] result_seen;
+    always @(posedge S_ddr_clk or negedge S_rst_n) begin
+        if(!S_rst_n) box_payload<=0;
+        else if(result_valid) box_payload<={result_frame,result_class,box_valid,y2,y1,x2,x1};
+    end
+    camera_diag_cdc #(.WIDTH(68)) u_hand_box_cdc(
+        .I_src_clk(S_ddr_clk),.I_dst_clk(S_hdmi_pixel_clk),.I_rst_n(S_rst_n),
+        .I_src_data(box_payload),.O_dst_data(result_hdmi));
+    always @(posedge S_hdmi_pixel_clk or negedge S_rst_n) begin
+        if(!S_rst_n) result_seen<=0;else result_seen<=result_hdmi;
+    end
+    assign S_hand_box_hdmi=result_hdmi[48:0];
+    assign S_cnn_class_hdmi=result_hdmi[51:49];
+    assign S_cnn_result_valid_hdmi=result_hdmi!=result_seen;
+end else begin: recognition_disabled
+    assign S_cnn_result_valid_hdmi=0;
+    assign S_cnn_class_hdmi=3'd1;
+    assign S_hand_box_hdmi=0;
+    assign S_resnet_probe_status_hdmi=0;
+    assign O_resnet_uart_tx=1;
+    assign S_rnet_mem_valid=0;
+    assign S_rnet_mem_write=0;
+    assign S_rnet_mem_addr=0;
+    assign S_rnet_mem_data=0;
+end endgenerate
+
+
+    video_in #(.FRAME_STRIDE_NATIVE(ENABLE_HANDCNN != 0 ? 1572864 : 7000000)) u_video_in(
+        .I_rst_n              ( S_video_ddr_rst_n    ),
 
         .I_camera_clk         ( S_csi_rx_clk          ),
         .I_camera_frame_start ( S_ISP_O_tuser  ),
@@ -1163,9 +1262,9 @@ isp_top #(
     assign S_ddr_user_wr_data  = S_vi_ddr_wr_data;
 
 
-    assign S_video_out_rst_n = S_hdmi_rst_n;
+    assign S_video_out_rst_n = S_video_ddr_rst_n;
 
-    video_out u_video_out(
+    video_out #(.FRAME_STRIDE_NATIVE(ENABLE_HANDCNN != 0 ? 1572864 : 7000000)) u_video_out(
         .I_rst_n             ( S_video_out_rst_n    ),
         .I_ddr_clk           ( S_ddr_clk            ),
  
@@ -1191,7 +1290,7 @@ isp_top #(
 
     mc_to_user_interface u_mc_to_user_interface(
         .I_clk                   ( S_ddr_clk               ),
-        .I_rst_n                 ( S_rst_n                 ),
+        .I_rst_n                 ( S_video_ddr_rst_n    ),
 
         .I_ddr_user_wr_en        ( S_ddr_user_wr_en        ),
         .I_ddr_user_rd_en        ( S_ddr_user_rd_en        ),
@@ -1217,24 +1316,71 @@ isp_top #(
 
 
 
+    wire [24:0] S_phy_addr;
+    wire [2:0] S_phy_cmd;
+    wire S_phy_en,S_phy_wren,S_phy_wend,S_phy_rsp_valid,S_phy_rsp_end;
+    wire S_phy_legacy_ready,S_phy_legacy_wready,S_phy_arready,S_phy_awready,S_phy_wready;
+    wire [127:0] S_phy_wdata,S_phy_rsp_data;
+    wire [15:0] S_phy_mask;
+generate if (ENABLE_HANDCNN != 0) begin: shared_resnet_ddr
+    wire video_ready,physical_read;
+    resnet18_memory_bridge u_bridge(
+        .clk(S_ddr_clk),.rst_n(S_rst_n),.calibrated(S_init_calib_complete),
+        .v_valid(S_mc_app_en),.v_read(S_mc_app_cmd[0]),.v_addr(S_mc_app_addr),
+        .v_data(S_mc_app_wdf_data),.v_ready(video_ready),
+        .v_rsp_valid(S_mc_app_rd_data_valid),.v_rsp_data(S_mc_app_rd_data),
+        .n_valid(S_rnet_mem_valid),.n_write(S_rnet_mem_write),.n_addr(S_rnet_mem_addr),
+        .n_data(S_rnet_mem_data),.n_ready(S_rnet_mem_ready),
+        .n_rsp_valid(S_rnet_rsp_valid),.n_rsp_data(S_rnet_rsp_data),
+        .d_addr(S_phy_addr),.d_read(physical_read),.d_addr_valid(S_phy_en),
+        .d_data_valid(S_phy_wren),.d_data(S_phy_wdata),
+        .d_read_ready(S_phy_arready),.d_write_ready(S_phy_awready),.d_data_ready(S_phy_wready),
+        .d_rsp_valid(S_phy_rsp_valid),.d_rsp_data(S_phy_rsp_data),.protocol_error(S_rnet_memory_error));
+    assign S_phy_cmd={2'b00,physical_read};
+    assign S_phy_wend=S_phy_wren;
+    assign S_phy_mask=16'd0;
+    assign S_mc_app_rdy=video_ready;
+    assign S_mc_app_wdf_rdy=video_ready;
+    assign S_mc_app_rd_data_end=S_mc_app_rd_data_valid;
+end else begin: dedicated_video_ddr
+    assign S_phy_addr=S_mc_app_addr;
+    assign S_phy_cmd=S_mc_app_cmd;
+    assign S_phy_en=S_mc_app_en;
+    assign S_phy_wdata=S_mc_app_wdf_data;
+    assign S_phy_wren=S_mc_app_wdf_wren;
+    assign S_phy_wend=S_mc_app_wdf_end;
+    assign S_phy_mask=S_mc_app_wdf_mask;
+    assign S_mc_app_rd_data=S_phy_rsp_data;
+    assign S_mc_app_rd_data_valid=S_phy_rsp_valid;
+    assign S_mc_app_rd_data_end=S_phy_rsp_end;
+    assign S_mc_app_rdy=S_phy_legacy_ready;
+    assign S_mc_app_wdf_rdy=S_phy_legacy_wready;
+    assign S_rnet_mem_ready=0;
+    assign S_rnet_rsp_valid=0;
+    assign S_rnet_rsp_data=0;
+    assign S_rnet_memory_error=0;
+end endgenerate
     ph1p35_324_ddr_wrapper u_ph1p35_324_ddr_wrapper(
         .I_sys_clk              ( I_sys_clk              ),
         .I_sys_rst_n            ( S_rst_n                ),
 
         .O_ddr_clk              ( S_ddr_clk              ),
         .O_init_calib_complete  ( S_init_calib_complete  ),
-        .I_mc_app_addr          ( S_mc_app_addr          ),
-        .I_mc_app_cmd           ( S_mc_app_cmd           ),
-        .I_mc_app_en            ( S_mc_app_en            ),
-        .I_mc_app_wdf_data      ( S_mc_app_wdf_data      ),
-        .I_mc_app_wdf_end       ( S_mc_app_wdf_end       ),
-        .I_mc_app_wdf_mask      ( S_mc_app_wdf_mask      ),
-        .I_mc_app_wdf_wren      ( S_mc_app_wdf_wren      ),
-        .O_mc_app_rd_data       ( S_mc_app_rd_data       ),
-        .O_mc_app_rd_data_end   ( S_mc_app_rd_data_end   ),
-        .O_mc_app_rd_data_valid ( S_mc_app_rd_data_valid ),
-        .O_mc_app_rdy           ( S_mc_app_rdy           ),
-        .O_mc_app_wdf_rdy       ( S_mc_app_wdf_rdy       ),
+        .I_mc_app_addr          ( S_phy_addr             ),
+        .I_mc_app_cmd           ( S_phy_cmd              ),
+        .I_mc_app_en            ( S_phy_en               ),
+        .I_mc_app_wdf_data      ( S_phy_wdata            ),
+        .I_mc_app_wdf_end       ( S_phy_wend             ),
+        .I_mc_app_wdf_mask      ( S_phy_mask             ),
+        .I_mc_app_wdf_wren      ( S_phy_wren             ),
+        .O_mc_app_rd_data       ( S_phy_rsp_data         ),
+        .O_mc_app_rd_data_end   ( S_phy_rsp_end          ),
+        .O_mc_app_rd_data_valid ( S_phy_rsp_valid        ),
+        .O_mc_app_rdy           ( S_phy_legacy_ready     ),
+        .O_mc_app_wdf_rdy       ( S_phy_legacy_wready    ),
+        .O_mc_read_ready        ( S_phy_arready          ),
+        .O_mc_write_ready       ( S_phy_awready          ),
+        .O_mc_data_ready        ( S_phy_wready           ),
 
         .ddr_addr               ( ddr_addr               ),
         .ddr_ba                 ( ddr_ba                 ),
@@ -1286,6 +1432,10 @@ isp_top #(
         .SHOW_LATENCY       ( 1 ),
         .LATENCY_SWITCH_ENABLE( 1 ),
         .SHOW_EFFECT_LABEL  ( 1 ),
+        .SHOW_CNN(ENABLE_HANDCNN),
+        .HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),
+        .CNN_RESULT_TIMEOUT_FRAMES(0),
+        .SHOW_RESNET_RUNTIME ( ENABLE_HANDCNN != 0 ? 1 : 0 ),
         .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
@@ -1309,6 +1459,12 @@ isp_top #(
         .I_latency_total_us(S_latency_total_us),
         .I_latency_isp_us(S_latency_isp_us),
         .I_latency_buffer_us(S_latency_buffer_us),
+        .I_cnn_enable(FRUIT_SWITCH_CONTROL != 0 ? I_fruit_switch : 1'b1),
+        .I_cnn_result_valid(S_cnn_result_valid_hdmi),
+        .I_cnn_class(S_cnn_class_hdmi),
+        .I_hand_box_valid(S_hand_box_hdmi[48]),
+        .I_hand_box(S_hand_box_hdmi[47:0]),
+        .I_resnet_probe_status(S_resnet_probe_status_hdmi),
         .O_display_frame_start(S_display_frame_start),
         .O_video_rd_en   ( S_hdmi_window_rd_en),
         .I_video_rd_data ( S_video_rd_data    ),

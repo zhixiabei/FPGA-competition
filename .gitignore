@@ -30,6 +30,7 @@ xsim.dir/
 *.bit
 /exports/
 /build/
+/.conda/
 
 # Retired scratch/output locations. Documents now live under docs/proposals.
 /tmp/

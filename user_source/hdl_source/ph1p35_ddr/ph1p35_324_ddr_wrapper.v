@@ -17,6 +17,9 @@ module ph1p35_324_ddr_wrapper (
     output wire        O_mc_app_rd_data_valid,
     output wire        O_mc_app_rdy,
     output wire        O_mc_app_wdf_rdy,
+    output wire        O_mc_read_ready,
+    output wire        O_mc_write_ready,
+    output wire        O_mc_data_ready,
 
 // DDR3 signals
     output wire[12:0]  ddr_addr,
@@ -71,6 +74,10 @@ module ph1p35_324_ddr_wrapper (
     assign paxi_rready              = 1'b1                                      ;
     assign O_mc_app_rd_data        = paxi_rdata                                 ; 
     assign O_mc_app_rd_data_valid  = paxi_rvalid                                ;
+    assign O_mc_app_rd_data_end    = paxi_rlast;
+    assign O_mc_read_ready         = paxi_arready;
+    assign O_mc_write_ready        = paxi_awready;
+    assign O_mc_data_ready         = paxi_wready;
     assign O_mc_app_rdy            = paxi_arready || paxi_awready               ;
     assign O_mc_app_wdf_rdy        = paxi_awready                               ;
 

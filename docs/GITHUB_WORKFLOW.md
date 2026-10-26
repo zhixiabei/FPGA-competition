@@ -1,5 +1,7 @@
 # GitHub 上传与后续更新
 
+2026-10-26 main/master 无共同祖先的处理、本地整合范围与后续合并方式见 [整合记录](MASTER_MAIN_MERGE.md)。水果权重与工程快照位于被忽略的 `build/`，迁移时需另外复制模型包。
+
 本工程的 .gitignore 已配置好。默认保留文件，只排除已知生成物；
 `build/` 和所有 `.bit` 不提交，文档位于 `docs/`，烧录文件在本机固定为
 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。克隆后运行根目录 `build_firmware.cmd` 重新生成。

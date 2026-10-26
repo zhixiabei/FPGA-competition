@@ -1,9 +1,9 @@
 // Same switchable RGB/edge pipeline, with RGB selected after reset.
-module sc520_capture_top #(
-    parameter integer IQ_DIAGNOSTIC_ENABLE = 0
-) (
+module sc520_capture_top (
     input wire        I_sys_clk,
     input wire        I_rst_n,
+    input wire        I_resnet_uart_rx, // Shared board UART pin; video-only mode ignores RX.
+    output wire       O_resnet_uart_tx,
       
     output wire       O_cam_scl,
     inout  wire       IO_cam_sda,
@@ -14,6 +14,7 @@ module sc520_capture_top #(
     input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
     input wire        I_effect_key_n, // Board K3 (B9), reserved.
+    input wire        I_fruit_switch, // Board SW2 (B4), reserved in video-only project.
     input wire        I_latency_switch, // Board SW1 (A4), high to show latency panel.
     input wire        I_param_key_n, // Board K4 (C7), reserved.
 
@@ -43,11 +44,11 @@ module sc520_capture_top #(
     inout wire[1:0]   ddr_dqs_p,
     inout wire[1:0]   ddr_dqs_n   
 );
-    design_top_wrapper #(
-        .ENABLE_EDGE(0), .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
-    ) u_video (
+    design_top_wrapper #(.ENABLE_EDGE(0),.ENABLE_HANDCNN(0)) u_video (
         .I_sys_clk(I_sys_clk),
         .I_rst_n(I_rst_n),
+        .I_resnet_uart_rx(I_resnet_uart_rx),
+        .O_resnet_uart_tx(O_resnet_uart_tx),
         .O_cam_scl(O_cam_scl),
         .IO_cam_sda(IO_cam_sda),
         .O_cam_24m(O_cam_24m),
@@ -57,6 +58,7 @@ module sc520_capture_top #(
         .I_detect_key_n(I_detect_key_n),
         .I_effect_key_n(I_effect_key_n),
         .I_latency_switch(I_latency_switch),
+        .I_fruit_switch(I_fruit_switch),
         .I_param_key_n(I_param_key_n),
         .O_screen_pwm(O_screen_pwm),
         .O_tmds_ch0_p(O_tmds_ch0_p),

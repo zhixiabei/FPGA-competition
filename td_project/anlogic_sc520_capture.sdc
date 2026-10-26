@@ -76,3 +76,5 @@ set_max_delay -datapath_only -from [get_regs {u_video/u_target_frame_bridge/S_re
 set_false_path -from [get_regs {u_video/u_detection_mode_control/O_detection_mode[*]}] -to [get_regs {u_video/u_isp_top/u_target_detect_switch/color_meta[*]}]
 # SW1 is sampled by the first HDMI synchronizer; the second stage remains timed.
 set_false_path -from [get_ports {I_latency_switch}] -to [get_regs {u_video/u_hdmi_mixer/latency_switch$show_meta}]
+
+# The video-only wrapper keeps UART and SW2 ports but does not instantiate CNN.

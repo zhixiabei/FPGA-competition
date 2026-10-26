@@ -1,6 +1,8 @@
 
 
-module video_in (
+module video_in #(
+    parameter integer FRAME_STRIDE_NATIVE=7000000
+)(
     input wire         I_rst_n,
 
     input wire         I_camera_clk,
@@ -39,14 +41,28 @@ module video_in (
     wire[127:0] S_fifo_rd_data; 
     reg         S_ddr_wr_valid;
     reg[9:0]    S_ddr_wr_cnt;
+    reg [1:0]   S_camera_startup;
+    reg         S_camera_frame_seen;
 
     localparam IMAGE_BASE_ADDR_0 = 25'd0;
-    localparam IMAGE_BASE_ADDR_1 = 25'd7000000;
-    localparam IMAGE_BASE_ADDR_2 = 25'd14000000;
-    localparam IMAGE_BASE_ADDR_3 = 25'd21000000;
+    localparam IMAGE_BASE_ADDR_1 = FRAME_STRIDE_NATIVE;
+    localparam IMAGE_BASE_ADDR_2 = FRAME_STRIDE_NATIVE*2;
+    localparam IMAGE_BASE_ADDR_3 = FRAME_STRIDE_NATIVE*3;
 
 
-    assign S_fifo_rst = S_camera_frame_start_extend_3d;
+    // Calibration may finish halfway through a camera frame. Hold the FIFO
+    // in reset at power-up and accept pixels only after the next camera SOF.
+    assign S_fifo_rst = !I_rst_n || S_camera_frame_start_extend_3d;
+    always @(posedge I_camera_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_camera_startup <= 2'b00;
+            S_camera_frame_seen <= 1'b0;
+        end else begin
+            S_camera_startup <= {S_camera_startup[0],1'b1};
+            if (S_camera_startup[1] && I_camera_frame_start)
+                S_camera_frame_seen <= 1'b1;
+        end
+    end
 
     // Busy covers the current write transaction only.  Including the outgoing
     // request here can keep video_out starved while camera frames are active.
@@ -56,7 +72,7 @@ module video_in (
         .rst        ( S_fifo_rst         ),   
 
         .clkw       ( I_camera_clk       ),     
-        .we         ( I_camera_valid     ),
+        .we         ( I_camera_valid && S_camera_frame_seen && !S_fifo_rst ),
         .di         ( I_camera_data      ),
         .afull      (),
         .full_flag  (),
@@ -76,7 +92,7 @@ module video_in (
         if(!I_rst_n)
             S_camera_frame_start_extend <= 1'b0;
         else
-            if(I_camera_frame_start)
+            if(S_camera_startup[1] && I_camera_frame_start)
                 S_camera_frame_start_extend <= 1'b1;
             else if(S_extend_cnt == 'd7)
                 S_camera_frame_start_extend <= 1'b0;
@@ -85,18 +101,25 @@ module video_in (
     end
 
 	
-    always @ (posedge I_camera_clk) begin
-    	if(S_camera_frame_start_extend)
+    always @ (posedge I_camera_clk or negedge I_rst_n) begin
+        if(!I_rst_n) S_extend_cnt <= 'd0;
+        else if(S_camera_frame_start_extend)
         	S_extend_cnt <= S_extend_cnt + 'd1;
       	else
           	S_extend_cnt <= 'd0;
     end
 
 
-    always @(posedge I_ddr_clk) begin
-        S_camera_frame_start_extend_1d <= S_camera_frame_start_extend;
-        S_camera_frame_start_extend_2d <= S_camera_frame_start_extend_1d;
-        S_camera_frame_start_extend_3d <= S_camera_frame_start_extend_2d;
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if(!I_rst_n) begin
+            S_camera_frame_start_extend_1d <= 1'b0;
+            S_camera_frame_start_extend_2d <= 1'b0;
+            S_camera_frame_start_extend_3d <= 1'b0;
+        end else begin
+            S_camera_frame_start_extend_1d <= S_camera_frame_start_extend;
+            S_camera_frame_start_extend_2d <= S_camera_frame_start_extend_1d;
+            S_camera_frame_start_extend_3d <= S_camera_frame_start_extend_2d;
+        end
     end
 
     assign S_frame_start = ~S_camera_frame_start_extend_3d & S_camera_frame_start_extend_2d;
@@ -167,8 +190,9 @@ module video_in (
                 S_ddr_wr_valid <= S_ddr_wr_valid;
     end
 
-    always @(posedge I_ddr_clk) begin
-        if(S_ddr_wr_valid)
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if(!I_rst_n) S_ddr_wr_cnt <= 'd0;
+        else if(S_ddr_wr_valid)
             begin
                 if(I_ddr_user_ready)
                     S_ddr_wr_cnt <= S_ddr_wr_cnt + 'd1;
@@ -179,10 +203,11 @@ module video_in (
             S_ddr_wr_cnt <= 'd0;
     end
 
-    assign S_fifo_rd_en = S_ddr_wr_valid & I_ddr_user_ready;
+    assign S_fifo_rd_en = I_rst_n & S_ddr_wr_valid & I_ddr_user_ready;
 
-    always @(posedge I_ddr_clk) begin
-        O_ddr_user_wr_en <= S_fifo_rd_en;
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if(!I_rst_n) O_ddr_user_wr_en <= 1'b0;
+        else O_ddr_user_wr_en <= S_fifo_rd_en;
     end
 
 	/*

@@ -41,13 +41,24 @@ module mc_to_user_interface (
     wire        S_fifo_rd_valid;
     wire        S_fifo_empty;   
 
-    assign S_fifo_wr_en = I_ddr_user_wr_en | I_ddr_user_rd_en;
+    // The generated FIFO holds its pointers in reset for two clocks after
+    // I_rst_n rises. Do not advertise acceptance during that interval.
+    reg [2:0] S_fifo_startup;
+    wire S_fifo_running = I_rst_n && S_fifo_startup[2];
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) S_fifo_startup <= 3'b000;
+        else S_fifo_startup <= {S_fifo_startup[1:0],1'b1};
+    end
+
+    // Keep the existing almost-full headroom for the writer's one-cycle
+    // delayed request. Gate reset readiness here, not the almost-full flag.
+    assign S_fifo_wr_en = S_fifo_running && (I_ddr_user_wr_en | I_ddr_user_rd_en);
 
     assign S_fifo_wr_data = {I_ddr_user_wr_en,I_ddr_user_rd_en,I_ddr_user_addr,I_ddr_user_wr_data};
 
-    assign S_fifo_rd_en = I_mc_app_rdy & I_mc_app_wdf_rdy & (~S_fifo_empty);
+    assign S_fifo_rd_en = S_fifo_running & I_mc_app_rdy & I_mc_app_wdf_rdy & (~S_fifo_empty);
 
-    assign O_ddr_user_ready = ~S_fifio_pro_full;
+    assign O_ddr_user_ready = S_fifo_running & ~S_fifio_pro_full;
 
     assign O_mc_app_en = S_fifo_rd_en;
 

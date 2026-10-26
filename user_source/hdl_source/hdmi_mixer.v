@@ -14,6 +14,12 @@ module hdmi_mixer #(
     parameter integer SHOW_LATENCY = 0,
     parameter integer LATENCY_SWITCH_ENABLE = 0,
     parameter integer SHOW_EFFECT_LABEL = 0,
+    parameter integer SHOW_CNN = 0,
+    parameter integer CNN_FULL_FRAME_INPUT = 0,
+    parameter integer HANDCNN_DYNAMIC_ROI = 0,
+    parameter integer SHOW_RESNET_PROBE = 0,
+    parameter integer SHOW_RESNET_RUNTIME = 0,
+    parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60,
     parameter integer MULTI_TARGET_ENABLE = 0
 )(
     input wire        I_clk,
@@ -39,6 +45,13 @@ module hdmi_mixer #(
     input wire [19:0] I_latency_total_us,
     input wire [19:0] I_latency_isp_us,
     input wire [19:0] I_latency_buffer_us,
+
+    input wire I_cnn_enable,
+    input wire I_cnn_result_valid,
+    input wire [2:0] I_cnn_class,
+    input wire I_hand_box_valid,
+    input wire [47:0] I_hand_box,
+    input wire [31:0] I_resnet_probe_status,
 
     output wire       O_video_rd_en,
     output wire       O_display_frame_start,
@@ -83,7 +96,25 @@ module hdmi_mixer #(
     reg [11:0] S_y_1d;
     reg [11:0] S_y_2d;
 
+    reg [2:0] S_cnn_class;
     reg [3:0] S_effect_mode;
+    wire S_cnn_visible;
+    generate if (SHOW_CNN != 0) begin: cnn_visibility
+        (* async_reg = "true" *) reg enable_meta, enable_sync;
+        reg enable_active;
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if (!I_rst_n) begin
+                enable_meta<=0;enable_sync<=0;enable_active<=0;
+            end else begin
+                enable_meta<=I_cnn_enable;enable_sync<=enable_meta;
+                if(I_video_user) enable_active<=enable_sync;
+            end
+        end
+        assign S_cnn_visible=enable_active;
+    end else begin: no_cnn_visibility
+        assign S_cnn_visible=1'b0;
+    end endgenerate
+
     wire S_latency_visible;
     generate if (LATENCY_SWITCH_ENABLE != 0) begin: latency_switch
         (* async_reg = "true" *) reg show_meta, show_sync;
@@ -240,6 +271,34 @@ module hdmi_mixer #(
     wire S_display_frame_start = S_video_de_2d &&
                                  (S_x_2d == 0) && (S_y_2d == 0);
     assign O_display_frame_start = S_display_frame_start;
+
+    localparam integer CNN_AGE_WIDTH = CNN_RESULT_TIMEOUT_FRAMES < 2 ?
+        1 : $clog2(CNN_RESULT_TIMEOUT_FRAMES+1);
+    reg [CNN_AGE_WIDTH-1:0] S_cnn_result_age;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            S_cnn_class <= 3'd1;
+            S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
+        end else if (SHOW_CNN != 0 && !S_cnn_visible) begin
+            S_cnn_class <= 3'd1;
+            S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
+        end else if (I_cnn_result_valid) begin
+            if(!HANDCNN_DYNAMIC_ROI || I_video_user)
+                S_cnn_class <= (I_cnn_class >= 3'd1 && I_cnn_class <= 3'd4) ? I_cnn_class : 3'd1;
+            S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
+        end else if(HANDCNN_DYNAMIC_ROI && I_video_user) begin
+            S_cnn_class <= ((CNN_RESULT_TIMEOUT_FRAMES != 0) && S_cnn_result_age>=CNN_RESULT_TIMEOUT_FRAMES-1) ?
+                3'd1 : (I_cnn_class>=1 && I_cnn_class<=4 ? I_cnn_class : 3'd1);
+            if(CNN_RESULT_TIMEOUT_FRAMES != 0 && S_cnn_result_age<CNN_RESULT_TIMEOUT_FRAMES)
+                S_cnn_result_age<=S_cnn_result_age+1'b1;
+        end else if (!HANDCNN_DYNAMIC_ROI && (CNN_RESULT_TIMEOUT_FRAMES != 0) &&
+                     S_display_frame_start) begin
+            if (S_cnn_result_age < CNN_RESULT_TIMEOUT_FRAMES)
+                S_cnn_result_age <= S_cnn_result_age + 1'b1;
+            if (S_cnn_result_age >= CNN_RESULT_TIMEOUT_FRAMES-1)
+                S_cnn_class <= 3'd1;
+        end
+    end
 
     always @(*) begin
         S_target_bcd_adjust_x = S_target_bcd_work_x;
@@ -690,7 +749,7 @@ module hdmi_mixer #(
 
     // Bottom-left panel: RED/GRN/BLU/MOV plus target status.
     // Uses the existing character ROM; coordinates are zero-based decimals.
-    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && S_video_de_2d &&
+    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && !S_cnn_visible && S_video_de_2d &&
         (S_x_2d >= TARGET_TEXT_X) &&
         (S_x_2d < TARGET_TEXT_X+((MULTI_TARGET_ENABLE != 0) ? 240 : 368)) &&
         (S_y_2d >= TARGET_TEXT_Y) && (S_y_2d < TARGET_TEXT_Y+16);
@@ -780,11 +839,62 @@ module hdmi_mixer #(
             S_effect_char = S_effect_name[95-8*(S_effect_char_index-3) -: 8];
     end
 
+    // CNN status label. Keep the declarations before the shared character ROM
+    // instance; otherwise older Verilog elaboration treats the earlier uses as
+    // implicit nets and the synthesized panel becomes undriven.
+    localparam CNN_TEXT_X = 16;
+    localparam CNN_TEXT_Y = 16;
+    wire S_cnn_panel_on = S_cnn_visible && S_video_de_2d &&
+        (S_x_2d >= CNN_TEXT_X) &&
+        (S_x_2d < CNN_TEXT_X+(SHOW_RESNET_PROBE != 0 ? 320 : SHOW_RESNET_RUNTIME != 0 ? 256 : 192)) &&
+        (S_y_2d >= CNN_TEXT_Y) && (S_y_2d < CNN_TEXT_Y+(SHOW_RESNET_RUNTIME != 0 ? 32 : 16));
+    wire [11:0] S_cnn_text_x = S_x_2d - CNN_TEXT_X;
+    wire [3:0] S_cnn_text_y = S_y_2d - CNN_TEXT_Y;
+    wire [4:0] S_cnn_char_index = S_cnn_text_x[8:4];
+    reg [7:0] S_cnn_char;
+    reg [127:0] S_runtime_text;
+    always @(*) begin
+        if(I_resnet_probe_status[29]) S_runtime_text="DDR ERROR       ";
+        else if(!I_resnet_probe_status[25]) S_runtime_text="WAIT MODEL      ";
+        else if(I_resnet_probe_status[26])
+            S_runtime_text=I_resnet_probe_status[27] ? "CAP RETRY       " : "CAPTURE         ";
+        else if(I_resnet_probe_status[28]) S_runtime_text="RUN OP          ";
+        else if(!I_resnet_probe_status[18]) S_runtime_text="WAIT RESULT     ";
+        else if(I_resnet_probe_status[21:19]==3'd1) S_runtime_text="LOW CONF        ";
+        else S_runtime_text="RESULT READY    ";
+    end
+    // New ResNet uses full-frame letterbox. Square mode is a display-only
+    // compatibility option for historical component benches.
+    localparam integer CNN_ROI_SIDE = IMG_WIDTH < IMG_HEIGHT ? IMG_WIDTH : IMG_HEIGHT;
+    localparam integer CNN_ROI_WIDTH = CNN_FULL_FRAME_INPUT ? IMG_WIDTH : CNN_ROI_SIDE;
+    localparam integer CNN_ROI_HEIGHT = CNN_FULL_FRAME_INPUT ? IMG_HEIGHT : CNN_ROI_SIDE;
+    localparam integer CNN_ROI_X = (IMG_WIDTH-CNN_ROI_WIDTH)/2;
+    localparam integer CNN_ROI_Y = (IMG_HEIGHT-CNN_ROI_HEIGHT)/2;
+    wire S_legacy_cnn_roi_on = S_cnn_visible && (SHOW_RESNET_PROBE == 0) &&
+        S_video_de_2d &&
+        S_x_2d >= CNN_ROI_X && S_x_2d < CNN_ROI_X+CNN_ROI_WIDTH &&
+        S_y_2d >= CNN_ROI_Y && S_y_2d < CNN_ROI_Y+CNN_ROI_HEIGHT &&
+        (S_x_2d < CNN_ROI_X+2 || S_x_2d >= CNN_ROI_X+CNN_ROI_WIDTH-2 ||
+         S_y_2d < CNN_ROI_Y+2 || S_y_2d >= CNN_ROI_Y+CNN_ROI_HEIGHT-2);
+    reg [48:0] S_hand_box;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if(!I_rst_n) S_hand_box<=0;
+        else if(I_video_user) S_hand_box<={I_hand_box_valid &&
+            (!(CNN_RESULT_TIMEOUT_FRAMES != 0 && S_cnn_result_age>=CNN_RESULT_TIMEOUT_FRAMES-1) || I_cnn_result_valid),I_hand_box};
+    end
+    wire [11:0] hx1=S_hand_box[11:0],hx2=S_hand_box[23:12],hy1=S_hand_box[35:24],hy2=S_hand_box[47:36];
+    wire S_hand_roi_on=S_cnn_visible && S_hand_box[48] && S_video_de_2d &&
+        S_x_2d>=hx1 && S_x_2d<=hx2 && S_y_2d>=hy1 && S_y_2d<=hy2 &&
+        (S_x_2d<hx1+2 || S_x_2d+2>hx2 || S_y_2d<hy1+2 || S_y_2d+2>hy2);
+    wire S_cnn_roi_on=HANDCNN_DYNAMIC_ROI ? S_hand_roi_on : S_legacy_cnn_roi_on;
+
     // Fixed panels and all following labels share one character lookup.
     osd_char_lib u_target_char_lib (
         .I_char(S_effect_panel_on ? S_effect_char :
+                S_cnn_panel_on ? S_cnn_char :
                 S_target_panel_on ? S_target_char : S_follow_char),
         .I_row(S_effect_panel_on ? S_effect_text_y :
+               S_cnn_panel_on ? S_cnn_text_y :
                S_target_panel_on ? S_target_text_y : S_follow_row),
         .O_row_bits(S_target_char_bits)
     );
@@ -792,8 +902,93 @@ module hdmi_mixer #(
         S_target_char_bits[15-S_target_text_x[3:0]];
     wire S_effect_text_on = S_effect_panel_on &&
         S_target_char_bits[15-S_effect_text_x[3:0]];
+    wire S_cnn_text_on = S_cnn_panel_on &&
+        S_target_char_bits[15-S_cnn_text_x[3:0]];
     assign S_follow_text_on = S_follow_panel_on &&
         S_target_char_bits[15-S_follow_col];
+
+    always @(*) begin
+        S_cnn_char = 8'h20;
+        case (S_cnn_char_index)
+            0: S_cnn_char = "H";
+            1: S_cnn_char = "A";
+            2: S_cnn_char = "N";
+            3: S_cnn_char = "D";
+            5: begin
+                case (S_cnn_class)
+                    3'd1: S_cnn_char = "N";
+                    3'd2: S_cnn_char = "P";
+                    3'd3: S_cnn_char = "P";
+                    default: S_cnn_char = "S";
+                endcase
+            end
+            6: begin
+                case (S_cnn_class)
+                    3'd1: S_cnn_char = "O";
+                    3'd2: S_cnn_char = "E";
+                    3'd3: S_cnn_char = "U";
+                    default: S_cnn_char = "T";
+                endcase
+            end
+            7: begin
+                case (S_cnn_class)
+                    3'd1: S_cnn_char = "T";
+                    3'd2: S_cnn_char = "A";
+                    3'd3: S_cnn_char = "N";
+                    3'd4: S_cnn_char = "O";
+                    default: S_cnn_char = " ";
+                endcase
+            end
+            8: begin
+                case (S_cnn_class)
+                    3'd1: S_cnn_char = "H";
+                    3'd2: S_cnn_char = "C";
+                    3'd3: S_cnn_char = "C";
+                    3'd4: S_cnn_char = "P";
+                    default: S_cnn_char = " ";
+                endcase
+            end
+            9: S_cnn_char = S_cnn_class == 3'd1 ? "I" :
+                            S_cnn_class == 3'd2 ? "E" :
+                            S_cnn_class == 3'd3 ? "H" : " ";
+            10: S_cnn_char = S_cnn_class == 3'd1 ? "N" : " ";
+            11: S_cnn_char = S_cnn_class == 3'd1 ? "G" : " ";
+            default: S_cnn_char = 8'h20;
+        endcase
+        if (SHOW_RESNET_PROBE != 0) begin
+            case (S_cnn_char_index)
+                0: S_cnn_char="R";
+                1: S_cnn_char="N";
+                2: S_cnn_char="E";
+                3: S_cnn_char="T";
+                5: S_cnn_char="T";
+                6: S_cnn_char="E";
+                7: S_cnn_char="S";
+                8: S_cnn_char="T";
+                10,11,12,13,14,15:
+                    S_cnn_char=F_probe_hex(I_resnet_probe_status[23-(S_cnn_char_index-10)*4 -: 4]);
+                17: S_cnn_char=F_probe_hex(I_resnet_probe_status[31:28]);
+                18: S_cnn_char=F_probe_hex(I_resnet_probe_status[27:24]);
+                default: S_cnn_char=" ";
+            endcase
+        end
+        if (SHOW_RESNET_RUNTIME != 0 && S_y_2d >= CNN_TEXT_Y+16) begin
+            S_cnn_char=S_runtime_text[127-S_cnn_char_index*8 -: 8];
+            if(S_cnn_char_index==10 && I_resnet_probe_status[28])
+                S_cnn_char=F_probe_hex(I_resnet_probe_status[15:12]);
+            if(S_cnn_char_index==11 && I_resnet_probe_status[28])
+                S_cnn_char=F_probe_hex(I_resnet_probe_status[11:8]);
+            if(S_cnn_char_index==14) S_cnn_char=F_probe_hex(I_resnet_probe_status[7:4]);
+            if(S_cnn_char_index==15) S_cnn_char=F_probe_hex(I_resnet_probe_status[3:0]);
+        end
+    end
+
+    function [7:0] F_probe_hex;
+        input [3:0] nibble;
+        begin
+            F_probe_hex=nibble<10 ? 8'h30+nibble : 8'h41+(nibble-10);
+        end
+    endfunction
 
     wire S_raw_panel, S_raw_text, S_raw_alert;
     generate if (SHOW_RAW_STATS != 0) begin: raw_readout
@@ -1548,6 +1743,8 @@ module hdmi_mixer #(
                         S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
                 else if(S_effect_panel_on)
                     O_hdmi_data <= S_effect_text_on ? 24'h00e6ff : 24'h101010;
+                else if(S_cnn_panel_on)
+                    O_hdmi_data <= S_cnn_text_on ? 24'h40ff80 : 24'h101010;
                 else if(S_latency_panel)
                     O_hdmi_data <= S_latency_text ?
                         (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
@@ -1557,17 +1754,19 @@ module hdmi_mixer #(
                     O_hdmi_data <= S_osd_color;
                 else if(S_target_panel_on)
                     O_hdmi_data <= S_target_text_on ? 24'hfff200 : 24'h101010;
-                else if(SHOW_COLOR_TARGET && S_follow_panel_on)
+                else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_follow_panel_on)
                     O_hdmi_data <= S_follow_text_on ? S_follow_color : 24'h101010;
-                else if(SHOW_COLOR_TARGET && S_multi_box_on)
+                else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_multi_box_on)
                     O_hdmi_data <= S_multi_box_color;
                 else if((MULTI_TARGET_ENABLE == 0) &&
-                        SHOW_COLOR_TARGET && S_video_de_2d && S_target_box_on)
+                        SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_box_on)
                     O_hdmi_data <= 24'hff3030;
                 else if(((MULTI_TARGET_ENABLE == 0) ||
                         (S_target_motion_mode && S_multi_count != 0)) &&
-                        SHOW_COLOR_TARGET && S_video_de_2d && S_target_cross_on)
+                        SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_cross_on)
                     O_hdmi_data <= 24'hfff200;
+                else if(S_cnn_roi_on)
+                    O_hdmi_data <= 24'h40ff80;
                 else
                     O_hdmi_data <= S_video_data_2d;
             end
