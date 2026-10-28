@@ -29,7 +29,10 @@ module tb_target_frame_bridge_slot_writes;
     reg [251:0] held_slot_result;
     integer checks = 0, slot;
 
-    target_frame_bridge #(.FRAME_WORDS(1)) dut (
+    target_frame_bridge #(
+        .FRAME_WORDS(1), .RESULT_PENDING_ENABLE(0),
+        .READ_PENDING_ENABLE(0)
+    ) dut (
         .I_csi_clk(csi_clk), .I_ddr_clk(ddr_clk), .I_hdmi_clk(hdmi_clk), .I_rst_n(rst_n),
         .I_frame_start(frame_start), .I_frame_id(frame_id),
         .I_effect_config(effect_config), .I_motion_mode(motion_mode), .I_color_mode(color_mode),

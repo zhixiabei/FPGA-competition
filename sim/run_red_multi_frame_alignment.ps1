@@ -1,6 +1,7 @@
 param(
     [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
-    [switch] $CompactMode
+    [switch] $CompactMode,
+    [switch] $SingleTarget
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +22,7 @@ $sources = @(
     'user_source\hdl_source\display_effect_control.v',
     'user_source\hdl_source\anlogic_logo_rom.v',
     'user_source\hdl_source\osd_char_lib.v',
+    'sim\reference\ph1p_logic_dram_asym_sim.v',
     'sim\tb_red_multi_frame_alignment.sv'
 )
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
@@ -57,8 +59,10 @@ try {
         throw "Production multi-frame compile failed: $simulationDir\compile_console.log"
     }
     $compactValue = if ($CompactMode) { 1 } else { 0 }
+    $singleValue = if ($SingleTarget) { 1 } else { 0 }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug all `
         -generic_top ('"COMPACT_MODE=' + $compactValue + '"') `
+        -generic_top ('"SINGLE_TARGET=' + $singleValue + '"') `
         work.tb_red_multi_frame_alignment -s red_multi_frame_alignment -log xelab.log *> elaborate_console.log
     if ($LASTEXITCODE -ne 0) {
         throw "Production multi-frame elaboration failed: $simulationDir\elaborate_console.log"

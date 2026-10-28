@@ -23,12 +23,11 @@ rename_clock -name {MIPI_RX_BYTE_CLK} [get_clocks {u_mipi_dphy_rx_ph1p_mipiio_wr
 # TD does not reliably apply constraints inside SDC conditionals.
 set_false_path -from [get_regs -nowarn {u_camera_diag_cdc/req_toggle u_ae_stats_cdc/req_toggle raw_diagnostics$u_cdc/req_toggle raw_diagnostics$u_ae_readout_cdc/req_toggle}] -to [get_regs -nowarn {u_camera_diag_cdc/req_meta u_ae_stats_cdc/req_meta raw_diagnostics$u_cdc/req_meta raw_diagnostics$u_ae_readout_cdc/req_meta}]
 set_false_path -from [get_regs -nowarn {u_camera_diag_cdc/ack_toggle u_ae_stats_cdc/ack_toggle raw_diagnostics$u_cdc/ack_toggle raw_diagnostics$u_ae_readout_cdc/ack_toggle}] -to [get_regs -nowarn {u_camera_diag_cdc/ack_meta u_ae_stats_cdc/ack_meta raw_diagnostics$u_cdc/ack_meta raw_diagnostics$u_ae_readout_cdc/ack_meta}]
-# Stable diagnostic payloads are held until ACK; 13 ns is below two request
-# stages. AE statistics cross to 24 MHz and retain their separate 20 ns bound.
-set_max_delay -datapath_only -from [get_regs -nowarn {u_camera_diag_cdc/payload_hold[*] raw_diagnostics$u_cdc/payload_hold[*] raw_diagnostics$u_ae_readout_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_camera_diag_cdc/O_dst_data[*] raw_diagnostics$u_cdc/O_dst_data[*] raw_diagnostics$u_ae_readout_cdc/O_dst_data[*]}] 13.000
+# IQ diagnostic payload destinations are optimized away in the production
+# configuration. AE statistics remain active and keep their bundled-data bound.
 set_max_delay -datapath_only -from [get_regs -nowarn {u_ae_stats_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_ae_stats_cdc/O_dst_data[*]}] 20.000
-# Registered AE hold level; only the first synchronizer stage is asynchronous.
-set_false_path -from [get_regs {u_auto_exposure/O_awb_hold}] -to [get_regs {u_isp_top/awb_hold_meta}]
+# Original-compatible AWB ignores the AE hold input, so its destination is not
+# a functional CDC endpoint in this build.
 
 # Latency mailboxes cross CSI/DDR/HDMI; their payload bounds must remain
 # active. TD's broad asynchronous groups would override those bounds.
@@ -59,17 +58,17 @@ set_false_path -from [get_regs {u_display_effect_cdc/req_toggle}] -to [get_regs 
 set_false_path -from [get_regs {u_display_effect_cdc/ack_toggle}] -to [get_regs {u_display_effect_cdc/ack_meta}]
 set_max_delay -datapath_only -from [get_regs {u_display_effect_cdc/payload_hold[*]}] -to [get_regs {u_display_effect_cdc/O_dst_data[*]}] 13.000
 
-set_false_path -from [get_regs {u_video_latency/S_isp_request}] -to [get_regs {u_video_latency/S_isp_req_meta}]
-set_false_path -from [get_regs {u_video_latency/S_isp_ack}] -to [get_regs {u_video_latency/S_isp_ack_meta}]
-set_false_path -from [get_regs {u_video_latency/S_read_request}] -to [get_regs {u_video_latency/S_read_req_meta}]
-set_false_path -from [get_regs {u_video_latency/S_read_ack}] -to [get_regs {u_video_latency/S_read_ack_meta}]
+set_false_path -from [get_regs {latency_diagnostics$u_video_latency/S_isp_request}] -to [get_regs {latency_diagnostics$u_video_latency/S_isp_req_meta}]
+set_false_path -from [get_regs {latency_diagnostics$u_video_latency/S_isp_ack}] -to [get_regs {latency_diagnostics$u_video_latency/S_isp_ack_meta}]
+set_false_path -from [get_regs {latency_diagnostics$u_video_latency/S_read_request}] -to [get_regs {latency_diagnostics$u_video_latency/S_read_req_meta}]
+set_false_path -from [get_regs {latency_diagnostics$u_video_latency/S_read_ack}] -to [get_regs {latency_diagnostics$u_video_latency/S_read_ack_meta}]
 # A registered Gray value changes one bit per microsecond. 20 ns is much
 # shorter than that update interval; the second synchronizer is timed normally.
-set_max_delay -datapath_only -from [get_regs {u_video_latency/u_timebase/O_time_gray[*]}] -to [get_regs {u_video_latency/S_csi_gray_meta[*] u_video_latency/S_hdmi_gray_meta[*]}] 20.000
+set_max_delay -datapath_only -from [get_regs {latency_diagnostics$u_video_latency/u_timebase/O_time_gray[*]}] -to [get_regs {latency_diagnostics$u_video_latency/S_csi_gray_meta[*] latency_diagnostics$u_video_latency/S_hdmi_gray_meta[*]}] 20.000
 # ISP SOF and its held tag share the existing two-stage video_in SOF crossing.
-set_max_delay -datapath_only -from [get_regs {u_video_latency/S_start_id[*] u_video_latency/S_start_raw_us[*] u_video_latency/S_start_valid}] -to [get_regs {u_video_latency/S_slot*}] 20.000
-set_max_delay -datapath_only -from [get_regs {u_video_latency/S_isp_payload[*]}] -to [get_regs {u_video_latency/S_slot* u_video_latency/S_last_isp_payload[*]}] 20.000
-set_max_delay -datapath_only -from [get_regs {u_video_latency/S_read_payload[*]}] -to [get_regs {u_video_latency/S_pending_payload[*] u_video_latency/S_pending_valid}] 13.000
+set_max_delay -datapath_only -from [get_regs {latency_diagnostics$u_video_latency/S_start_id[*] latency_diagnostics$u_video_latency/S_start_raw_us[*] latency_diagnostics$u_video_latency/S_start_valid}] -to [get_regs {latency_diagnostics$u_video_latency/S_slot*}] 20.000
+set_max_delay -datapath_only -from [get_regs {latency_diagnostics$u_video_latency/S_isp_payload[*]}] -to [get_regs {latency_diagnostics$u_video_latency/S_slot* latency_diagnostics$u_video_latency/S_last_isp_payload[*]}] 20.000
+set_max_delay -datapath_only -from [get_regs {latency_diagnostics$u_video_latency/S_read_payload[*]}] -to [get_regs {latency_diagnostics$u_video_latency/S_pending_payload[*] latency_diagnostics$u_video_latency/S_pending_valid}] 13.000
 
 set_false_path -from [get_regs {u_target_frame_bridge/S_result_request}] -to [get_regs {u_target_frame_bridge/S_result_req_meta}]
 set_false_path -from [get_regs {u_target_frame_bridge/S_result_ack}] -to [get_regs {u_target_frame_bridge/S_result_ack_meta}]
@@ -84,3 +83,12 @@ set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_read_paylo
 set_false_path -from [get_regs {u_detection_mode_control/O_detection_mode[*]}] -to [get_regs {u_isp_top/u_target_detect_switch/color_meta[*]}]
 # SW1 is sampled by the first HDMI synchronizer; the second stage remains timed.
 set_false_path -from [get_ports {I_latency_switch}] -to [get_regs {u_hdmi_mixer/latency_switch$show_meta}]
+# Appended to candidate SDC by prepare_handfixed_project.py only when CNN is
+# enabled. Base video projects must not constrain nonexistent CNN endpoints.
+set_false_path -from [get_ports {I_resnet_uart_rx}] -to [get_regs -nowarn {*u_handcnn/uart/rx_meta}]
+# Exclude only the first asynchronous stages. The always-present key endpoint
+# keeps this collection valid when constant display enable removes enable_meta.
+set_false_path -from [get_ports {I_param_key_n I_fruit_switch}] -to [get_regs -nowarn {*u_handcnn/key_control/key_meta u_hdmi_mixer/cnn_visibility$enable_meta}]
+set_false_path -from [get_regs -nowarn {*u_status_cdc/req_toggle *u_hand_box_cdc/req_toggle}] -to [get_regs -nowarn {*u_status_cdc/req_meta *u_hand_box_cdc/req_meta}]
+set_false_path -from [get_regs -nowarn {*u_status_cdc/ack_toggle *u_hand_box_cdc/ack_toggle}] -to [get_regs -nowarn {*u_status_cdc/ack_meta *u_hand_box_cdc/ack_meta}]
+set_max_delay -datapath_only -from [get_regs -nowarn {*u_status_cdc/payload_hold[*] *u_hand_box_cdc/payload_hold[*]}] -to [get_regs -nowarn {*u_status_cdc/O_dst_data[*] *u_hand_box_cdc/O_dst_data[*]}] 13.000

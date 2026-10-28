@@ -10,7 +10,10 @@ module red_target_detect_96 #(
     parameter integer MIN_PIXELS = 128,
     parameter integer MIN_WIDTH = 8,
     parameter integer MIN_HEIGHT = 8,
-    parameter integer MULTI_ENABLE = 0
+    parameter integer MULTI_ENABLE = 0,
+    parameter integer CANDIDATE_SLOTS = 8,
+    parameter integer MAX_TARGETS = 3,
+    parameter integer SINGLE_SHAPE_ENABLE = 0
 ) (
     input wire I_clk,
     input wire I_rst_n,
@@ -75,6 +78,14 @@ module red_target_detect_96 #(
     // RED_MIN and RED_DELTA remain as a floor against dark channel noise.
     // Low-saturation pink/white and orange/purple are outside these bounds;
     // genuinely clipped pixels cannot recover their original color here.
+    // Separate SOF color selection/max-min from the threshold arithmetic.
+    // Four lanes still accept a beat every clock; all beat metadata follows
+    // this register, and the preview tail below gives back the same clock.
+    reg green_m;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) green_m <= 1'b0;
+        else green_m <= I_color_mode == 2'd1;
+    end
     wire [3:0] red_mask;
     genvar p;
     generate
@@ -82,11 +93,10 @@ module red_target_detect_96 #(
             wire [7:0] red_in = I_tdata[95-p*24-:8];
             wire [7:0] green_in = I_tdata[87-p*24-:8];
             wire [7:0] blue_in = I_tdata[79-p*24-:8];
-            reg [7:0] dominant, secondary_a, secondary_b;
+            reg [7:0] dominant_in, secondary_a_in, secondary_b_in;
+            reg [7:0] dominant, secondary_max, secondary_min;
             wire [8:0] red = {1'b0,dominant};
-            wire secondary_a_larger = secondary_a >= secondary_b;
-            wire [7:0] secondary_max = secondary_a_larger ? secondary_a : secondary_b;
-            wire [7:0] secondary_min = secondary_a_larger ? secondary_b : secondary_a;
+            wire secondary_a_larger = secondary_a_in >= secondary_b_in;
             wire [8:0] secondary_limit;
             wire [9:0] twice_red;
             wire [9:0] triple_secondary;
@@ -98,10 +108,19 @@ module red_target_detect_96 #(
             wire relaxed_green_mask;
             always @(*) begin
                 case (I_color_mode)
-                    2'd1: begin dominant=green_in; secondary_a=red_in; secondary_b=blue_in; end
-                    2'd2: begin dominant=blue_in; secondary_a=red_in; secondary_b=green_in; end
-                    default: begin dominant=red_in; secondary_a=green_in; secondary_b=blue_in; end
+                    2'd1: begin dominant_in=green_in; secondary_a_in=red_in; secondary_b_in=blue_in; end
+                    2'd2: begin dominant_in=blue_in; secondary_a_in=red_in; secondary_b_in=green_in; end
+                    default: begin dominant_in=red_in; secondary_a_in=green_in; secondary_b_in=blue_in; end
                 endcase
+            end
+            always @(posedge I_clk or negedge I_rst_n) begin
+                if (!I_rst_n) begin
+                    dominant <= 0; secondary_max <= 0; secondary_min <= 0;
+                end else begin
+                    dominant <= dominant_in;
+                    secondary_max <= secondary_a_larger ? secondary_a_in : secondary_b_in;
+                    secondary_min <= secondary_a_larger ? secondary_b_in : secondary_a_in;
+                end
             end
             // The larger secondary channel gives the stronger bounds.
             // Reuse these sums/comparisons for both secondary channels.
@@ -110,8 +129,8 @@ module red_target_detect_96 #(
                 assign delta_ok = red >= secondary_limit;
             end else begin : gen_legacy_wrapped_delta
                 // Preserve the original nine-bit wrap for unusual parameters.
-                wire [8:0] limit_a = {1'b0,secondary_a} + RED_DELTA_9;
-                wire [8:0] limit_b = {1'b0,secondary_b} + RED_DELTA_9;
+                wire [8:0] limit_a = {1'b0,secondary_max} + RED_DELTA_9;
+                wire [8:0] limit_b = {1'b0,secondary_min} + RED_DELTA_9;
                 assign delta_ok = red >= limit_a && red >= limit_b;
             end
             assign twice_red = {1'b0,red[7:0],1'b0};
@@ -128,7 +147,7 @@ module red_target_detect_96 #(
                 (red >= RED_MIN_9) &&
                 delta_ok &&
                 (four_dominant >= five_secondary);
-            assign red_mask[p] = I_color_mode == 2'd1 ?
+            assign red_mask[p] = green_m ?
                                  relaxed_green_mask : strict_primary_mask;
         end
     endgenerate
@@ -173,12 +192,30 @@ module red_target_detect_96 #(
         end
     end
 
+    reg valid_m, start_m, final_m;
+    reg [GROUP_BITS-1:0] group_m;
+    reg [Y_BITS-1:0] row_m;
+    reg [3:0] view_m;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            valid_m <= 0; start_m <= 0; final_m <= 0;
+            group_m <= 0; row_m <= 0; view_m <= 0;
+        end else begin
+            valid_m <= accept_beat;
+            start_m <= accept_beat && start_frame;
+            final_m <= accept_beat && final_beat;
+            group_m <= beat_group;
+            row_m <= beat_row;
+            view_m <= I_mask_view_mode;
+        end
+    end
+
     // Each two-row binary history occupies one packed eight-bit ERAM.
     // Rows 0/1 refill it before any old data can contribute to the filter.
     wire [3:0] top_now, mid_now, bot_now;
     red_mask_rows_4 #(.GROUPS(IMG_WIDTH_GRP),.ADDR_BITS(GROUP_BITS)) u_mask_rows (
-        .I_clk(I_clk),.I_rst_n(I_rst_n),.I_valid(accept_beat),
-        .I_group(beat_group),.I_mask(red_mask),
+        .I_clk(I_clk),.I_rst_n(I_rst_n),.I_valid(valid_m),
+        .I_group(group_m),.I_mask(red_mask),
         .O_top(top_now),.O_mid(mid_now),.O_bot(bot_now)
     );
 
@@ -196,11 +233,11 @@ module red_target_detect_96 #(
             {top_prev2,top_prev1,mid_prev2,mid_prev1,
              bot_prev2,bot_prev1} <= 6'd0;
         end else begin
-            valid_d <= accept_beat;
-            start_d <= accept_beat && start_frame;
-            final_d <= accept_beat && final_beat;
-            group_d <= beat_group;
-            row_d <= beat_row;
+            valid_d <= valid_m;
+            start_d <= start_m;
+            final_d <= final_m;
+            group_d <= group_m;
+            row_d <= row_m;
             if (valid_d) begin
                 top_prev2 <= top_now[2];
                 top_prev1 <= top_now[3];
@@ -267,7 +304,7 @@ module red_target_detect_96 #(
             row_h <= {Y_BITS{1'b0}};
             view_d <= 0; view_h <= 0; preview_h <= 0;
         end else begin
-            view_d <= I_mask_view_mode;
+            view_d <= view_m;
             view_h <= view_d;
             valid_h <= valid_d;
             start_h <= start_d;
@@ -410,20 +447,20 @@ module red_target_detect_96 #(
     end
     // Expand to RGB only in the existing final display selector. Keeping
     // these delays four bits wide avoids eleven copies of 96-bit pixels.
-    reg [3:0] mask_preview_pipe [0:5];
+    reg [3:0] mask_preview_pipe [0:4];
     integer preview_stage;
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
-            for (preview_stage=0;preview_stage<6;preview_stage=preview_stage+1)
+            for (preview_stage=0;preview_stage<5;preview_stage=preview_stage+1)
                 mask_preview_pipe[preview_stage]<=0;
         end else begin
             mask_preview_pipe[0]<=view_fd == 4'd12 ?
                 (valid_fd ? closed_hits : 4'd0) : preview_hf;
-            for (preview_stage=1;preview_stage<6;preview_stage=preview_stage+1)
+            for (preview_stage=1;preview_stage<5;preview_stage=preview_stage+1)
                 mask_preview_pipe[preview_stage]<=mask_preview_pipe[preview_stage-1];
         end
     end
-    assign O_mask_pixels=mask_preview_pipe[5];
+    assign O_mask_pixels=mask_preview_pipe[4];
 
     // One priority encoder per extremum and a balanced popcount. The three
     // centered windows refer to source x=4*group+lane-3, y=row-3.
@@ -441,7 +478,7 @@ module red_target_detect_96 #(
     wire [X_BITS-1:0] last_x = hits_f[3] ? lane_x3 :
                              hits_f[2] ? lane_x2 :
                              hits_f[1] ? lane_x1 : lane_x0;
-    reg valid_b, start_b, final_b, hit_b;
+    reg valid_b, start_b, final_b, hit_b, row_end_b;
     reg [2:0] popcount_b;
     reg [X_BITS-1:0] xmin_b, xmax_b;
     reg [Y_BITS-1:0] y_b;
@@ -451,6 +488,7 @@ module red_target_detect_96 #(
             start_b <= 1'b0;
             final_b <= 1'b0;
             hit_b <= 1'b0;
+            row_end_b <= 1'b0;
             popcount_b <= 3'd0;
             xmin_b <= {X_BITS{1'b0}};
             xmax_b <= {X_BITS{1'b0}};
@@ -459,6 +497,7 @@ module red_target_detect_96 #(
             valid_b <= valid_f;
             start_b <= start_f;
             final_b <= final_f;
+            row_end_b <= valid_f && group_f == IMG_WIDTH_GRP-1;
             if (valid_f) begin
                 hit_b <= |hits_f;
                 popcount_b <= beat_popcount;
@@ -568,7 +607,7 @@ module red_target_detect_96 #(
         end
     end
 
-    // Publication is nine clocks after acceptance of the last input
+    // Publication is ten clocks after acceptance of the last input
     // beat. Metadata follows every pipeline stage even when valid has gaps.
     wire result_found = metrics_count_ok && metrics_box_valid &&
                         (metrics_width >= MIN_WIDTH) && (metrics_height >= MIN_HEIGHT);
@@ -600,38 +639,58 @@ module red_target_detect_96 #(
         end
     end
 
+    reg [9:0] pending_id, active_id, id_m, id_d, id_h, id_cd, id_c, id_fd, id_f, id_b;
+    reg clear_m;
+    wire [9:0] accepted_id = start_frame ?
+        (I_tuser ? I_frame_id : pending_id) : active_id;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            pending_id <= 0; active_id <= 0;
+            id_m <= 0; id_d <= 0; id_h <= 0; id_cd <= 0; id_c <= 0;
+            id_fd <= 0; id_f <= 0; id_b <= 0;
+            clear_m <= 0;
+        end else begin
+            clear_m <= I_multi_clear;
+            if (I_tuser) pending_id <= I_frame_id;
+            if (accept_beat) begin
+                id_m <= accepted_id;
+                if (start_frame) active_id <= accepted_id;
+            end
+            if (valid_m) id_d <= id_m;
+            if (valid_d) id_h <= id_d;
+            if (valid_h) id_cd <= id_h;
+            if (valid_cd) id_c <= id_cd;
+            if (valid_c) id_fd <= id_c;
+            if (valid_fd) id_f <= id_fd;
+            if (valid_f) id_b <= id_f;
+        end
+    end
+
     generate
         if (MULTI_ENABLE) begin : gen_multi
-            reg [9:0] pending_id, active_id, id_d, id_h, id_cd, id_c, id_fd, id_f, id_b;
-            wire [9:0] accepted_id = start_frame ?
-                (I_tuser ? I_frame_id : pending_id) : active_id;
-            always @(posedge I_clk or negedge I_rst_n) begin
-                if (!I_rst_n) begin
-                    pending_id <= 0; active_id <= 0;
-                    id_d <= 0; id_h <= 0; id_cd <= 0; id_c <= 0;
-                    id_fd <= 0; id_f <= 0; id_b <= 0;
-                end else begin
-                    if (I_tuser) pending_id <= I_frame_id;
-                    if (accept_beat) begin
-                        id_d <= accepted_id;
-                        if (start_frame) active_id <= accepted_id;
-                    end
-                    if (valid_d) id_h <= id_d;
-                    if (valid_h) id_cd <= id_h;
-                    if (valid_cd) id_c <= id_cd;
-                    if (valid_c) id_fd <= id_c;
-                    if (valid_fd) id_f <= id_fd;
-                    if (valid_f) id_b <= id_f;
-                end
-            end
             red_multi_run_engine #(
+                .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
+                .X_BITS(X_BITS), .Y_BITS(Y_BITS), .COUNT_BITS(COUNT_BITS),
+                .MIN_PIXELS(MIN_PIXELS), .MIN_WIDTH(MIN_WIDTH), .MIN_HEIGHT(MIN_HEIGHT),
+                .CANDIDATE_SLOTS(CANDIDATE_SLOTS), .MAX_TARGETS(MAX_TARGETS)
+            ) u_engine (
+                .I_clk(I_clk), .I_rst_n(I_rst_n), .I_clear(clear_m),
+                .I_valid(valid_b), .I_start(start_b), .I_final(final_b),
+                .I_hit(hit_b), .I_pixels(popcount_b),
+                .I_xmin(xmin_b), .I_xmax(xmax_b), .I_y(y_b), .I_id(id_b),
+                .O_ready(O_multi_ready), .O_valid(O_multi_valid), .O_hold(O_multi_hold),
+                .O_boxes(O_multi_boxes), .O_shapes(O_multi_shapes), .O_frame_id(O_multi_frame_id),
+                .O_overflow(O_multi_overflow)
+            );
+        end else if (SINGLE_SHAPE_ENABLE) begin : gen_single_shape
+            red_single_shape_engine #(
                 .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
                 .X_BITS(X_BITS), .Y_BITS(Y_BITS), .COUNT_BITS(COUNT_BITS),
                 .MIN_PIXELS(MIN_PIXELS), .MIN_WIDTH(MIN_WIDTH), .MIN_HEIGHT(MIN_HEIGHT)
             ) u_engine (
-                .I_clk(I_clk), .I_rst_n(I_rst_n), .I_clear(I_multi_clear),
+                .I_clk(I_clk), .I_rst_n(I_rst_n), .I_clear(clear_m),
                 .I_valid(valid_b), .I_start(start_b), .I_final(final_b),
-                .I_hit(hit_b), .I_pixels(popcount_b),
+                .I_row_end(row_end_b), .I_hit(hit_b), .I_pixels(popcount_b),
                 .I_xmin(xmin_b), .I_xmax(xmax_b), .I_y(y_b), .I_id(id_b),
                 .O_ready(O_multi_ready), .O_valid(O_multi_valid), .O_hold(O_multi_hold),
                 .O_boxes(O_multi_boxes), .O_shapes(O_multi_shapes), .O_frame_id(O_multi_frame_id),
@@ -649,6 +708,460 @@ module red_target_detect_96 #(
     endgenerate
 endmodule
 
+// One selected-color silhouette per frame. This path deliberately has no
+// component table, TopN selection, run FIFO, or inter-target pairing. Separate
+// silhouettes share the union box; a split row or a disconnected row marks
+// only the shape descriptor bad, so color detection still remains available.
+module red_single_shape_engine #(
+    parameter integer IMG_WIDTH = 1280,
+    parameter integer IMG_HEIGHT = 720,
+    parameter integer X_BITS = 11,
+    parameter integer Y_BITS = 10,
+    parameter integer COUNT_BITS = 20,
+    parameter integer MIN_PIXELS = 128,
+    parameter integer MIN_WIDTH = 8,
+    parameter integer MIN_HEIGHT = 8
+) (
+    input wire I_clk, I_rst_n, I_clear,
+    input wire I_valid, I_start, I_final, I_row_end, I_hit,
+    input wire [2:0] I_pixels,
+    input wire [X_BITS-1:0] I_xmin, I_xmax,
+    input wire [Y_BITS-1:0] I_y,
+    input wire [9:0] I_id,
+    output reg O_ready,
+    output reg [3:0] O_valid, O_hold,
+    output reg [191:0] O_boxes,
+    output reg [7:0] O_shapes,
+    output reg [9:0] O_frame_id,
+    output reg O_overflow
+);
+    localparam integer COORD_BITS = (X_BITS > Y_BITS ? X_BITS : Y_BITS)+1;
+    localparam integer MOM_BITS = COUNT_BITS+COORD_BITS;
+    localparam integer MATCH_X = IMG_WIDTH/8 > 8 ? IMG_WIDTH/8 : 8;
+    localparam integer MATCH_Y = IMG_HEIGHT/8 > 8 ? IMG_HEIGHT/8 : 8;
+    localparam [1:0] CLASS_IDLE=0, CLASS_START=1, CLASS_WAIT=2;
+    localparam integer RESULT_BITS = 10+1+1+1+2+48;
+
+    // Reduce every physical row, including its last beat, before multiplying
+    // its first moments. Four input pixels per clock never require a stall.
+    reg source_open, source_continue, source_first_row, row_open, row_hit;
+    reg [9:0] source_id;
+    reg [X_BITS:0] row_pixels;
+    reg [X_BITS-1:0] row_xmin, row_xmax;
+    // After clear/reset, old beats can still be travelling through the mask
+    // pipeline. Only a new SOF may reopen it. Geometry-only consecutive frames
+    // remain accepted after a successfully observed final beat.
+    wire begin_frame = I_start || (!source_open && source_continue);
+    wire source_accept = I_valid && (source_open || begin_frame);
+    wire fresh_row = begin_frame || !row_open;
+    wire next_row_hit = (!fresh_row && row_hit) || I_hit;
+    wire [X_BITS:0] next_row_pixels =
+        (fresh_row ? {(X_BITS+1){1'b0}} : row_pixels) +
+        (I_hit ? I_pixels : 3'd0);
+    wire [X_BITS-1:0] next_row_xmin =
+        fresh_row || !row_hit ? I_xmin :
+        I_hit && I_xmin < row_xmin ? I_xmin : row_xmin;
+    wire [X_BITS-1:0] next_row_xmax =
+        fresh_row || !row_hit ? I_xmax :
+        I_hit && I_xmax > row_xmax ? I_xmax : row_xmax;
+    reg r0_valid, r0_first, r0_last, r0_hit;
+    reg [9:0] r0_id;
+    reg [X_BITS:0] r0_pixels;
+    reg [X_BITS-1:0] r0_xmin, r0_xmax;
+    reg [Y_BITS-1:0] r0_y;
+    reg abort_0, abort_1, abort_done;
+    reg [9:0] abort_id_0, abort_id_1, abort_id;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            source_open<=0; source_continue<=0; source_first_row<=1; source_id<=0;
+            row_open<=0; row_hit<=0; row_pixels<=0; row_xmin<=0; row_xmax<=0;
+            r0_valid<=0; r0_first<=0; r0_last<=0; r0_hit<=0;
+            r0_id<=0; r0_pixels<=0; r0_xmin<=0; r0_xmax<=0; r0_y<=0;
+            abort_0<=0; abort_1<=0; abort_done<=0;
+            abort_id_0<=0; abort_id_1<=0; abort_id<=0;
+        end else if (I_clear) begin
+            source_open<=0; source_continue<=0; source_first_row<=1;
+            row_open<=0; row_hit<=0; row_pixels<=0;
+            r0_valid<=0; abort_0<=0; abort_1<=0; abort_done<=0;
+        end else begin
+            r0_valid<=0;
+            abort_0<=0; abort_1<=abort_0; abort_done<=abort_1;
+            abort_id_1<=abort_id_0; abort_id<=abort_id_1;
+            if (source_accept) begin
+                if (I_start && source_open) begin
+                    abort_0<=1; abort_id_0<=source_id;
+                end
+                if (begin_frame) begin
+                    source_open<=1; source_continue<=0;
+                    source_id<=I_id; source_first_row<=1;
+                end
+                row_open<=1; row_hit<=next_row_hit;
+                row_pixels<=next_row_pixels;
+                row_xmin<=next_row_xmin; row_xmax<=next_row_xmax;
+                if (I_row_end || I_final) begin
+                    r0_valid<=1; r0_first<=begin_frame || source_first_row;
+                    r0_last<=I_final; r0_hit<=next_row_hit;
+                    r0_id<=begin_frame ? I_id : source_id;
+                    r0_pixels<=next_row_pixels;
+                    r0_xmin<=next_row_xmin; r0_xmax<=next_row_xmax; r0_y<=I_y;
+                    source_first_row<=0; row_open<=0; row_hit<=0; row_pixels<=0;
+                end
+                if (I_final) begin source_open<=0; source_continue<=1; end
+            end
+        end
+    end
+
+    wire [X_BITS:0] r0_span =
+        {1'b0,r0_xmax}-{1'b0,r0_xmin}+1'b1;
+    wire [COORD_BITS-1:0] r0_xsum =
+        {1'b0,r0_xmin}+{1'b0,r0_xmax};
+    wire [COORD_BITS-1:0] r0_y2 = {r0_y,1'b0};
+    reg r1_valid, r1_first, r1_last, r1_hit, r1_bad;
+    reg [9:0] r1_id;
+    reg [X_BITS:0] r1_pixels, r1_span;
+    reg [X_BITS-1:0] r1_xmin, r1_xmax;
+    reg [Y_BITS-1:0] r1_y;
+    reg [MOM_BITS-1:0] r1_mx2, r1_my2;
+    reg [COORD_BITS-1:0] r1_umin, r1_umax, r1_vmin, r1_vmax;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            r1_valid<=0; r1_first<=0; r1_last<=0; r1_hit<=0; r1_bad<=0;
+            r1_id<=0; r1_pixels<=0; r1_span<=0;
+            r1_xmin<=0; r1_xmax<=0; r1_y<=0; r1_mx2<=0; r1_my2<=0;
+            r1_umin<=0; r1_umax<=0; r1_vmin<=0; r1_vmax<=0;
+        end else if (I_clear) begin
+            r1_valid<=0;
+        end else begin
+            r1_valid<=r0_valid;
+            if (r0_valid) begin
+                r1_first<=r0_first; r1_last<=r0_last; r1_hit<=r0_hit;
+                r1_id<=r0_id; r1_pixels<=r0_pixels; r1_span<=r0_span;
+                r1_xmin<=r0_xmin; r1_xmax<=r0_xmax; r1_y<=r0_y;
+                r1_bad<=r0_hit && (r0_pixels != r0_span ||
+                    r0_xmin > r0_xmax || r0_xmax >= IMG_WIDTH || r0_y >= IMG_HEIGHT);
+                r1_mx2<=r0_pixels*r0_xsum; r1_my2<=r0_pixels*r0_y2;
+                r1_umin<={1'b0,r0_xmin}+r0_y;
+                r1_umax<={1'b0,r0_xmax}+r0_y;
+                r1_vmin<={1'b0,r0_xmin}+IMG_HEIGHT-r0_y;
+                r1_vmax<={1'b0,r0_xmax}+IMG_HEIGHT-r0_y;
+            end
+        end
+    end
+
+    // The contour is identical to the component engine for one contiguous
+    // interval on each occupied row: axial steps cost 8 and diagonals 11.
+    reg work_seen, work_bad;
+    reg [COUNT_BITS-1:0] work_area;
+    reg [15:0] work_perimeter;
+    reg [X_BITS-1:0] work_xmin, work_xmax, prev_xmin, prev_xmax;
+    reg [Y_BITS-1:0] work_ymin, work_ymax, prev_y;
+    reg [MOM_BITS-1:0] work_mx2, work_my2;
+    reg [COORD_BITS-1:0] work_umin, work_umax, work_vmin, work_vmax;
+    reg next_seen, next_bad;
+    reg [COUNT_BITS-1:0] next_area;
+    reg [15:0] next_perimeter;
+    reg [X_BITS-1:0] next_xmin, next_xmax, next_prev_xmin, next_prev_xmax;
+    reg [Y_BITS-1:0] next_ymin, next_ymax, next_prev_y;
+    reg [MOM_BITS-1:0] next_mx2, next_my2;
+    reg [COORD_BITS-1:0] next_umin, next_umax, next_vmin, next_vmax;
+    wire [X_BITS-1:0] overlap_min = r1_xmin > prev_xmin ? r1_xmin : prev_xmin;
+    wire [X_BITS-1:0] overlap_max = r1_xmax < prev_xmax ? r1_xmax : prev_xmax;
+    wire [X_BITS:0] overlap_width = overlap_min <= overlap_max ?
+        {1'b0,overlap_max}-{1'b0,overlap_min}+1'b1 : 0;
+    wire [1:0] diagonal_steps =
+        {1'b0,(r1_xmin != prev_xmin)}+{1'b0,(r1_xmax != prev_xmax)};
+    wire linked_row = !r1_first && work_seen &&
+        {1'b0,r1_y} == {1'b0,prev_y}+1'b1 && overlap_width != 0;
+    wire [16:0] row_outline = ({{(16-X_BITS){1'b0}},r1_span}+17'd1)<<4;
+    wire [16:0] shared_boundary = linked_row ?
+        ({{(16-X_BITS){1'b0}},overlap_width}<<4)+diagonal_steps*17'd5 : 17'd0;
+    wire [16:0] perimeter_sum =
+        {1'b0,(r1_first ? 16'd0 : work_perimeter)}+row_outline-shared_boundary;
+    wire [COUNT_BITS:0] area_sum =
+        {1'b0,(r1_first ? {COUNT_BITS{1'b0}} : work_area)}+r1_pixels;
+    always @* begin
+        next_seen=r1_first ? 1'b0 : work_seen;
+        next_bad=r1_first ? 1'b0 : work_bad;
+        next_area=r1_first ? {COUNT_BITS{1'b0}} : work_area;
+        next_perimeter=r1_first ? 16'd0 : work_perimeter;
+        next_xmin=r1_first ? {X_BITS{1'b1}} : work_xmin;
+        next_xmax=r1_first ? {X_BITS{1'b0}} : work_xmax;
+        next_ymin=r1_first ? {Y_BITS{1'b1}} : work_ymin;
+        next_ymax=r1_first ? {Y_BITS{1'b0}} : work_ymax;
+        next_prev_xmin=prev_xmin; next_prev_xmax=prev_xmax; next_prev_y=prev_y;
+        next_mx2=r1_first ? {MOM_BITS{1'b0}} : work_mx2;
+        next_my2=r1_first ? {MOM_BITS{1'b0}} : work_my2;
+        next_umin=r1_first ? {COORD_BITS{1'b1}} : work_umin;
+        next_umax=r1_first ? {COORD_BITS{1'b0}} : work_umax;
+        next_vmin=r1_first ? {COORD_BITS{1'b1}} : work_vmin;
+        next_vmax=r1_first ? {COORD_BITS{1'b0}} : work_vmax;
+        if (r1_hit) begin
+            next_bad=next_bad || r1_bad || area_sum[COUNT_BITS] ||
+                perimeter_sum[16] || (next_seen && !linked_row);
+            next_area=area_sum[COUNT_BITS-1:0];
+            next_perimeter=perimeter_sum[15:0];
+            if (!next_seen || r1_xmin < next_xmin) next_xmin=r1_xmin;
+            if (!next_seen || r1_xmax > next_xmax) next_xmax=r1_xmax;
+            if (!next_seen || r1_y < next_ymin) next_ymin=r1_y;
+            if (!next_seen || r1_y > next_ymax) next_ymax=r1_y;
+            next_mx2=next_mx2+r1_mx2; next_my2=next_my2+r1_my2;
+            if (!next_seen || r1_umin < next_umin) next_umin=r1_umin;
+            if (!next_seen || r1_umax > next_umax) next_umax=r1_umax;
+            if (!next_seen || r1_vmin < next_vmin) next_vmin=r1_vmin;
+            if (!next_seen || r1_vmax > next_vmax) next_vmax=r1_vmax;
+            next_prev_xmin=r1_xmin; next_prev_xmax=r1_xmax; next_prev_y=r1_y;
+            next_seen=1;
+        end
+    end
+
+    reg frame_done, snap_bad, snap_found;
+    reg [9:0] snap_id;
+    reg [COUNT_BITS-1:0] snap_area;
+    reg [15:0] snap_perimeter;
+    reg [X_BITS-1:0] snap_xmin, snap_xmax;
+    reg [Y_BITS-1:0] snap_ymin, snap_ymax;
+    reg [MOM_BITS-1:0] snap_mx2, snap_my2;
+    reg [COORD_BITS-1:0] snap_umin, snap_umax, snap_vmin, snap_vmax;
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            work_seen<=0; work_bad<=0; work_area<=0; work_perimeter<=0;
+            work_xmin<=0; work_xmax<=0; work_ymin<=0; work_ymax<=0;
+            prev_xmin<=0; prev_xmax<=0; prev_y<=0; work_mx2<=0; work_my2<=0;
+            work_umin<=0; work_umax<=0; work_vmin<=0; work_vmax<=0;
+            frame_done<=0; snap_bad<=0; snap_found<=0; snap_id<=0;
+            snap_area<=0; snap_perimeter<=0; snap_xmin<=0; snap_xmax<=0;
+            snap_ymin<=0; snap_ymax<=0; snap_mx2<=0; snap_my2<=0;
+            snap_umin<=0; snap_umax<=0; snap_vmin<=0; snap_vmax<=0;
+        end else if (I_clear) begin
+            work_seen<=0; work_bad<=0; work_area<=0; work_perimeter<=0; frame_done<=0;
+        end else begin
+            frame_done<=0;
+            if (r1_valid) begin
+                work_seen<=next_seen; work_bad<=next_bad;
+                work_area<=next_area; work_perimeter<=next_perimeter;
+                work_xmin<=next_xmin; work_xmax<=next_xmax;
+                work_ymin<=next_ymin; work_ymax<=next_ymax;
+                prev_xmin<=next_prev_xmin; prev_xmax<=next_prev_xmax; prev_y<=next_prev_y;
+                work_mx2<=next_mx2; work_my2<=next_my2;
+                work_umin<=next_umin; work_umax<=next_umax;
+                work_vmin<=next_vmin; work_vmax<=next_vmax;
+                if (r1_last) begin
+                    frame_done<=1; snap_id<=r1_id; snap_bad<=next_bad;
+                    snap_found<=next_seen && next_area >= MIN_PIXELS &&
+                        ({1'b0,next_xmax}-{1'b0,next_xmin}+1'b1 >= MIN_WIDTH) &&
+                        ({1'b0,next_ymax}-{1'b0,next_ymin}+1'b1 >= MIN_HEIGHT);
+                    snap_area<=next_area; snap_perimeter<=next_perimeter;
+                    snap_xmin<=next_xmin; snap_xmax<=next_xmax;
+                    snap_ymin<=next_ymin; snap_ymax<=next_ymax;
+                    snap_mx2<=next_mx2; snap_my2<=next_my2;
+                    snap_umin<=next_umin; snap_umax<=next_umax;
+                    snap_vmin<=next_vmin; snap_vmax<=next_vmax;
+                end
+            end
+        end
+    end
+
+    // EOF freezes one descriptor input bank. It changes only when frame_done
+    // is raised, which cancels an older classifier before its result can be
+    // published. Keep only the dispatched ID separately for that cancellation;
+    // duplicating the entire snapshot as a second job bank is unnecessary.
+    reg [1:0] class_state;
+    reg [9:0] job_id;
+    wire job_bad=snap_bad, job_found=snap_found;
+    wire [COUNT_BITS-1:0] job_area=snap_area;
+    wire [15:0] job_perimeter=snap_perimeter;
+    wire [X_BITS-1:0] job_xmin=snap_xmin, job_xmax=snap_xmax;
+    wire [Y_BITS-1:0] job_ymin=snap_ymin, job_ymax=snap_ymax;
+    wire [MOM_BITS-1:0] job_mx2=snap_mx2, job_my2=snap_my2;
+    wire [COORD_BITS-1:0] job_umin=snap_umin, job_umax=snap_umax,
+        job_vmin=snap_vmin, job_vmax=snap_vmax;
+    wire shape_ready, shape_circle_support;
+    wire [1:0] shape_result;
+    wire cancel_job = (abort_done || frame_done) && class_state != CLASS_IDLE;
+    color_shape_descriptor #(
+        .IMG_WIDTH(IMG_WIDTH),.IMG_HEIGHT(IMG_HEIGHT),.X_BITS(X_BITS),
+        .Y_BITS(Y_BITS),.COUNT_BITS(COUNT_BITS),.COORD_BITS(COORD_BITS),
+        .MOM_BITS(MOM_BITS),.STABLE_INPUTS(1)
+    ) u_shape (
+        .I_clk(I_clk),.I_rst_n(I_rst_n),.I_clear(I_clear || cancel_job),
+        .I_start(class_state == CLASS_START),.I_bad(job_bad || !job_found),
+        .I_area(job_area),.I_perimeter(job_perimeter),
+        .I_xmin(job_xmin),.I_xmax(job_xmax),.I_ymin(job_ymin),.I_ymax(job_ymax),
+        .I_mx2(job_mx2),.I_my2(job_my2),.I_umin(job_umin),.I_umax(job_umax),
+        .I_vmin(job_vmin),.I_vmax(job_vmax),.O_ready(shape_ready),
+        .O_shape(shape_result),.O_circle_support(shape_circle_support)
+    );
+
+    // One scalar track retains the existing two-frame confirmation, two-frame
+    // miss hold, and independent shape confirmation/expiry. There is no array
+    // search or assignment between multiple targets.
+    reg track_occupied, track_confirmed;
+    reg [X_BITS-1:0] track_xmin, track_xmax;
+    reg [Y_BITS-1:0] track_ymin, track_ymax;
+    reg [1:0] track_misses, track_shape, track_pending_shape;
+    reg [1:0] track_shape_hits, track_shape_age;
+    reg track_occupied_n, track_confirmed_n;
+    reg [X_BITS-1:0] track_xmin_n, track_xmax_n;
+    reg [Y_BITS-1:0] track_ymin_n, track_ymax_n;
+    reg [1:0] track_misses_n, track_shape_n, track_pending_shape_n;
+    reg [1:0] track_shape_hits_n, track_shape_age_n;
+    wire [X_BITS:0] track_xsum={1'b0,track_xmin}+{1'b0,track_xmax};
+    wire [X_BITS:0] job_xsum={1'b0,job_xmin}+{1'b0,job_xmax};
+    wire [Y_BITS:0] track_ysum={1'b0,track_ymin}+{1'b0,track_ymax};
+    wire [Y_BITS:0] job_ysum={1'b0,job_ymin}+{1'b0,job_ymax};
+    wire [X_BITS:0] delta_x=track_xsum >= job_xsum ?
+        track_xsum-job_xsum : job_xsum-track_xsum;
+    wire [Y_BITS:0] delta_y=track_ysum >= job_ysum ?
+        track_ysum-job_ysum : job_ysum-track_ysum;
+    wire target_matches=track_occupied && job_found &&
+        delta_x <= 2*MATCH_X && delta_y <= 2*MATCH_Y;
+    wire [1:0] matched_shape=track_shape == 3 && shape_circle_support ?
+        2'd3 : shape_result;
+    always @* begin
+        track_occupied_n=track_occupied; track_confirmed_n=track_confirmed;
+        track_xmin_n=track_xmin; track_xmax_n=track_xmax;
+        track_ymin_n=track_ymin; track_ymax_n=track_ymax;
+        track_misses_n=track_misses; track_shape_n=track_shape;
+        track_pending_shape_n=track_pending_shape;
+        track_shape_hits_n=track_shape_hits; track_shape_age_n=track_shape_age;
+        if (target_matches) begin
+            track_confirmed_n=1; track_misses_n=0;
+            track_xmin_n=job_xmin; track_xmax_n=job_xmax;
+            track_ymin_n=job_ymin; track_ymax_n=job_ymax;
+            if (matched_shape != 0 && matched_shape == track_shape) begin
+                track_pending_shape_n=0; track_shape_hits_n=0; track_shape_age_n=0;
+            end else if (matched_shape != 0 && matched_shape == track_pending_shape &&
+                track_shape_hits != 0) begin
+                track_shape_n=matched_shape; track_pending_shape_n=0;
+                track_shape_hits_n=0; track_shape_age_n=0;
+            end else begin
+                track_pending_shape_n=matched_shape;
+                track_shape_hits_n=matched_shape != 0 ? 1 : 0;
+                if (track_shape_age < 2) track_shape_age_n=track_shape_age+1'b1;
+                else begin track_shape_n=0; track_shape_age_n=2; end
+            end
+        end else begin
+            if (track_occupied) begin
+                if (!track_confirmed || track_misses == 2) begin
+                    track_occupied_n=0; track_confirmed_n=0; track_misses_n=0;
+                    track_shape_n=0; track_pending_shape_n=0;
+                    track_shape_hits_n=0; track_shape_age_n=0;
+                end else begin
+                    track_misses_n=track_misses+1'b1;
+                    track_pending_shape_n=0; track_shape_hits_n=0;
+                    if (track_shape_age < 2) track_shape_age_n=track_shape_age+1'b1;
+                    else begin track_shape_n=0; track_shape_age_n=2; end
+                end
+            end
+            if (job_found && !track_occupied_n) begin
+                track_occupied_n=1; track_confirmed_n=0; track_misses_n=0;
+                track_xmin_n=job_xmin; track_xmax_n=job_xmax;
+                track_ymin_n=job_ymin; track_ymax_n=job_ymax;
+                track_shape_n=0; track_pending_shape_n=shape_result;
+                track_shape_hits_n=shape_result != 0 ? 1 : 0; track_shape_age_n=0;
+            end
+        end
+    end
+
+    wire publish_valid=track_occupied_n && track_confirmed_n;
+    wire [47:0] publish_box=publish_valid ?
+        {{(12-Y_BITS){1'b0}},track_ymax_n,{(12-Y_BITS){1'b0}},track_ymin_n,
+         {(12-X_BITS){1'b0}},track_xmax_n,{(12-X_BITS){1'b0}},track_xmin_n} : 48'd0;
+    reg event_a_valid, event_b_valid;
+    reg [RESULT_BITS-1:0] event_a, event_b;
+    always @* begin
+        event_a_valid=0; event_b_valid=0; event_a=0; event_b=0;
+        if (abort_done) begin
+            event_a_valid=1;
+            if (class_state != CLASS_IDLE) begin
+                // A new truncated source must not let an older, unfinished
+                // classification revive a stale track. Preserve both IDs.
+                event_a={job_id,1'b1,1'b0,1'b0,2'd0,48'd0};
+                event_b_valid=1; event_b={abort_id,1'b0,1'b0,1'b0,2'd0,48'd0};
+            end else event_a={abort_id,1'b0,1'b0,1'b0,2'd0,48'd0};
+        end else if (frame_done && class_state != CLASS_IDLE) begin
+            // Only malformed/sub-minimum-rate frames can overtake this
+            // classifier. Report the old frame as invalid instead of mixing.
+            event_a_valid=1; event_a={job_id,1'b1,1'b0,1'b0,2'd0,48'd0};
+        end else if (class_state == CLASS_WAIT && shape_ready) begin
+            event_a_valid=1;
+            event_a={job_id,1'b0,publish_valid,
+                (publish_valid && track_misses_n != 0),
+                (publish_valid ? track_shape_n : 2'd0),publish_box};
+        end
+    end
+
+    // Two result registers absorb the only possible two-result burst: an
+    // interrupted classifier followed by the truncated source's invalid ID.
+    // They are frame metadata, not a pixel/run FIFO or component storage.
+    reg [RESULT_BITS-1:0] result_0, result_1, result_0_n, result_1_n;
+    reg [1:0] result_count, result_count_n;
+    always @* begin
+        result_0_n=result_0; result_1_n=result_1;
+        result_count_n=result_count;
+        if (result_count != 0) begin
+            result_0_n=result_1; result_count_n=result_count-1'b1;
+        end
+        if (event_a_valid) begin
+            if (result_count_n == 0) result_0_n=event_a;
+            else result_1_n=event_a;
+            result_count_n=result_count_n+1'b1;
+        end
+        if (event_b_valid) begin
+            if (result_count_n == 0) result_0_n=event_b;
+            else result_1_n=event_b;
+            result_count_n=result_count_n+1'b1;
+        end
+    end
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            class_state<=CLASS_IDLE; job_id<=0;
+            track_occupied<=0; track_confirmed<=0; track_misses<=0;
+            track_xmin<=0; track_xmax<=0; track_ymin<=0; track_ymax<=0;
+            track_shape<=0; track_pending_shape<=0; track_shape_hits<=0; track_shape_age<=0;
+            result_count<=0; result_0<=0; result_1<=0;
+            O_ready<=0; O_valid<=0; O_hold<=0; O_boxes<=0;
+            O_shapes<=0; O_frame_id<=0; O_overflow<=0;
+        end else if (I_clear) begin
+            class_state<=CLASS_IDLE; track_occupied<=0; track_confirmed<=0;
+            track_misses<=0; track_shape<=0; track_pending_shape<=0;
+            track_shape_hits<=0; track_shape_age<=0; result_count<=0;
+            O_ready<=0; O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0; O_overflow<=0;
+        end else begin
+            result_0<=result_0_n; result_1<=result_1_n; result_count<=result_count_n;
+            O_ready<=result_count != 0;
+            if (result_count != 0) begin
+                O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0;
+                {O_frame_id,O_overflow,O_valid[0],O_hold[0],O_shapes[1:0],O_boxes[47:0]}
+                    <=result_0;
+            end
+            if (abort_done) begin
+                class_state<=CLASS_IDLE; track_occupied<=0; track_confirmed<=0;
+                track_misses<=0; track_shape<=0; track_pending_shape<=0;
+                track_shape_hits<=0; track_shape_age<=0;
+            end else if (frame_done) begin
+                class_state<=CLASS_START;
+                job_id<=snap_id;
+                if (class_state != CLASS_IDLE) begin
+                    track_occupied<=0; track_confirmed<=0; track_misses<=0;
+                    track_shape<=0; track_pending_shape<=0;
+                    track_shape_hits<=0; track_shape_age<=0;
+                end
+            end else if (class_state == CLASS_START) begin
+                class_state<=CLASS_WAIT;
+            end else if (class_state == CLASS_WAIT && shape_ready) begin
+                class_state<=CLASS_IDLE;
+                track_occupied<=track_occupied_n; track_confirmed<=track_confirmed_n;
+                track_xmin<=track_xmin_n; track_xmax<=track_xmax_n;
+                track_ymin<=track_ymin_n; track_ymax<=track_ymax_n;
+                track_misses<=track_misses_n; track_shape<=track_shape_n;
+                track_pending_shape<=track_pending_shape_n;
+                track_shape_hits<=track_shape_hits_n; track_shape_age<=track_shape_age_n;
+            end
+        end
+    end
+endmodule
+
 // Bounded scanline connectivity. A descriptor carries its frame identity all
 // the way through the FIFO; a following SOF never resets an older context.
 module red_multi_run_engine #(
@@ -659,7 +1172,9 @@ module red_multi_run_engine #(
     parameter integer COUNT_BITS = 20,
     parameter integer MIN_PIXELS = 128,
     parameter integer MIN_WIDTH = 8,
-    parameter integer MIN_HEIGHT = 8
+    parameter integer MIN_HEIGHT = 8,
+    parameter integer CANDIDATE_SLOTS = 8,
+    parameter integer MAX_TARGETS = 3
 ) (
     input wire I_clk, I_rst_n, I_clear,
     input wire I_valid, I_start, I_final, I_hit,
@@ -680,6 +1195,10 @@ module red_multi_run_engine #(
     localparam integer MOM_BITS = COUNT_BITS+COORD_BITS;
     localparam integer FEATURE_BITS = 17+2*MOM_BITS+4*COORD_BITS;
     localparam integer CAND_BITS = 6*X_BITS+2*Y_BITS+COUNT_BITS+1+FEATURE_BITS;
+    // Supported capacities: 8/16 live components, 3/4 output tracks.
+    // The upper RAM half holds the selected targets' shape features.
+    localparam integer CAND_INDEX_BITS = $clog2(CANDIDATE_SLOTS);
+    localparam integer CAND_ADDR_BITS = CAND_INDEX_BITS+1;
     localparam integer MATCH_X = IMG_WIDTH/8 > 8 ? IMG_WIDTH/8 : 8;
     localparam integer MATCH_Y = IMG_HEIGHT/8 > 8 ? IMG_HEIGHT/8 : 8;
     localparam [4:0] S_FETCH=0, S_TOKEN=1, S_DISPATCH=2,
@@ -837,8 +1356,8 @@ module red_multi_run_engine #(
     assign {token_kind,token_id,token_xmin,token_xmax,token_y,token_pixels}=token;
     assign fifo_pop=(state == S_FETCH) && fifo_count != 0 && I_rst_n && !I_clear;
 
-    reg [15:0] candidate_valid;
-    reg [3:0] scan_index, match_slot, free_slot;
+    reg [CANDIDATE_SLOTS-1:0] candidate_valid;
+    reg [CAND_INDEX_BITS-1:0] scan_index, match_slot, free_slot;
     reg match_slot_valid, free_slot_valid;
     reg [X_BITS-1:0] work_xmin, work_xmax, work_prev_min, work_prev_max;
     reg [X_BITS-1:0] work_row_min, work_row_max;
@@ -899,26 +1418,28 @@ module red_multi_run_engine #(
     reg [COUNT_BITS-1:0] minimum_pixels;
     reg minimum_empty;
     wire commit_ok=match_slot_valid || free_slot_valid;
-    wire [3:0] commit_slot=match_slot_valid ? match_slot : free_slot;
+    wire [CAND_INDEX_BITS-1:0] commit_slot=match_slot_valid ? match_slot : free_slot;
     wire top_write=state == S_TOP_WRITE &&
         (minimum_empty || cand_pixels > minimum_pixels);
     wire candidate_write=((state == S_COMMIT && commit_ok) || top_write) &&
         I_rst_n && !I_clear;
-    wire [4:0] candidate_waddr=top_write ? {3'b100,minimum_slot} : {1'b0,commit_slot};
+    wire [CAND_ADDR_BITS-1:0] candidate_waddr=top_write ?
+        {1'b1,{(CAND_INDEX_BITS-2){1'b0}},minimum_slot} : {1'b0,commit_slot};
     wire retire_to_top=candidate_valid[scan_index] && candidate_qualified &&
         (state == S_EOF || (state == S_SCAN && candidate_expired));
     wire top_resume_scan=state == S_TOP_WRITE &&
         (return_state == S_SCAN_LOAD || return_state == S_EOF_LOAD);
     // Hold the retiring row on the synchronous RAM output while selecting
-    // Top4. Otherwise prefetch the next live row in the normal scan cycle.
+    // TopN. Otherwise prefetch the next live row in the normal scan cycle.
     wire candidate_read=(state == S_SCAN_REQ || state == S_EOF_REQ ||
         state == S_CLASS_REQ || top_resume_scan ||
-        ((state == S_SCAN || state == S_EOF) && scan_index != 15 &&
+        ((state == S_SCAN || state == S_EOF) && scan_index != CANDIDATE_SLOTS-1 &&
             !retire_to_top)) && I_rst_n && !I_clear;
-    wire [4:0] candidate_raddr=state == S_CLASS_REQ ? {3'b100,class_index} :
-        (state == S_SCAN_REQ || state == S_EOF_REQ) ? 5'd0 :
+    wire [CAND_ADDR_BITS-1:0] candidate_raddr=state == S_CLASS_REQ ?
+        {1'b1,{(CAND_INDEX_BITS-2){1'b0}},class_index} :
+        (state == S_SCAN_REQ || state == S_EOF_REQ) ? {CAND_ADDR_BITS{1'b0}} :
         top_resume_scan ? {1'b0,scan_index} : {1'b0,scan_index}+1'b1;
-    // Addresses 0..15 hold live components; 16..19 hold Top4 shape features.
+    // Live components occupy the lower half; TopN features the upper half.
     // The extra shallow rows fit in the same ERAM banks and replace a wide
     // resettable feature table plus its four-way read mux.
     wire [CAND_BITS-1:0] candidate_wdata=top_write ?
@@ -928,18 +1449,19 @@ module red_multi_run_engine #(
             work_prev_valid,work_prev_min,work_prev_max,work_row_min,work_row_max,
             work_perimeter,work_shape_bad,work_mx2,work_my2,
             work_umin,work_umax,work_vmin,work_vmax};
-    red_multi_small_ram #(.WIDTH(CAND_BITS), .DEPTH(32), .ADDR_BITS(5)) u_candidates (
+    red_multi_small_ram #(.WIDTH(CAND_BITS), .DEPTH(2*CANDIDATE_SLOTS),
+        .ADDR_BITS(CAND_ADDR_BITS)) u_candidates (
         .I_clk(I_clk), .I_write(candidate_write), .I_waddr(candidate_waddr),
         .I_data(candidate_wdata),
         .I_read(candidate_read), .I_raddr(candidate_raddr), .O_data(candidate_data)
     );
 
-    reg [3:0] top_valid;
-    reg [X_BITS-1:0] top_xmin [0:3], top_xmax [0:3];
-    reg [Y_BITS-1:0] top_ymin [0:3], top_ymax [0:3];
-    reg [COUNT_BITS-1:0] top_pixels [0:3];
-    reg [1:0] top_shape [0:3], track_shape [0:3];
-    reg [3:0] top_circle_support;
+    reg [MAX_TARGETS-1:0] top_valid;
+    reg [X_BITS-1:0] top_xmin [0:MAX_TARGETS-1], top_xmax [0:MAX_TARGETS-1];
+    reg [Y_BITS-1:0] top_ymin [0:MAX_TARGETS-1], top_ymax [0:MAX_TARGETS-1];
+    reg [COUNT_BITS-1:0] top_pixels [0:MAX_TARGETS-1];
+    reg [1:0] top_shape [0:MAX_TARGETS-1], track_shape [0:MAX_TARGETS-1];
+    reg [MAX_TARGETS-1:0] top_circle_support;
     wire shape_ready;
     wire [1:0] shape_result;
     wire shape_circle_support;
@@ -965,16 +1487,16 @@ module red_multi_run_engine #(
         .O_ready(shape_ready),.O_shape(shape_result),
         .O_circle_support(shape_circle_support)
     );
-    reg [3:0] track_occupied, track_confirmed, matched_tracks, used_detections;
-    reg [X_BITS-1:0] track_xmin [0:3], track_xmax [0:3];
-    reg [Y_BITS-1:0] track_ymin [0:3], track_ymax [0:3];
-    reg [1:0] track_misses [0:3];
+    reg [MAX_TARGETS-1:0] track_occupied, track_confirmed, matched_tracks, used_detections;
+    reg [X_BITS-1:0] track_xmin [0:MAX_TARGETS-1], track_xmax [0:MAX_TARGETS-1];
+    reg [Y_BITS-1:0] track_ymin [0:MAX_TARGETS-1], track_ymax [0:MAX_TARGETS-1];
+    reg [1:0] track_misses [0:MAX_TARGETS-1];
     // Confirm a shape twice independently of the geometry confirmation.
     // Count every frame without support for the stable class, so alternating
     // wrong/unknown classes cannot keep an obsolete label indefinitely.
-    reg [1:0] track_pending_shape [0:3], track_shape_hits [0:3];
-    reg [1:0] track_shape_age [0:3];
-    reg [3:0] pair_index;
+    reg [1:0] track_pending_shape [0:MAX_TARGETS-1], track_shape_hits [0:MAX_TARGETS-1];
+    reg [1:0] track_shape_age [0:MAX_TARGETS-1];
+    reg [1:0] pair_track, pair_detection;
     reg [1:0] best_track, best_detection, track_index;
     reg best_valid;
     reg [13:0] best_distance;
@@ -982,8 +1504,6 @@ module red_multi_run_engine #(
     // This is feature hysteresis, not an unconditional extension of label age.
     wire [1:0] matched_shape=(track_shape[best_track] == 3 &&
         top_circle_support[best_detection]) ? 2'd3 : top_shape[best_detection];
-    wire [1:0] pair_track=pair_index[3:2];
-    wire [1:0] pair_detection=pair_index[1:0];
     wire [X_BITS:0] track_xsum={1'b0,track_xmin[pair_track]}+{1'b0,track_xmax[pair_track]};
     wire [X_BITS:0] top_xsum={1'b0,top_xmin[pair_detection]}+{1'b0,top_xmax[pair_detection]};
     wire [Y_BITS:0] track_ysum={1'b0,track_ymin[pair_track]}+{1'b0,track_ymax[pair_track]};
@@ -995,8 +1515,9 @@ module red_multi_run_engine #(
         top_valid[pair_detection] && !used_detections[pair_detection] &&
         delta_x <= 2*MATCH_X && delta_y <= 2*MATCH_Y;
     wire empty_track_exists=!(&track_occupied);
-    wire [1:0] empty_track=!track_occupied[0] ? 0 :
-        !track_occupied[1] ? 1 : !track_occupied[2] ? 2 : 3;
+    wire [3:0] occupied_slots={{(4-MAX_TARGETS){1'b1}},track_occupied};
+    wire [1:0] empty_track=!occupied_slots[0] ? 0 :
+        !occupied_slots[1] ? 1 : !occupied_slots[2] ? 2 : 3;
     integer slot;
 
     always @(posedge I_clk or negedge I_rst_n) begin
@@ -1015,10 +1536,11 @@ module red_multi_run_engine #(
             top_valid<=0; top_circle_support<=0;
             minimum_pixels<=0; minimum_slot<=0; minimum_empty<=0; top_index<=0;
             track_occupied<=0; track_confirmed<=0; matched_tracks<=0; used_detections<=0;
-            pair_index<=0; best_track<=0; best_detection<=0; track_index<=0;
+            pair_track<=0; pair_detection<=0;
+            best_track<=0; best_detection<=0; track_index<=0;
             best_valid<=0; best_distance<=0;
             O_ready<=0; O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0; O_frame_id<=0; O_overflow<=0;
-            for (slot=0; slot<4; slot=slot+1) begin
+            for (slot=0; slot<MAX_TARGETS; slot=slot+1) begin
                 top_xmin[slot]<=0; top_xmax[slot]<=0; top_ymin[slot]<=0;
                 top_ymax[slot]<=0; top_pixels[slot]<=0;
                 top_shape[slot]<=0; track_shape[slot]<=0;
@@ -1032,7 +1554,7 @@ module red_multi_run_engine #(
             top_valid<=0; top_circle_support<=0; track_occupied<=0; track_confirmed<=0;
             matched_tracks<=0; used_detections<=0;
             O_ready<=0; O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0; O_overflow<=0;
-            for (slot=0; slot<4; slot=slot+1) begin
+            for (slot=0; slot<MAX_TARGETS; slot=slot+1) begin
                 track_shape[slot]<=0; track_pending_shape[slot]<=0;
                 track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
             end
@@ -1057,7 +1579,7 @@ module red_multi_run_engine #(
                             O_ready<=1; O_frame_id<=token_id; O_overflow<=1;
                             O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0;
                             track_occupied<=0; track_confirmed<=0;
-                            for (slot=0; slot<4; slot=slot+1) begin
+                            for (slot=0; slot<MAX_TARGETS; slot=slot+1) begin
                                 track_shape[slot]<=0; track_pending_shape[slot]<=0;
                                 track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
                             end
@@ -1087,7 +1609,7 @@ module red_multi_run_engine #(
                         O_overflow<=context_bad || token_kind == TOK_OVERFLOW;
                         O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0;
                         track_occupied<=0; track_confirmed<=0;
-                        for (slot=0; slot<4; slot=slot+1) begin
+                        for (slot=0; slot<MAX_TARGETS; slot=slot+1) begin
                             track_shape[slot]<=0; track_pending_shape[slot]<=0;
                             track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
                         end
@@ -1114,7 +1636,7 @@ module red_multi_run_engine #(
                 end
                 S_SCAN: begin
                     scan_index<=scan_index+1'b1;
-                    state<=scan_index == 15 ? S_COMMIT : S_SCAN_LOAD;
+                    state<=scan_index == CANDIDATE_SLOTS-1 ? S_COMMIT : S_SCAN_LOAD;
                     if (!candidate_valid[scan_index]) begin
                         if (!free_slot_valid) begin free_slot_valid<=1; free_slot<=scan_index; end
                     end else if (candidate_expired) begin
@@ -1123,7 +1645,7 @@ module red_multi_run_engine #(
                         if (candidate_qualified) begin
                             top_index<=0;
                             minimum_empty<=0; minimum_pixels<={COUNT_BITS{1'b1}};
-                            return_state<=scan_index == 15 ? S_COMMIT : S_SCAN_LOAD;
+                            return_state<=scan_index == CANDIDATE_SLOTS-1 ? S_COMMIT : S_SCAN_LOAD;
                             state<=S_TOP_SCAN;
                         end
                     end else if (candidate_matches) begin
@@ -1158,12 +1680,12 @@ module red_multi_run_engine #(
                 S_EOF_REQ: state<=S_EOF_LOAD;
                 S_EOF: begin
                     candidate_valid[scan_index]<=0; scan_index<=scan_index+1'b1;
-                    state<=scan_index == 15 ? S_CLASS_REQ : S_EOF_LOAD;
+                    state<=scan_index == CANDIDATE_SLOTS-1 ? S_CLASS_REQ : S_EOF_LOAD;
                     class_index<=0;
                     if (candidate_valid[scan_index] && candidate_qualified) begin
                         top_index<=0;
                         minimum_empty<=0; minimum_pixels<={COUNT_BITS{1'b1}};
-                        return_state<=scan_index == 15 ? S_CLASS_REQ : S_EOF_LOAD;
+                        return_state<=scan_index == CANDIDATE_SLOTS-1 ? S_CLASS_REQ : S_EOF_LOAD;
                         state<=S_TOP_SCAN;
                     end
                 end
@@ -1174,11 +1696,11 @@ module red_multi_run_engine #(
                     end else if (!minimum_empty && top_pixels[top_index] <= minimum_pixels) begin
                         minimum_pixels<=top_pixels[top_index]; minimum_slot<=top_index;
                     end
-                    if (top_index == 3) state<=S_TOP_WRITE;
+                    if (top_index == MAX_TARGETS-1) state<=S_TOP_WRITE;
                     else top_index<=top_index+1'b1;
                 end
                 S_TOP_WRITE: begin
-                    // The RAM output is held throughout Top4 selection.
+                    // The RAM output is held throughout TopN selection.
                     if (top_write) begin
                         top_valid[minimum_slot]<=1; top_pixels[minimum_slot]<=cand_pixels;
                         top_xmin[minimum_slot]<=cand_xmin; top_xmax[minimum_slot]<=cand_xmax;
@@ -1192,18 +1714,18 @@ module red_multi_run_engine #(
                     else begin
                         top_shape[class_index]<=0;
                         top_circle_support[class_index]<=0;
-                        if (class_index == 3) state<=S_TRACK_INIT;
+                        if (class_index == MAX_TARGETS-1) state<=S_TRACK_INIT;
                         else begin class_index<=class_index+1'b1; state<=S_CLASS_REQ; end
                     end
                 end
                 S_CLASS_WAIT: if (shape_ready) begin
                     top_shape[class_index]<=shape_result;
                     top_circle_support[class_index]<=shape_circle_support;
-                    if (class_index == 3) state<=S_TRACK_INIT;
+                    if (class_index == MAX_TARGETS-1) state<=S_TRACK_INIT;
                     else begin class_index<=class_index+1'b1; state<=S_CLASS_REQ; end
                 end
                 S_TRACK_INIT: begin
-                    matched_tracks<=0; used_detections<=0; pair_index<=0;
+                    matched_tracks<=0; used_detections<=0; pair_track<=0; pair_detection<=0;
                     best_valid<=0; best_distance<=14'h3fff;
                     state<=S_TRACK_SCAN;
                 end
@@ -1212,8 +1734,11 @@ module red_multi_run_engine #(
                         best_valid<=1; best_distance<=pair_distance;
                         best_track<=pair_track; best_detection<=pair_detection;
                     end
-                    if (pair_index == 15) state<=S_TRACK_APPLY;
-                    else pair_index<=pair_index+1'b1;
+                    if (pair_detection == MAX_TARGETS-1) begin
+                        pair_detection<=0;
+                        if (pair_track == MAX_TARGETS-1) state<=S_TRACK_APPLY;
+                        else pair_track<=pair_track+1'b1;
+                    end else pair_detection<=pair_detection+1'b1;
                 end
                 S_TRACK_APPLY: begin
                     if (best_valid) begin
@@ -1245,7 +1770,7 @@ module red_multi_run_engine #(
                                 track_shape_age[best_track]<=2;
                             end
                         end
-                        best_valid<=0; best_distance<=14'h3fff; pair_index<=0;
+                        best_valid<=0; best_distance<=14'h3fff; pair_track<=0; pair_detection<=0;
                         state<=S_TRACK_SCAN;
                     end else begin track_index<=0; state<=S_MISS; end
                 end
@@ -1267,7 +1792,7 @@ module red_multi_run_engine #(
                             end
                         end
                     end
-                    if (track_index == 3) begin track_index<=0; state<=S_NEW; end
+                    if (track_index == MAX_TARGETS-1) begin track_index<=0; state<=S_NEW; end
                     else track_index<=track_index+1'b1;
                 end
                 S_NEW: begin
@@ -1283,13 +1808,14 @@ module red_multi_run_engine #(
                         track_shape_hits[empty_track]<=top_shape[track_index] != 0 ? 1 : 0;
                         track_shape_age[empty_track]<=0;
                     end
-                    if (track_index == 3) state<=S_PUBLISH;
+                    if (track_index == MAX_TARGETS-1) state<=S_PUBLISH;
                     else track_index<=track_index+1'b1;
                 end
                 S_PUBLISH: begin
                     O_ready<=1; O_frame_id<=context_id; O_overflow<=0;
                     O_valid<=track_occupied & track_confirmed;
-                    for (slot=0; slot<4; slot=slot+1) begin
+                    O_hold<=0; O_boxes<=0; O_shapes<=0;
+                    for (slot=0; slot<MAX_TARGETS; slot=slot+1) begin
                         O_hold[slot]<=track_occupied[slot] && track_confirmed[slot] && track_misses[slot] != 0;
                         O_shapes[slot*2+:2]<=track_occupied[slot] && track_confirmed[slot] ?
                             track_shape[slot] : 2'd0;
@@ -1302,7 +1828,7 @@ module red_multi_run_engine #(
                 end
                 default: begin
                     state<=S_FETCH; context_open<=0; track_occupied<=0; track_confirmed<=0;
-                    for (slot=0; slot<4; slot=slot+1) begin
+                    for (slot=0; slot<MAX_TARGETS; slot=slot+1) begin
                         track_shape[slot]<=0; track_pending_shape[slot]<=0;
                         track_shape_hits[slot]<=0; track_shape_age[slot]<=0;
                     end
@@ -1312,7 +1838,7 @@ module red_multi_run_engine #(
     end
 endmodule
 
-// Shared once per Top4 result, outside the pixel-rate path. Q3 contour length
+// Shared once per selected result, outside the pixel-rate path. Q3 contour length
 // and four projected first moments avoid an edge image or perspective warp.
 // Codes: 0 unknown, 1 square, 2 triangle, 3 circle.
 module color_shape_descriptor #(
@@ -1332,12 +1858,11 @@ module color_shape_descriptor #(
     output reg [1:0] O_shape,
     output reg O_circle_support
 );
-    localparam [3:0] IDLE=0,MULTIPLY=1,METRIC=2,CENTER_START=3,
-        CENTER_DONE=4,SPAN_START=5,SPAN_DONE=6,FINISH=7,
-        CIRCLE_X_START=8,CIRCLE_X_DONE=9,CIRCLE_U_DONE=10;
-    // P8 squared needs 32 bits; the area metric needs COUNT_BITS+12.
-    // Bound the signed projected-moment difference, then reserve four bits
-    // for the largest centroid scale (16*D). Keep the 32 multiply cycles.
+    localparam [4:0] IDLE=0,MULTIPLY=1,UPPER_DONE=2,LOWER_DONE=3,
+        AREA25_DONE=4,CHECK_METRICS=5,CIRCLE_X_DONE=6,
+        CIRCLE_X_CHECK=7,CIRCLE_U_DONE=8,CIRCLE_U_CHECK=9,
+        CENTER_START=10,CENTER_DONE=11,SPAN_START=12,SPAN_DONE=13,
+        SKEW_CHECK=14,FINISH=15;
     localparam integer DEV_BITS =
         (MOM_BITS+2 > COUNT_BITS+COORD_BITS+2) ?
         MOM_BITS+2 : COUNT_BITS+COORD_BITS+2;
@@ -1346,17 +1871,37 @@ module color_shape_descriptor #(
         AREA_SCALE_BITS > 32 ? AREA_SCALE_BITS : 32;
     localparam integer MATH_BITS =
         DEV_BITS+4 > PRODUCT_BITS ? DEV_BITS+4 : PRODUCT_BITS;
-    reg [3:0] state,multiply_return;
+    // Keep the original modulo-MATH_BITS arithmetic, but carry only one
+    // thirteen-bit limb through the shared arithmetic/compare units per clock.
+    localparam integer LIMB_BITS = 13;
+    localparam integer LIMBS = (MATH_BITS+LIMB_BITS-1)/LIMB_BITS;
+    localparam integer LIMB_INDEX_BITS = LIMBS > 1 ? $clog2(LIMBS) : 1;
+    localparam integer PAD_BITS = LIMBS*LIMB_BITS;
+    // All multiplier sources are at most 16 bits or an absolute projected
+    // centre (COORD_BITS+2 bits). Preserve the old 32-bit input truncation.
+    localparam integer MULTIPLIER_BITS =
+        COORD_BITS+2 > 32 ? 32 : (COORD_BITS+2 > 16 ? COORD_BITS+2 : 16);
+    localparam integer MULTIPLY_GROUPS = (MULTIPLIER_BITS+2)/2;
+
+    reg [4:0] state,multiply_return;
     reg [5:0] multiply_count;
     reg [MATH_BITS-1:0] multiplicand,product,deviation;
-    reg [31:0] multiplier;
+    reg [MULTIPLIER_BITS+2:0] multiplier;
+    reg [LIMB_INDEX_BITS-1:0] limb_index;
+    reg arithmetic_carry,compare_right_carry,compare_carry,compare_equal;
+    // Exact unsigned bounds: P*P fits 32 bits; A*1216, A*864 and
+    // A*25 need COUNT_BITS+11, +10 and +5 bits respectively.
+    reg [31:0] perimeter_squared;
+    reg [COUNT_BITS+10:0] metric_upper;
+    reg [COUNT_BITS+9:0] metric_lower;
+    reg [COUNT_BITS+4:0] area25;
+    reg [3:0] check_index;
     reg [COUNT_BITS-1:0] saved_area;
     reg [X_BITS-1:0] saved_xmin,saved_xmax;
     reg [Y_BITS-1:0] saved_ymin,saved_ymax;
     reg [MOM_BITS-1:0] saved_mx2,saved_my2;
     reg [COORD_BITS-1:0] saved_umin,saved_umax,saved_vmin,saved_vmax;
-    // The engine holds its Top4 RAM output and geometry during CLASS_WAIT.
-    // Other callers retain the default snapshot-on-start interface.
+
     wire [COUNT_BITS-1:0] area=STABLE_INPUTS ? I_area : saved_area;
     wire [X_BITS-1:0] xmin=STABLE_INPUTS ? I_xmin : saved_xmin;
     wire [X_BITS-1:0] xmax=STABLE_INPUTS ? I_xmax : saved_xmax;
@@ -1368,197 +1913,368 @@ module color_shape_descriptor #(
     wire [COORD_BITS-1:0] umax=STABLE_INPUTS ? I_umax : saved_umax;
     wire [COORD_BITS-1:0] vmin=STABLE_INPUTS ? I_vmin : saved_vmin;
     wire [COORD_BITS-1:0] vmax=STABLE_INPUTS ? I_vmax : saved_vmax;
+
     reg [1:0] projection;
     reg isotropic,centered,skew,circle_metric,square_metric,triangle_metric;
-    reg circle_fill;
-    reg circle_support,square_fill,square_spans_ok;
+    reg circle_fill,circle_support,square_fill,square_spans_ok;
     reg center_negative;
     reg signed [MATH_BITS-1:0] moment;
     reg [COORD_BITS:0] saved_span;
     wire [MATH_BITS-1:0] area_wide={{(MATH_BITS-COUNT_BITS){1'b0}},area};
-    // A circle has substantially more support than a square in both the
-    // axis-aligned and diagonal bounding boxes.  The diagonal box covers two
-    // pixels per (u,v) lattice cell, hence the 50A >= 18*Buv scale below.
-    wire [MATH_BITS-1:0] area25=(area_wide<<4)+(area_wide<<3)+area_wide;
-    wire [MATH_BITS-1:0] area50=(area_wide<<5)+(area_wide<<4)+(area_wide<<1);
-    wire [MATH_BITS-1:0] box18=(product<<4)+(product<<1);
-    wire [MATH_BITS-1:0] box17=(product<<4)+product;
-    wire [COORD_BITS:0] width={1'b0,xmax}-{1'b0,xmin}+1'b1;
-    wire [COORD_BITS:0] height={1'b0,ymax}-{1'b0,ymin}+1'b1;
-    wire [COORD_BITS:0] u_span={1'b0,umax}-{1'b0,umin}+1'b1;
-    wire [COORD_BITS:0] v_span={1'b0,vmax}-{1'b0,vmin}+1'b1;
-    // Keep 9:8 for circles. Squares may additionally absorb two raster
-    // pixels, but only when a directional coverage gives square evidence.
+    // Candidate RAM no longer feeds a difference and a wide comparison in
+    // the same clock. Capture the exact original spans on the start edge.
+    reg [COORD_BITS:0] width,height,u_span,v_span;
     wire [COORD_BITS+4:0] w8={width,3'b0},h8={height,3'b0};
     wire [COORD_BITS+4:0] u8={u_span,3'b0},v8={v_span,3'b0};
+    wire [COORD_BITS+1:0] width_quarter=width+(width>>2);
+    wire [COORD_BITS+1:0] height_quarter=height+(height>>2);
+    localparam integer OFFSET_BITS=COORD_BITS+2 > 5 ? COORD_BITS+2 : 5;
+    wire [OFFSET_BITS-1:0] u_plus16={1'b0,u_span}+16;
+    wire [OFFSET_BITS-1:0] v_plus16={1'b0,v_span}+16;
+
     reg signed [COORD_BITS+1:0] projection_center;
     reg [COORD_BITS-1:0] projection_min,projection_max;
-    reg signed [MATH_BITS-1:0] projection_moment;
     reg [COORD_BITS:0] projection_span;
-    // Add or subtract the center product in one full-width carry chain.
-    // Keeping the carry-in explicit preserves the original modulo arithmetic.
-    wire [MATH_BITS-1:0] center_product_operand=
-        product ^ {MATH_BITS{!center_negative}};
-    wire signed [MATH_BITS-1:0] signed_difference=
-        moment+center_product_operand+
-        {{(MATH_BITS-1){1'b0}},!center_negative};
-    // U and V projections use the same sum, with a controlled second operand.
-    wire projection_subtract=projection == 3;
-    wire [MATH_BITS-1:0] projection_my_operand=
-        {{(MATH_BITS-MOM_BITS){1'b0}},my2} ^
-        {MATH_BITS{projection_subtract}};
-    wire signed [MATH_BITS-1:0] projection_uv_moment=
-        {{(MATH_BITS-MOM_BITS){1'b0}},mx2}+projection_my_operand+
-        {{(MATH_BITS-1){1'b0}},projection_subtract};
+    wire [31:0] center_magnitude=projection_center<0 ?
+        -projection_center : projection_center;
+    wire projection_subtract=projection==3;
+    wire booth_zero=multiplier[2:0]==3'b000 || multiplier[2:0]==3'b111;
+    wire booth_double=multiplier[2:0]==3'b011 || multiplier[2:0]==3'b100;
+    wire booth_negative=multiplier[2];
+    wire [MATH_BITS-1:0] booth_operand=booth_double ?
+        multiplicand<<1 : multiplicand;
+
+    reg [MATH_BITS-1:0] compare_left_base,compare_left_extra;
+    reg [MATH_BITS-1:0] compare_right_base,compare_right_extra;
+    reg [MATH_BITS-1:0] arithmetic_left,arithmetic_right;
+    reg arithmetic_initial_carry;
+    wire [LIMB_BITS-1:0] arithmetic_left_limb=
+        arithmetic_left>>(limb_index*LIMB_BITS);
+    wire [LIMB_BITS-1:0] arithmetic_right_limb=
+        arithmetic_right>>(limb_index*LIMB_BITS);
+    wire [LIMB_BITS:0] arithmetic_sum=
+        {1'b0,arithmetic_left_limb}+{1'b0,arithmetic_right_limb}+
+        (limb_index==0 ? arithmetic_initial_carry : arithmetic_carry);
+    wire [LIMB_BITS-1:0] compare_right_base_limb=
+        compare_right_base>>(limb_index*LIMB_BITS);
+    wire [LIMB_BITS-1:0] compare_right_extra_limb=
+        compare_right_extra>>(limb_index*LIMB_BITS);
+    wire [LIMB_BITS:0] compare_right_sum=
+        {1'b0,compare_right_base_limb}+{1'b0,compare_right_extra_limb}+
+        (limb_index==0 ? 1'b0 : compare_right_carry);
+    // The last limb is padded with zeroes after each side's addition, so
+    // overflow is discarded at exactly MATH_BITS, including malformed inputs.
+    wire [LIMB_BITS-1:0] limb_mask=limb_index==LIMBS-1 ?
+        {LIMB_BITS{1'b1}}>>(PAD_BITS-MATH_BITS) : {LIMB_BITS{1'b1}};
+    wire [LIMB_BITS-1:0] compare_left_limb=
+        arithmetic_sum[LIMB_BITS-1:0]&limb_mask;
+    wire [LIMB_BITS-1:0] compare_right_limb=
+        compare_right_sum[LIMB_BITS-1:0]&limb_mask;
+    wire [LIMB_BITS:0] compare_difference=
+        {1'b0,compare_right_limb}+{1'b0,~compare_left_limb}+
+        (limb_index==0 ? 1'b1 : compare_carry);
+    wire comparison_equal=(limb_index==0 || compare_equal) &&
+        compare_left_limb==compare_right_limb;
+    wire comparison_le=compare_difference[LIMB_BITS];
+    wire comparison_lt=comparison_le && !comparison_equal;
+
+    // The same limb adder handles Booth accumulation, projected first moments,
+    // signed deviation, absolute value, and the left side of every comparison.
+    always @* begin
+        arithmetic_left=compare_left_base;
+        arithmetic_right=compare_left_extra;
+        arithmetic_initial_carry=0;
+        case(state)
+            MULTIPLY:begin
+                arithmetic_left=product;
+                arithmetic_right=booth_operand ^ {MATH_BITS{booth_negative}};
+                arithmetic_initial_carry=booth_negative;
+            end
+            CENTER_START:begin
+                arithmetic_left={{(MATH_BITS-MOM_BITS){1'b0}},mx2};
+                arithmetic_right=0;
+                if(projection==1)
+                    arithmetic_left={{(MATH_BITS-MOM_BITS){1'b0}},my2};
+                else if(projection>=2) begin
+                    arithmetic_right={{(MATH_BITS-MOM_BITS){1'b0}},my2} ^
+                        {MATH_BITS{projection_subtract}};
+                    arithmetic_initial_carry=projection_subtract;
+                end
+            end
+            CENTER_DONE:begin
+                arithmetic_left=moment;
+                arithmetic_right=product ^ {MATH_BITS{!center_negative}};
+                arithmetic_initial_carry=!center_negative;
+            end
+            SPAN_START:begin
+                arithmetic_left=0;
+                arithmetic_right=deviation ^ {MATH_BITS{deviation[MATH_BITS-1]}};
+                arithmetic_initial_carry=deviation[MATH_BITS-1];
+            end
+        endcase
+    end
+    always @* begin
+        compare_left_base=0;compare_left_extra=0;
+        compare_right_base=0;compare_right_extra=0;
+        case(state)
+            CHECK_METRICS:case(check_index)
+                0:begin compare_left_base=perimeter_squared;compare_right_base=metric_upper;end
+                1:begin compare_left_base=metric_lower;compare_right_base=perimeter_squared;end
+                2:begin compare_left_base=perimeter_squared;compare_right_base=metric_upper;end
+                3:begin compare_left_base=metric_upper;compare_right_base=perimeter_squared;end
+                4:begin compare_left_base=perimeter_squared;compare_right_base=area_wide<<12;end
+                5:begin compare_left_base=w8;compare_right_base=h8;compare_right_extra=height;end
+                6:begin compare_left_base=h8;compare_right_base=w8;compare_right_extra=width;end
+                7:begin compare_left_base=u8;compare_right_base=v8;compare_right_extra=v_span;end
+                8:begin compare_left_base=v8;compare_right_base=u8;compare_right_extra=u_span;end
+                9:begin compare_left_base=w8;compare_right_base=h8;
+                        compare_right_extra=height_quarter;end
+                10:begin compare_left_base=h8;compare_right_base=w8;
+                         compare_right_extra=width_quarter;end
+                11:begin compare_left_base=u8;compare_right_base=v8;
+                         compare_right_extra=v_plus16;end
+                default:begin compare_left_base=v8;compare_right_base=u8;
+                              compare_right_extra=u_plus16;end
+            endcase
+            CIRCLE_X_CHECK,CIRCLE_U_CHECK:case(check_index)
+                0:begin compare_left_base=product<<4;compare_left_extra=product<<1;
+                        compare_right_base=state==CIRCLE_X_CHECK ? area25 : area25<<1;end
+                1:begin compare_left_base=product<<4;compare_left_extra=product;
+                        compare_right_base=state==CIRCLE_X_CHECK ? area25 : area25<<1;end
+                default:begin compare_left_base=state==CIRCLE_X_CHECK ? area25 : area25<<1;
+                              compare_right_base=product<<4;end
+            endcase
+            SPAN_DONE:begin compare_left_base=deviation<<3;compare_right_base=product;end
+            SKEW_CHECK:begin compare_left_base=product;compare_right_base=deviation<<3;
+                             compare_right_extra=deviation<<2;end
+        endcase
+    end
+
     always @* begin
         case (projection)
             0: begin
                 projection_min=xmin; projection_max=xmax;
-                projection_moment=$signed({1'b0,mx2});
                 projection_span=width;
             end
             1: begin
                 projection_min=ymin; projection_max=ymax;
-                projection_moment=$signed({1'b0,my2});
                 projection_span=height;
             end
             2: begin
                 projection_min=umin; projection_max=umax;
-                projection_moment=projection_uv_moment;
                 projection_span=u_span;
             end
             default: begin
                 projection_min=vmin; projection_max=vmax;
-                projection_moment=projection_uv_moment;
                 projection_span=v_span;
             end
         endcase
         projection_center=$signed({1'b0,projection_min})+
             $signed({1'b0,projection_max})-(projection==3 ? 2*IMG_HEIGHT : 0);
     end
+
+    integer arithmetic_bit;
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
-            state<=IDLE; multiply_return<=IDLE; multiply_count<=0;
-            multiplicand<=0; multiplier<=0; product<=0; deviation<=0;
-            saved_area<=0; saved_xmin<=0; saved_xmax<=0; saved_ymin<=0; saved_ymax<=0;
-            saved_mx2<=0; saved_my2<=0; saved_umin<=0; saved_umax<=0; saved_vmin<=0; saved_vmax<=0;
-            projection<=0; isotropic<=0; centered<=0; skew<=0;
-            circle_metric<=0; square_metric<=0; triangle_metric<=0;
-            circle_fill<=0;
-            circle_support<=0; square_fill<=0; square_spans_ok<=0;
-            moment<=0; center_negative<=0; saved_span<=0;
-            O_ready<=0; O_shape<=0; O_circle_support<=0;
+            state<=IDLE;multiply_return<=IDLE;multiply_count<=0;
+            limb_index<=0;arithmetic_carry<=0;
+            compare_right_carry<=0;compare_carry<=0;compare_equal<=0;
+            multiplicand<=0;multiplier<=0;product<=0;deviation<=0;
+            perimeter_squared<=0;metric_upper<=0;metric_lower<=0;area25<=0;
+            check_index<=0;
+            saved_area<=0;saved_xmin<=0;saved_xmax<=0;saved_ymin<=0;saved_ymax<=0;
+            saved_mx2<=0;saved_my2<=0;saved_umin<=0;saved_umax<=0;
+            saved_vmin<=0;saved_vmax<=0;
+            projection<=0;isotropic<=0;centered<=0;skew<=0;
+            circle_metric<=0;square_metric<=0;triangle_metric<=0;
+            circle_fill<=0;circle_support<=0;square_fill<=0;square_spans_ok<=0;
+            moment<=0;center_negative<=0;saved_span<=0;
+            width<=0;height<=0;u_span<=0;v_span<=0;
+            O_ready<=0;O_shape<=0;O_circle_support<=0;
         end else if (I_clear) begin
-            state<=IDLE; O_ready<=0; O_shape<=0; O_circle_support<=0;
+            state<=IDLE;limb_index<=0;O_ready<=0;O_shape<=0;O_circle_support<=0;
         end else begin
             O_ready<=0;
-            case (state)
-                IDLE: if (I_start) begin
-                    O_shape<=0; O_circle_support<=0;
-                    if (I_bad || I_area == 0 || I_xmin <= 3 || I_ymin <= 3 ||
-                        I_xmax >= IMG_WIDTH-4 || I_ymax >= IMG_HEIGHT-4 ||
-                        I_xmax-I_xmin < 11 || I_ymax-I_ymin < 11) O_ready<=1;
+            case(state)
+                IDLE:if(I_start) begin
+                    O_shape<=0;O_circle_support<=0;
+                    if(I_bad || I_area==0 || I_xmin<=3 || I_ymin<=3 ||
+                       I_xmax>=IMG_WIDTH-4 || I_ymax>=IMG_HEIGHT-4 ||
+                       I_xmax-I_xmin<11 || I_ymax-I_ymin<11) O_ready<=1;
                     else begin
-                        if (!STABLE_INPUTS) begin
-                            saved_area<=I_area; saved_xmin<=I_xmin; saved_xmax<=I_xmax;
-                            saved_ymin<=I_ymin; saved_ymax<=I_ymax;
-                            saved_mx2<=I_mx2; saved_my2<=I_my2;
-                            saved_umin<=I_umin; saved_umax<=I_umax;
-                            saved_vmin<=I_vmin; saved_vmax<=I_vmax;
+                        if(!STABLE_INPUTS) begin
+                            saved_area<=I_area;saved_xmin<=I_xmin;saved_xmax<=I_xmax;
+                            saved_ymin<=I_ymin;saved_ymax<=I_ymax;
+                            saved_mx2<=I_mx2;saved_my2<=I_my2;
+                            saved_umin<=I_umin;saved_umax<=I_umax;
+                            saved_vmin<=I_vmin;saved_vmax<=I_vmax;
                         end
-                        multiplicand<={{(MATH_BITS-16){1'b0}},I_perimeter}; multiplier<=I_perimeter;
-                        product<=0; multiply_count<=0; multiply_return<=METRIC;
-                        state<=MULTIPLY;
+                        width<={1'b0,I_xmax}-{1'b0,I_xmin}+1'b1;
+                        height<={1'b0,I_ymax}-{1'b0,I_ymin}+1'b1;
+                        u_span<={1'b0,I_umax}-{1'b0,I_umin}+1'b1;
+                        v_span<={1'b0,I_vmax}-{1'b0,I_vmin}+1'b1;
+                        multiplicand<={{(MATH_BITS-16){1'b0}},I_perimeter};
+                        multiplier<={I_perimeter,1'b0};product<=0;multiply_count<=0;
+                        limb_index<=0;
+                        multiply_return<=UPPER_DONE;state<=MULTIPLY;
                     end
                 end
-                MULTIPLY: begin
-                    if (multiplier[0]) product<=product+multiplicand;
-                    multiplicand<=multiplicand<<1; multiplier<=multiplier>>1;
-                    multiply_count<=multiply_count+1'b1;
-                    if (multiply_count == 31) state<=multiply_return;
+                MULTIPLY:begin
+                    if(!booth_zero) begin
+                        for(arithmetic_bit=0;arithmetic_bit<MATH_BITS;arithmetic_bit=arithmetic_bit+1)
+                            if(arithmetic_bit/LIMB_BITS==limb_index)
+                                product[arithmetic_bit]<=arithmetic_sum[arithmetic_bit%LIMB_BITS];
+                        arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    end
+                    if(booth_zero || limb_index==LIMBS-1) begin
+                        multiplicand<=multiplicand<<2;multiplier<=multiplier>>2;
+                        multiply_count<=multiply_count+1'b1;limb_index<=0;
+                        if(multiply_count==MULTIPLY_GROUPS-1) state<=multiply_return;
+                    end else limb_index<=limb_index+1'b1;
                 end
-                METRIC: begin
-                    // P8^2/(64A): square 13.5..19; triangle 19..64.
-                    // Circle tolerates perimeter noise up to 19 only when
-                    // both bounding-box coverages reach 18/25. This also
-                    // separates small rasterized squares with Q below 14.5.
-                    circle_metric<=product <= (area_wide<<10)+(area_wide<<7)+(area_wide<<6);
-                    square_metric<=product >= (area_wide<<10)-(area_wide<<7)-(area_wide<<5) &&
-                        product <= (area_wide<<10)+(area_wide<<7)+(area_wide<<6);
-                    triangle_metric<=product > (area_wide<<10)+(area_wide<<7)+(area_wide<<6) &&
-                        product <= (area_wide<<12);
-                    isotropic<=w8 <= h8+height && h8 <= w8+width &&
-                        u8 <= v8+v_span && v8 <= u8+u_span;
-                    // The old +16 was an absolute two-pixel allowance: enough
-                    // for a 17x15 mask, but only 1.4% of a 141-pixel target.
-                    // Scale the allowance with the target so camera vertical
-                    // compression is not mistaken for a rectangle.
-                    square_spans_ok<=w8 <= h8+height+(height>>2) &&
-                        h8 <= w8+width+(width>>2) &&
-                        u8 <= v8+v_span+16 && v8 <= u8+u_span+16;
-                    centered<=1; skew<=0; projection<=0; state<=CIRCLE_X_START;
-                end
-                CIRCLE_X_START: begin
-                    multiplicand<=width; multiplier<=height;
-                    product<=0; multiply_count<=0; multiply_return<=CIRCLE_X_DONE;
+                UPPER_DONE:begin
+                    perimeter_squared<=product;
+                    multiplicand<=area_wide;multiplier<={32'd1216,1'b0};
+                    product<=0;multiply_count<=0;multiply_return<=LOWER_DONE;
                     state<=MULTIPLY;
                 end
-                CIRCLE_X_DONE: begin
-                    circle_fill<=area25 >= box18;
-                    circle_support<=area25 >= box17;
-                    square_fill<=area25 <= (product<<4);
-                    multiplicand<=u_span; multiplier<=v_span;
-                    product<=0; multiply_count<=0; multiply_return<=CIRCLE_U_DONE;
+                LOWER_DONE:begin
+                    metric_upper<=product;
+                    multiplicand<=area_wide;multiplier<={32'd864,1'b0};
+                    product<=0;multiply_count<=0;multiply_return<=AREA25_DONE;
                     state<=MULTIPLY;
                 end
-                CIRCLE_U_DONE: begin
-                    circle_fill<=circle_fill && area50 >= box18;
-                    circle_support<=circle_support && area50 >= box17;
-                    square_fill<=square_fill || area50 <= (product<<4);
-                    state<=CENTER_START;
-                end
-                CENTER_START: begin
-                    multiplicand<=area_wide;
-                    multiplier<=projection_center < 0 ? -projection_center : projection_center;
-                    product<=0; multiply_count<=0; multiply_return<=CENTER_DONE;
-                    center_negative<=projection_center < 0;
-                    moment<=projection_moment; saved_span<=projection_span;
+                AREA25_DONE:begin
+                    metric_lower<=product;
+                    multiplicand<=area_wide;multiplier<={32'd25,1'b0};
+                    product<=0;multiply_count<=0;multiply_return<=CHECK_METRICS;
                     state<=MULTIPLY;
+                    check_index<=0;circle_metric<=0;square_metric<=1;
+                    triangle_metric<=1;isotropic<=1;square_spans_ok<=1;
+                    centered<=1;skew<=0;projection<=0;
                 end
-                CENTER_DONE: begin
-                    deviation<=signed_difference < 0 ? -signed_difference : signed_difference;
-                    state<=SPAN_START;
+                CHECK_METRICS:begin
+                    if(check_index==0) area25<=product;
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    compare_right_carry<=compare_right_sum[LIMB_BITS];
+                    compare_carry<=compare_difference[LIMB_BITS];compare_equal<=comparison_equal;
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;
+                        case(check_index)
+                            0:circle_metric<=comparison_le;
+                            1:square_metric<=square_metric && comparison_le;
+                            2:square_metric<=square_metric && comparison_le;
+                            3:triangle_metric<=triangle_metric && comparison_lt;
+                            4:triangle_metric<=triangle_metric && comparison_le;
+                            5,6,7,8:isotropic<=isotropic && comparison_le;
+                            default:square_spans_ok<=square_spans_ok && comparison_le;
+                        endcase
+                        if(check_index==12) begin
+                            multiplicand<=width;multiplier<={height,1'b0};
+                            product<=0;multiply_count<=0;multiply_return<=CIRCLE_X_DONE;
+                            state<=MULTIPLY;
+                        end else check_index<=check_index+1'b1;
+                    end else limb_index<=limb_index+1'b1;
                 end
-                SPAN_START: begin
-                    multiplicand<=area_wide; multiplier<=saved_span;
-                    product<=0; multiply_count<=0; multiply_return<=SPAN_DONE;
-                    state<=MULTIPLY;
+                CIRCLE_X_DONE:begin check_index<=0;state<=CIRCLE_X_CHECK;end
+                CIRCLE_X_CHECK:begin
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    compare_right_carry<=compare_right_sum[LIMB_BITS];
+                    compare_carry<=compare_difference[LIMB_BITS];compare_equal<=comparison_equal;
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;
+                        case(check_index)
+                            0:circle_fill<=comparison_le;
+                            1:circle_support<=comparison_le;
+                            default:square_fill<=comparison_le;
+                        endcase
+                        if(check_index==2) begin
+                            multiplicand<=u_span;multiplier<={v_span,1'b0};
+                            product<=0;multiply_count<=0;multiply_return<=CIRCLE_U_DONE;
+                            state<=MULTIPLY;
+                        end else check_index<=check_index+1'b1;
+                    end else limb_index<=limb_index+1'b1;
                 end
-                SPAN_DONE: begin
-                    // deviation is twice the physical centroid offset:
-                    // 8D <= A*S allows a displacement of S/16.
-                    centered<=centered && (deviation<<3) <= product;
-                    skew<=skew || ((deviation<<3)+(deviation<<2)) >= product;
-                    if (projection == 3) state<=FINISH;
-                    else begin projection<=projection+1'b1; state<=CENTER_START; end
+                CIRCLE_U_DONE:begin check_index<=0;state<=CIRCLE_U_CHECK;end
+                CIRCLE_U_CHECK:begin
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    compare_right_carry<=compare_right_sum[LIMB_BITS];
+                    compare_carry<=compare_difference[LIMB_BITS];compare_equal<=comparison_equal;
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;
+                        case(check_index)
+                            0:circle_fill<=circle_fill && comparison_le;
+                            1:circle_support<=circle_support && comparison_le;
+                            default:square_fill<=square_fill || comparison_le;
+                        endcase
+                        if(check_index==2) state<=CENTER_START;
+                        else check_index<=check_index+1'b1;
+                    end else limb_index<=limb_index+1'b1;
                 end
-                FINISH: begin
+                CENTER_START:begin
+                    for(arithmetic_bit=0;arithmetic_bit<MATH_BITS;arithmetic_bit=arithmetic_bit+1)
+                        if(arithmetic_bit/LIMB_BITS==limb_index)
+                            moment[arithmetic_bit]<=arithmetic_sum[arithmetic_bit%LIMB_BITS];
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;multiplicand<=area_wide;
+                        multiplier<={center_magnitude,1'b0};
+                        product<=0;multiply_count<=0;multiply_return<=CENTER_DONE;
+                        center_negative<=projection_center<0;saved_span<=projection_span;
+                        state<=MULTIPLY;
+                    end else limb_index<=limb_index+1'b1;
+                end
+                CENTER_DONE:begin
+                    for(arithmetic_bit=0;arithmetic_bit<MATH_BITS;arithmetic_bit=arithmetic_bit+1)
+                        if(arithmetic_bit/LIMB_BITS==limb_index)
+                            deviation[arithmetic_bit]<=arithmetic_sum[arithmetic_bit%LIMB_BITS];
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    if(limb_index==LIMBS-1) begin limb_index<=0;state<=SPAN_START;end
+                    else limb_index<=limb_index+1'b1;
+                end
+                SPAN_START:begin
+                    for(arithmetic_bit=0;arithmetic_bit<MATH_BITS;arithmetic_bit=arithmetic_bit+1)
+                        if(arithmetic_bit/LIMB_BITS==limb_index)
+                            deviation[arithmetic_bit]<=arithmetic_sum[arithmetic_bit%LIMB_BITS];
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;multiplicand<=area_wide;multiplier<={saved_span,1'b0};
+                        product<=0;multiply_count<=0;multiply_return<=SPAN_DONE;
+                        state<=MULTIPLY;
+                    end else limb_index<=limb_index+1'b1;
+                end
+                SPAN_DONE:begin
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    compare_right_carry<=compare_right_sum[LIMB_BITS];
+                    compare_carry<=compare_difference[LIMB_BITS];compare_equal<=comparison_equal;
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;centered<=centered && comparison_le;state<=SKEW_CHECK;
+                    end else limb_index<=limb_index+1'b1;
+                end
+                SKEW_CHECK:begin
+                    arithmetic_carry<=arithmetic_sum[LIMB_BITS];
+                    compare_right_carry<=compare_right_sum[LIMB_BITS];
+                    compare_carry<=compare_difference[LIMB_BITS];compare_equal<=comparison_equal;
+                    if(limb_index==LIMBS-1) begin
+                        limb_index<=0;skew<=skew || comparison_le;
+                        if(projection==3) state<=FINISH;
+                        else begin projection<=projection+1'b1;state<=CENTER_START;end
+                    end else limb_index<=limb_index+1'b1;
+                end
+                FINISH:begin
                     O_circle_support<=isotropic && centered && circle_metric && circle_support;
-                    if (isotropic && centered && circle_metric && circle_fill) O_shape<=3;
-                    else if ((isotropic || (square_spans_ok && square_fill)) &&
+                    if(isotropic && centered && circle_metric && circle_fill) O_shape<=3;
+                    else if((isotropic || (square_spans_ok && square_fill)) &&
                         centered && square_metric && !circle_fill) O_shape<=1;
-                    else if (skew && triangle_metric) O_shape<=2;
+                    else if(skew && triangle_metric) O_shape<=2;
                     else O_shape<=0;
-                    O_ready<=1; state<=IDLE;
+                    O_ready<=1;state<=IDLE;
                 end
-                default: state<=IDLE;
+                default:state<=IDLE;
             endcase
         end
     end
 endmodule
-
-// Wide, shallow tables use ERAM rather than thousands of resettable flip-flops.
-// The portable branch has exactly the same one-clock synchronous read latency.
 module red_multi_small_ram #(
     parameter integer WIDTH = 32,
     parameter integer DEPTH = 64,

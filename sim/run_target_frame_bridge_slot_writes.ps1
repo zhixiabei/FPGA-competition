@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $sources = @(
+    'sim\reference\ph1p_logic_dram_asym_sim.v',
     'user_source\hdl_source\target_frame_bridge.v',
     'sim\tb_target_frame_bridge_slot_writes.sv'
 )

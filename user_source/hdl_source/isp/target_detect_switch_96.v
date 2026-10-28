@@ -9,7 +9,8 @@ module target_detect_switch_96 #(
     parameter integer MIN_BLOCKS = 12,
     parameter integer GLOBAL_CHANGE_PERCENT = 40,
     parameter integer MOTION_STABLE_ENABLE = 1,
-    parameter integer RED_MULTI_ENABLE = 0
+    parameter integer RED_MULTI_ENABLE = 0,
+    parameter integer SINGLE_SHAPE_ENABLE = 0
 ) (
     input wire I_clk,
     input wire I_rst_n,
@@ -101,7 +102,8 @@ module target_detect_switch_96 #(
     red_target_detect_96 #(
         .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
         .RED_MIN(24), .RED_DELTA(6), .MIN_PIXELS(RED_MIN_PIXELS),
-        .MULTI_ENABLE(RED_MULTI_ENABLE)
+        .MULTI_ENABLE(RED_MULTI_ENABLE),
+        .SINGLE_SHAPE_ENABLE(SINGLE_SHAPE_ENABLE)
     ) u_red (
         .I_clk(I_clk), .I_rst_n(I_rst_n),
         .I_tuser(I_tuser), .I_tvalid(I_tvalid), .I_tdata(I_tdata),
@@ -146,7 +148,8 @@ module target_detect_switch_96 #(
     generate
         if (MOTION_STABLE_ENABLE) begin : gen_stable_motion
             motion_result_stabilizer #(
-                .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT)
+                .IMG_WIDTH(IMG_WIDTH), .IMG_HEIGHT(IMG_HEIGHT),
+                .INPUT_BLOCK_ALIGNED(1)
             ) u_stabilizer (
                 .I_clk(I_clk), .I_rst_n(I_rst_n),
                 .I_result_ready(raw_motion_ready), .I_found(raw_motion_found),
@@ -177,7 +180,7 @@ module target_detect_switch_96 #(
     assign O_motion_mode_active = active_motion;
     assign O_color_mode_active = active_color;
     generate
-        if (!RED_MULTI_ENABLE) begin : gen_legacy_result
+        if (!RED_MULTI_ENABLE && !SINGLE_SHAPE_ENABLE) begin : gen_legacy_result
             assign O_target_motion_mode = completion_motion;
             assign O_target_color_mode = completion_color;
             assign O_result_ready = completion_motion ? motion_ready : red_ready;
@@ -203,7 +206,8 @@ module target_detect_switch_96 #(
             reg [1:0] context_color [0:3];
             integer ci;
             // Motion's stabilizer publishes two clocks after its raw result.
-            // Red carries its own ID through its variable-length run queue.
+            // Color shape results carry their own ID through classification,
+            // whether using the single-frame accumulator or the run queue.
             always @(posedge I_clk or negedge I_rst_n) begin
                 if (!I_rst_n) begin
                     active_id<=0; completion_id<=0;
@@ -311,7 +315,8 @@ module motion_result_stabilizer #(
     parameter integer RELEASE_FRAMES = 3,
     parameter integer MAX_CENTER_STEP = 64,
     parameter integer SIZE_MARGIN = 32,
-    parameter integer DEADBAND = 8
+    parameter integer DEADBAND = 8,
+    parameter integer INPUT_BLOCK_ALIGNED = 0
 ) (
     input wire I_clk,
     input wire I_rst_n,
@@ -328,21 +333,35 @@ module motion_result_stabilizer #(
     output reg [23:0] O_pixels,
     output reg O_frame_toggle
 );
+    // The original unsigned comparison promotes 2*MAX_CENTER_STEP to 32
+    // bits. Preserve that parameter arithmetic, including large values.
+    localparam [31:0] CENTER_LIMIT = 2*MAX_CENTER_STEP;
+    function centers_match;
+        input [12:0] current_center, previous_center;
+        reg signed [13:0] difference;
+        begin
+            difference = $signed({1'b0,current_center}) -
+                         $signed({1'b0,previous_center});
+            // One signed subtraction replaces two unsigned differences and
+            // their ordering mux. A 13-bit center difference never exceeds
+            // 8191, so larger original unsigned limits always accept it.
+            if (CENTER_LIMIT >= 32'd8191)
+                centers_match = 1'b1;
+            else
+                centers_match = difference >= -$signed({1'b0,CENTER_LIMIT}) &&
+                                difference <=  $signed({1'b0,CENTER_LIMIT});
+        end
+    endfunction
     function boxes_match;
         input [11:0] ax0, ax1, ay0, ay1, bx0, bx1, by0, by1;
-        reg [12:0] aw, ah, bw, bh, acx, acy, bcx, bcy, dx, dy;
+        input [12:0] bw, bh, bcx, bcy;
+        reg [12:0] aw, ah, acx, acy;
         begin
             aw = {1'b0,ax1} - {1'b0,ax0} + 13'd1;
             ah = {1'b0,ay1} - {1'b0,ay0} + 13'd1;
-            bw = {1'b0,bx1} - {1'b0,bx0} + 13'd1;
-            bh = {1'b0,by1} - {1'b0,by0} + 13'd1;
             acx = {1'b0,ax0} + {1'b0,ax1};
             acy = {1'b0,ay0} + {1'b0,ay1};
-            bcx = {1'b0,bx0} + {1'b0,bx1};
-            bcy = {1'b0,by0} + {1'b0,by1};
-            dx = acx >= bcx ? acx-bcx : bcx-acx;
-            dy = acy >= bcy ? acy-bcy : bcy-acy;
-            boxes_match = dx <= 2*MAX_CENTER_STEP && dy <= 2*MAX_CENTER_STEP &&
+            boxes_match = centers_match(acx,bcx) && centers_match(acy,bcy) &&
                 {1'b0,aw} <= {bw,1'b0} + SIZE_MARGIN &&
                 {1'b0,bw} <= {aw,1'b0} + SIZE_MARGIN &&
                 {1'b0,ah} <= {bh,1'b0} + SIZE_MARGIN &&
@@ -357,17 +376,21 @@ module motion_result_stabilizer #(
     function [11:0] smooth_coordinate;
         input [11:0] previous, current;
         reg signed [12:0] difference;
-        reg signed [13:0] biased_difference, step;
+        reg [13:0] previous_weight, biased_current, weighted_sum;
         begin
             difference = $signed({1'b0,current}) - $signed({1'b0,previous});
-            // Negative arithmetic shifts round away from zero; positive
-            // steps need the bias to retain the same rounding.
-            biased_difference = {difference[12],difference} +
-                (difference[12] ? 14'sd0 : 14'sd3);
-            step = biased_difference >>> 2;
+            // Preserve the original away-from-zero quarter-step rounding.
+            // Compute 3*previous and current+bias in parallel; unlike
+            // previous+((current-previous+bias)>>>2), neither sum waits
+            // for the signed difference. The maximum is 16383, so all
+            // weighted arithmetic is explicitly unsigned and 14 bits.
+            previous_weight = {1'b0,previous,1'b0} + {2'b00,previous};
+            biased_current = {2'b00,current} +
+                (current >= previous ? 14'd3 : 14'd0);
+            weighted_sum = previous_weight + biased_current;
             smooth_coordinate =
                 difference >= -DEADBAND && difference <= DEADBAND ?
-                previous : $signed({1'b0,previous}) + step;
+                previous : weighted_sum[13:2];
         end
     endfunction
 
@@ -377,10 +400,16 @@ module motion_result_stabilizer #(
     reg [CONFIRM_BITS-1:0] confirmations;
     reg [RELEASE_BITS-1:0] misses;
     reg [11:0] anchor_x0, anchor_x1, anchor_y0, anchor_y1;
+    // Cache exact anchor features at the same edge as their coordinates.
+    // Association no longer recomputes the stored center/width before the
+    // subtraction and comparisons. Publication latency is unchanged.
+    reg [12:0] anchor_width, anchor_height, anchor_center_x, anchor_center_y;
     reg [11:0] track_x0, track_x1, track_y0, track_y1;
     reg [23:0] track_pixels;
     wire [12:0] candidate_width = {1'b0,I_xmax} - {1'b0,I_xmin} + 13'd1;
     wire [12:0] candidate_height = {1'b0,I_ymax} - {1'b0,I_ymin} + 13'd1;
+    wire [12:0] candidate_center_x = {1'b0,I_xmin} + {1'b0,I_xmax};
+    wire [12:0] candidate_center_y = {1'b0,I_ymin} + {1'b0,I_ymax};
     wire [13:0] span_blocks =
         (({1'b0,candidate_width}+14'd7) >> 3) +
         (({1'b0,candidate_height}+14'd7) >> 3);
@@ -393,15 +422,26 @@ module motion_result_stabilizer #(
         I_supported_blocks >= MIN_SUPPORTED_BLOCKS &&
         support_weight >= {span_blocks,1'b0};
     wire associated = boxes_match(I_xmin,I_xmax,I_ymin,I_ymax,
-                               anchor_x0,anchor_x1,anchor_y0,anchor_y1);
+                               anchor_x0,anchor_x1,anchor_y0,anchor_y1,
+                               anchor_width,anchor_height,anchor_center_x,anchor_center_y);
+    // The raw motion detector publishes inclusive eight-pixel block bounds.
+    // For a valid candidate its maximum coordinate always ends in 3'b111.
+    // Use that value before smoothing, whose result is consumed only when
+    // candidate is true. This removes the raw found flag from the arithmetic
+    // data path; invalid frames still follow the unchanged miss/release path.
+    // Historical track coordinates retain their full sub-block precision.
+    wire [11:0] smooth_current_xmax = INPUT_BLOCK_ALIGNED ?
+        {I_xmax[11:3],3'b111} : I_xmax;
+    wire [11:0] smooth_current_ymax = INPUT_BLOCK_ALIGNED ?
+        {I_ymax[11:3],3'b111} : I_ymax;
     wire [11:0] smooth_x0 = smooth_coordinate(track_x0,I_xmin);
-    wire [11:0] smooth_x1 = smooth_coordinate(track_x1,I_xmax);
+    wire [11:0] smooth_x1 = smooth_coordinate(track_x1,smooth_current_xmax);
     wire [11:0] smooth_y0 = smooth_coordinate(track_y0,I_ymin);
-    wire [11:0] smooth_y1 = smooth_coordinate(track_y1,I_ymax);
+    wire [11:0] smooth_y1 = smooth_coordinate(track_y1,smooth_current_ymax);
     wire [11:0] smoothed_x0 = smooth_x0 <= smooth_x1 ? smooth_x0 : I_xmin;
-    wire [11:0] smoothed_x1 = smooth_x0 <= smooth_x1 ? smooth_x1 : I_xmax;
+    wire [11:0] smoothed_x1 = smooth_x0 <= smooth_x1 ? smooth_x1 : smooth_current_xmax;
     wire [11:0] smoothed_y0 = smooth_y0 <= smooth_y1 ? smooth_y0 : I_ymin;
-    wire [11:0] smoothed_y1 = smooth_y0 <= smooth_y1 ? smooth_y1 : I_ymax;
+    wire [11:0] smoothed_y1 = smooth_y0 <= smooth_y1 ? smooth_y1 : smooth_current_ymax;
 
     reg publish_valid, publish_found;
     reg [11:0] publish_x0, publish_x1, publish_y0, publish_y1;
@@ -410,6 +450,8 @@ module motion_result_stabilizer #(
         if (!I_rst_n) begin
             active <= 0; confirmations <= 0; misses <= 0;
             anchor_x0 <= 0; anchor_x1 <= 0; anchor_y0 <= 0; anchor_y1 <= 0;
+            anchor_width <= 13'd1; anchor_height <= 13'd1;
+            anchor_center_x <= 0; anchor_center_y <= 0;
             track_x0 <= 0; track_x1 <= 0; track_y0 <= 0; track_y1 <= 0;
             track_pixels <= 0;
             publish_valid <= 0; publish_found <= 0;
@@ -430,6 +472,8 @@ module motion_result_stabilizer #(
                         misses <= 0;
                         anchor_x0 <= I_xmin; anchor_x1 <= I_xmax;
                         anchor_y0 <= I_ymin; anchor_y1 <= I_ymax;
+                        anchor_width <= candidate_width; anchor_height <= candidate_height;
+                        anchor_center_x <= candidate_center_x; anchor_center_y <= candidate_center_y;
                         track_x0 <= smoothed_x0; track_x1 <= smoothed_x1;
                         track_y0 <= smoothed_y0; track_y1 <= smoothed_y1;
                         track_pixels <= I_pixels;
@@ -448,10 +492,14 @@ module motion_result_stabilizer #(
                         confirmations <= candidate ? 1 : 0;
                         anchor_x0 <= I_xmin; anchor_x1 <= I_xmax;
                         anchor_y0 <= I_ymin; anchor_y1 <= I_ymax;
+                        anchor_width <= candidate_width; anchor_height <= candidate_height;
+                        anchor_center_x <= candidate_center_x; anchor_center_y <= candidate_center_y;
                     end
                 end else if (candidate) begin
                     anchor_x0 <= I_xmin; anchor_x1 <= I_xmax;
                     anchor_y0 <= I_ymin; anchor_y1 <= I_ymax;
+                    anchor_width <= candidate_width; anchor_height <= candidate_height;
+                    anchor_center_x <= candidate_center_x; anchor_center_y <= candidate_center_y;
                     if (CONFIRM_FRAMES == 1 ||
                         (confirmations != 0 && associated &&
                          confirmations >= CONFIRM_FRAMES-1)) begin

@@ -1,6 +1,10 @@
 param(
     [ValidateSet('Portable', 'Vendor', 'Both')]
     [string] $Mode = 'Both',
+    [ValidateSet(8, 16)]
+    [int] $CandidateSlots = 8,
+    [ValidateRange(3, 4)]
+    [int] $MaxTargets = 3,
     [int] $TimeoutSeconds = 300,
     [string] $ModelSimBin = 'C:\altera\14.1\modelsim_ase\win32aloem',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p'
@@ -58,7 +62,7 @@ onbreak {resume}
 if {[file exists work]} {vdel -all -lib work}
 vlib work
 vlog -sv $compileOptions red_target_detect_96.v target_detect_switch_96.v motion_target_detect_96.v tb_color_shape_stability.sv $vendorSources
-vsim -t ps work.tb_color_shape_stability $vendorTop
+vsim -t ps -gCANDIDATE_SLOTS=$CandidateSlots -gMAX_TARGETS=$MaxTargets work.tb_color_shape_stability $vendorTop
 run -all
 quit -code 0 -force
 "@

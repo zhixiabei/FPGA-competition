@@ -1,6 +1,10 @@
 param(
     [ValidateSet('Portable', 'Vendor', 'Both')]
     [string] $Mode = 'Portable',
+    [ValidateSet(8, 16)]
+    [int] $CandidateSlots = 8,
+    [ValidateSet(3, 4)]
+    [int] $MaxTargets = 3,
     [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
     [string] $ModelSimBin = 'C:\altera\14.1\modelsim_ase\win32aloem',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p'
@@ -30,6 +34,8 @@ try {
             @names -log xvlog.log *> portable_compile.log
         if ($LASTEXITCODE -ne 0) { throw "Compile failed; see $simulationDir\portable_compile.log" }
         & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
+            -generic_top ('"CANDIDATE_SLOTS=' + $CandidateSlots + '"') `
+            -generic_top ('"MAX_TARGETS=' + $MaxTargets + '"') `
             work.tb_red_multi_switch -s red_switch -log xelab.log *> portable_elaborate.log
         if ($LASTEXITCODE -ne 0) { throw "Elaboration failed; see $simulationDir\portable_elaborate.log" }
         & (Join-Path $SimBin 'xsim.bat') red_switch -runall -log xsim.log *> portable_simulate.log
@@ -50,10 +56,11 @@ onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
 vlog -sv red_target_detect_96.v motion_target_detect_96.v target_detect_switch_96.v tb_red_multi_switch.sv ph1p_logic_eram.v ph1p_phy_gsr.v
-vsim -t ps work.tb_red_multi_switch work.PH1P_PHY_GSR
+vsim -t ps -gCANDIDATE_SLOTS=TEST_CANDIDATES -gMAX_TARGETS=TEST_TARGETS work.tb_red_multi_switch work.PH1P_PHY_GSR
 run -all
 quit -code 0 -force
 '@
+        $runScript = $runScript.Replace('TEST_CANDIDATES', [string]$CandidateSlots).Replace('TEST_TARGETS', [string]$MaxTargets)
         [System.IO.File]::WriteAllText((Join-Path $simulationDir 'vendor_run.do'), `
             $runScript, [System.Text.UTF8Encoding]::new($false))
         & (Join-Path $ModelSimBin 'vsim.exe') -c -do vendor_run.do -l vendor_transcript.log *> vendor_console.log
@@ -65,7 +72,7 @@ quit -code 0 -force
         }
         [regex]::Match($console, '(?m)^\s*(?:#\s*)?RED_MULTI_SWITCH_PASS.*$').Value.Trim() -replace '^#\s*', ''
     }
-    Write-Output "RED_MULTI_SWITCH_REGRESSION_PASS mode=$Mode"
+    Write-Output "RED_MULTI_SWITCH_REGRESSION_PASS mode=$Mode candidates=$CandidateSlots targets=$MaxTargets"
 } finally {
     Pop-Location
 }

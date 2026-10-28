@@ -1,0 +1,25 @@
+# vsim -c -lib C:\Users\1\AppData\Local\Temp\handfixed_preprocess_store tb_handfixed_preprocess_store -do "run -all; quit -f" 
+# Start time: 16:15:50 on Oct 27,2026
+# Loading sv_std.std
+# Loading C:\Users\1\AppData\Local\Temp\handfixed_preprocess_store.tb_handfixed_preprocess_store
+# Loading C:\Users\1\AppData\Local\Temp\handfixed_preprocess_store.handfixed_preprocess
+# Loading C:\Users\1\AppData\Local\Temp\handfixed_preprocess_store.PH1P_LOGIC_DRAM
+# Loading C:\Users\1\AppData\Local\Temp\handfixed_preprocess_store.handcnn_normalize
+# ** Warning: (vsim-3015) sim/tb_handfixed_preprocess_store.sv(11): [PCDPC] - Port size (16) does not match connection size (32) for port 'roi_x'. The port definition is at: user_source/hdl_source/fruit_merged/handfixed_preprocess.v(8).
+# 
+#         Region: /tb_handfixed_preprocess_store/dut
+# ** Warning: (vsim-3015) sim/tb_handfixed_preprocess_store.sv(11): [PCDPC] - Port size (16) does not match connection size (32) for port 'roi_y'. The port definition is at: user_source/hdl_source/fruit_merged/handfixed_preprocess.v(8).
+# 
+#         Region: /tb_handfixed_preprocess_store/dut
+# ** Warning: (vsim-3015) sim/tb_handfixed_preprocess_store.sv(11): [PCDPC] - Port size (16) does not match connection size (32) for port 'roi_side'. The port definition is at: user_source/hdl_source/fruit_merged/handfixed_preprocess.v(9).
+# 
+#         Region: /tb_handfixed_preprocess_store/dut
+# ** Warning: (vsim-3015) sim/tb_handfixed_preprocess_store.sv(11): [PCDPC] - Port size (128) does not match connection size (32) for port 'mem_rsp_data'. The port definition is at: user_source/hdl_source/fruit_merged/handfixed_preprocess.v(23).
+# 
+#         Region: /tb_handfixed_preprocess_store/dut
+# run -all
+# HANDFIXED_PREPROCESS_STORE_PASS channels=3 words=24
+# ** Note: $finish    : sim/tb_handfixed_preprocess_store.sv(44)
+#    Time: 306 ns  Iteration: 0  Instance: /tb_handfixed_preprocess_store
+# End time: 16:15:50 on Oct 27,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 4

@@ -21,11 +21,11 @@ rename_clock -name {MIPI_RX_BYTE_CLK} [get_clocks {u_video/u_mipi_dphy_rx_ph1p_m
 # Use direct SDC commands: conditional SDC bodies are unreliable in TD.
 set_false_path -from [get_regs -nowarn {u_video/u_camera_diag_cdc/req_toggle u_video/u_ae_stats_cdc/req_toggle u_video/raw_diagnostics$u_cdc/req_toggle u_video/raw_diagnostics$u_ae_readout_cdc/req_toggle}] -to [get_regs -nowarn {u_video/u_camera_diag_cdc/req_meta u_video/u_ae_stats_cdc/req_meta u_video/raw_diagnostics$u_cdc/req_meta u_video/raw_diagnostics$u_ae_readout_cdc/req_meta}]
 set_false_path -from [get_regs -nowarn {u_video/u_camera_diag_cdc/ack_toggle u_video/u_ae_stats_cdc/ack_toggle u_video/raw_diagnostics$u_cdc/ack_toggle u_video/raw_diagnostics$u_ae_readout_cdc/ack_toggle}] -to [get_regs -nowarn {u_video/u_camera_diag_cdc/ack_meta u_video/u_ae_stats_cdc/ack_meta u_video/raw_diagnostics$u_cdc/ack_meta u_video/raw_diagnostics$u_ae_readout_cdc/ack_meta}]
-# Stable diagnostic payloads retain their 13 ns bound. AE statistics cross to
-# 24 MHz and retain their separate 20 ns bundled-data bound.
-set_max_delay -datapath_only -from [get_regs -nowarn {u_video/u_camera_diag_cdc/payload_hold[*] u_video/raw_diagnostics$u_cdc/payload_hold[*] u_video/raw_diagnostics$u_ae_readout_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_video/u_camera_diag_cdc/O_dst_data[*] u_video/raw_diagnostics$u_cdc/O_dst_data[*] u_video/raw_diagnostics$u_ae_readout_cdc/O_dst_data[*]}] 13.000
+# Camera/RAW display diagnostics are disabled in the production top and their
+# destination registers are optimized away. AE statistics remain active and
+# retain their separate 20 ns bundled-data bound.
 set_max_delay -datapath_only -from [get_regs -nowarn {u_video/u_ae_stats_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_video/u_ae_stats_cdc/O_dst_data[*]}] 20.000
-set_false_path -from [get_regs {u_video/u_auto_exposure/O_awb_hold}] -to [get_regs {u_video/u_isp_top/awb_hold_meta}]
+# Original-compatible AWB ignores the AE hold input in the production build.
 
 # Keep timestamp and held-payload crossings bounded instead of grouping
 # their clocks away. These exceptions match the main project with u_video.
@@ -55,14 +55,14 @@ set_false_path -from [get_regs {u_video/u_display_effect_cdc/req_toggle}] -to [g
 set_false_path -from [get_regs {u_video/u_display_effect_cdc/ack_toggle}] -to [get_regs {u_video/u_display_effect_cdc/ack_meta}]
 set_max_delay -datapath_only -from [get_regs {u_video/u_display_effect_cdc/payload_hold[*]}] -to [get_regs {u_video/u_display_effect_cdc/O_dst_data[*]}] 13.000
 
-set_false_path -from [get_regs {u_video/u_video_latency/S_isp_request}] -to [get_regs {u_video/u_video_latency/S_isp_req_meta}]
-set_false_path -from [get_regs {u_video/u_video_latency/S_isp_ack}] -to [get_regs {u_video/u_video_latency/S_isp_ack_meta}]
-set_false_path -from [get_regs {u_video/u_video_latency/S_read_request}] -to [get_regs {u_video/u_video_latency/S_read_req_meta}]
-set_false_path -from [get_regs {u_video/u_video_latency/S_read_ack}] -to [get_regs {u_video/u_video_latency/S_read_ack_meta}]
-set_max_delay -datapath_only -from [get_regs {u_video/u_video_latency/u_timebase/O_time_gray[*]}] -to [get_regs {u_video/u_video_latency/S_csi_gray_meta[*] u_video/u_video_latency/S_hdmi_gray_meta[*]}] 20.000
-set_max_delay -datapath_only -from [get_regs {u_video/u_video_latency/S_start_id[*] u_video/u_video_latency/S_start_raw_us[*] u_video/u_video_latency/S_start_valid}] -to [get_regs {u_video/u_video_latency/S_slot*}] 20.000
-set_max_delay -datapath_only -from [get_regs {u_video/u_video_latency/S_isp_payload[*]}] -to [get_regs {u_video/u_video_latency/S_slot* u_video/u_video_latency/S_last_isp_payload[*]}] 20.000
-set_max_delay -datapath_only -from [get_regs {u_video/u_video_latency/S_read_payload[*]}] -to [get_regs {u_video/u_video_latency/S_pending_payload[*] u_video/u_video_latency/S_pending_valid}] 13.000
+set_false_path -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_isp_request}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_isp_req_meta}]
+set_false_path -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_isp_ack}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_isp_ack_meta}]
+set_false_path -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_read_request}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_read_req_meta}]
+set_false_path -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_read_ack}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_read_ack_meta}]
+set_max_delay -datapath_only -from [get_regs {u_video/latency_diagnostics$u_video_latency/u_timebase/O_time_gray[*]}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_csi_gray_meta[*] u_video/latency_diagnostics$u_video_latency/S_hdmi_gray_meta[*]}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_start_id[*] u_video/latency_diagnostics$u_video_latency/S_start_raw_us[*] u_video/latency_diagnostics$u_video_latency/S_start_valid}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_slot*}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_isp_payload[*]}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_slot* u_video/latency_diagnostics$u_video_latency/S_last_isp_payload[*]}] 20.000
+set_max_delay -datapath_only -from [get_regs {u_video/latency_diagnostics$u_video_latency/S_read_payload[*]}] -to [get_regs {u_video/latency_diagnostics$u_video_latency/S_pending_payload[*] u_video/latency_diagnostics$u_video_latency/S_pending_valid}] 13.000
 
 set_false_path -from [get_regs {u_video/u_target_frame_bridge/S_result_request}] -to [get_regs {u_video/u_target_frame_bridge/S_result_req_meta}]
 set_false_path -from [get_regs {u_video/u_target_frame_bridge/S_result_ack}] -to [get_regs {u_video/u_target_frame_bridge/S_result_ack_meta}]

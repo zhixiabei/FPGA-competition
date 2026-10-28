@@ -4,9 +4,11 @@
 // Accepted DDR write words are injected; addresses, allocation, completion,
 // metadata CDC, read selection and mixer frame latches remain real logic.
 module tb_red_multi_frame_alignment #(
-    parameter integer COMPACT_MODE = 0
+    parameter integer COMPACT_MODE = 0,
+    parameter integer SINGLE_TARGET = 0
 );
     localparam integer FRAME_WORDS = 172800;
+    localparam integer TARGETS = SINGLE_TARGET ? 1 : 4;
     reg csi_clk = 0, hdmi_clk = 0, ddr_clk = 0;
     always #7 csi_clk = ~csi_clk;
     always #5.5 hdmi_clk = ~hdmi_clk;
@@ -50,7 +52,11 @@ module tb_red_multi_frame_alignment #(
     reg [1:0] snapshot_color = 0;
     reg [7:0] snapshot_shapes = 0;
 
-    design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(1)) dut (
+    // CNN is outside this forced-metadata boundary; retain the video-only stride.
+    design_top_wrapper #(.SHOW_RAW_STATS(0),
+        .RED_MULTI_ENABLE(SINGLE_TARGET ? 0 : 1),
+        .SINGLE_SHAPE_ENABLE(SINGLE_TARGET),
+        .ENABLE_HANDCNN(0), .FRUIT_SWITCH_CONTROL(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
         .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1)
@@ -205,7 +211,15 @@ module tb_red_multi_frame_alignment #(
             result_boxes = packed_boxes(id,0);
             result_shapes = motion ? 8'd0 : packed_shapes(id);
             result_valid = valid_value; result_hold = held_value; result_overflow = overflow_value;
-            if (COMPACT_MODE) begin
+            if (SINGLE_TARGET) begin
+                result_valid = motion ? 4'd0 : {3'b0,found_value};
+                result_hold = motion ? 4'd0 : {3'b0,held_value[0]};
+                result_shapes[7:2] = 6'd0;
+                if (!found_value) result_shapes = 8'd0;
+                result_boxes[191:48] = 144'd0;
+                if (motion) result_boxes = 192'd0;
+                result_overflow = 1'b0;
+            end else if (COMPACT_MODE) begin
                 if (motion) begin
                     result_valid = 0; result_hold = 0; result_shapes = 0;
                     result_boxes = 0; result_overflow = 0;
@@ -228,8 +242,8 @@ module tb_red_multi_frame_alignment #(
                 if (ref_id[s] == id && ref_motion[s] == motion &&
                     ref_color[s] == result_color) begin
                     ref_result[s] = 1; ref_found[s] = found_value;
-                    ref_valid[s] = valid_value; ref_hold[s] = held_value;
-                    ref_overflow[s] = overflow_value;
+                    ref_valid[s] = result_valid; ref_hold[s] = result_hold;
+                    ref_overflow[s] = result_overflow;
                     ref_shapes[s] = result_shapes;
                 end
             repeat (18) @(negedge csi_clk);
@@ -251,7 +265,10 @@ module tb_red_multi_frame_alignment #(
             expected_ymax = clip_y(box_y(snapshot_id,0)+48,shift);
             expected_cx = clip_x(box_x(snapshot_id,0)+48,shift);
             expected_cy = clip_y(box_y(snapshot_id,0)+24,shift);
-            if (COMPACT_MODE) begin
+            if (SINGLE_TARGET) begin
+                expected_multi[191:48] = 144'd0;
+                if (snapshot_motion) expected_multi = 192'd0;
+            end else if (COMPACT_MODE) begin
                 if (snapshot_motion) begin
                     zero_shift = 12'(shift);
                     expected_multi = {16{zero_shift}};
@@ -327,7 +344,7 @@ module tb_red_multi_frame_alignment #(
                 $fatal(1,"Mixer frame latch mismatch frame=%0d valid=%b/%b held=%b/%b",
                     snapshot_id,dut.u_hdmi_mixer.multi_target.valid,expected_valid,
                     dut.u_hdmi_mixer.multi_target.held,expected_hold);
-            for (b=0; b<4; b=b+1)
+            for (b=0; b<TARGETS; b=b+1)
                 if (expected_valid[b]) begin
                     if (dut.u_hdmi_mixer.multi_target.xmin[b] !== expected_boxes[b*48 +: 12] ||
                         dut.u_hdmi_mixer.multi_target.xmax[b] !== expected_boxes[b*48+12 +: 12] ||
@@ -342,7 +359,8 @@ module tb_red_multi_frame_alignment #(
             hdmi_last = 0; hdmi_de = 0;
             repeat (5) @(negedge hdmi_clk);
             display_checks = display_checks+1;
-            if (!snapshot_motion && expected_valid == 15) red_four_checks = red_four_checks+1;
+            if (!snapshot_motion && expected_valid == (SINGLE_TARGET ? 1 : 15))
+                red_four_checks = red_four_checks+1;
             if (!snapshot_motion && snapshot_ready && snapshot_color == 1)
                 green_checks = green_checks+1;
             if (!snapshot_motion && snapshot_ready && snapshot_color == 2)
@@ -378,6 +396,7 @@ module tb_red_multi_frame_alignment #(
         force dut.S_24m_clk = csi_clk;
         force dut.S_100m_clk = ddr_clk;
         force dut.S_pll_lock = rst_n;
+        force dut.S_init_calib_complete = rst_n;
         force dut.S_cam_status = 4'hf;
         force dut.S_cam_fail_index = 8'd0;
         force dut.S_ISP_O_tuser = camera_user;
@@ -502,14 +521,16 @@ module tb_red_multi_frame_alignment #(
                 $fatal(1,"Missing production mask-mode frame/shape alignment mode=%0d",mask_mode);
         if (write_events != 23 || red_four_checks < 8 || motion_checks < 2 ||
             buffered_mode_checks < 2 || partial_checks != 1 || late_checks != 1 ||
-            rollback_checks != 1 || freeze_checks != 1 || geometry_checks < 30 ||
-            green_checks == 0 || blue_checks == 0 || shape_checks < 30)
+            rollback_checks != 1 || freeze_checks != 1 ||
+            geometry_checks < (SINGLE_TARGET ? 14 : 30) ||
+            green_checks == 0 || blue_checks == 0 ||
+            shape_checks < (SINGLE_TARGET ? 14 : 30))
             $fatal(1,"Production multi-frame integration coverage incomplete");
-        $display("RED_MULTI_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d red_four=%0d motion=%0d buffered_mode=%0d partial=%0d late=%0d rollback=%0d freeze=%0d geometry=%0d green=%0d blue=%0d shapes=%0d words=%0d mask_modes=9..12 compact=%0d",
+        $display("RED_MULTI_FRAME_ALIGNMENT_PASS write=%0d read=%0d display=%0d red_four=%0d motion=%0d buffered_mode=%0d partial=%0d late=%0d rollback=%0d freeze=%0d geometry=%0d green=%0d blue=%0d shapes=%0d words=%0d mask_modes=9..12 compact=%0d single=%0d",
             write_events,read_events,display_checks,red_four_checks,motion_checks,
             buffered_mode_checks,partial_checks,late_checks,rollback_checks,
             freeze_checks,geometry_checks,green_checks,blue_checks,shape_checks,FRAME_WORDS,
-            COMPACT_MODE);
+            COMPACT_MODE,SINGLE_TARGET);
         $finish;
     end
     initial begin

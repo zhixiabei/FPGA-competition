@@ -238,7 +238,7 @@ module target_frame_bridge_payload_case #(
         repeat (8) @(negedge csi_clk);
         if (baseline_tuple !== {1'b0,12'hc5a,285'b0})
             $fatal(1,"Reset/default output changed");
-        if ($bits(compact.S_result_payload)!=236 || $bits(compact.S_read_payload)!=223 ||
+        if ($bits(compact.S_result_payload)!=232 || $bits(compact.S_read_payload)!=223 ||
             $bits(compact.S_slot_result[0])!=210 || $bits(full.S_slot_result[0])!=252)
             $fatal(1,"Payload compression did not remove exactly 42 stored bits");
         rst_n=1;
@@ -324,7 +324,7 @@ module target_frame_bridge_payload_case #(
             queue_checks=queue_checks+1;
 
             // Hold an old payload across a full 10-bit ID wrap. Reallocation
-            // under the same ID must reject it by the unchanged 16-bit nonce.
+            // under the same ID must reject it by the generation nonce.
             source_frame(7,12'h000,0,0); start_write(2,1); words(FRAME_WORDS-1);
             @(negedge ddr_clk); ddr_running=0;
             send_result(7,0,0,70,1);

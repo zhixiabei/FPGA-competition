@@ -1,10 +1,11 @@
 param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute,
       [switch] $GenerateBit, [string] $OutputDirectory='',
-      [hashtable] $ResourceLimits=@{})
+      [hashtable] $ResourceLimits=@{}, [int] $PlaceSeed=-1)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($GenerateBit -and $SkipRoute) {throw 'Bit generation requires final routed timing checks'}
 if($ResourceLimits.Count -and $SkipRoute) {throw 'Resource limits require final routing'}
+if($PlaceSeed -lt -1) {throw 'Place seed must be -1 (tool default) or a non-negative integer'}
 foreach($resource in @($ResourceLimits.Keys)) {
     $limit=0
     if($resource -notin @('slice','lut6','reg','eram','dsp') -or
@@ -202,21 +203,20 @@ function Assert-AeConstraintHealth([string] $Path,[string] $SdcPath) {
        [int]$row.Groups['ignored'].Value -ne 0 -or $limit -ne 20.0) {
         throw "The 20 ns AE statistics CDC bound must cover every payload path: $Path"
     }
-    # TD's MCP/SMD table does not list false paths. Check the exact source
-    # exception, together with the tool's invalid/no-path health checks.
+    # Original-compatible AWB does not consume the AE hold level. Requiring a
+    # false path here would constrain a non-functional or optimized endpoint.
     $sdc=[IO.File]::ReadAllText($SdcPath)
     $holdRows=@($sdc -split '\r?\n' | Where-Object {
         $_ -match '^\s*set_false_path\b' -and $_.Contains('awb_hold')
     })
-    $expectedHold='set_false_path -from [get_regs {u_auto_exposure/O_awb_hold}] -to [get_regs {u_isp_top/awb_hold_meta}]'
-    if($holdRows.Count -ne 1 -or $holdRows[0].Trim() -cne $expectedHold -or
+    if($holdRows.Count -ne 0 -or
        $health -notmatch 'There are 0 invalid constraints\.' -or
        $health -notmatch 'There are 0 constraints that have no timing paths\.') {
-        throw "AE hold must cross only into the first AWB synchronizer register: $Path"
+        throw "Original-compatible AWB must not retain an unused AE-hold exception: $Path"
     }
     return [pscustomobject]@{
         payload_paths=$total; max_delay_ns=$limit; status='passed'
-        awb_hold_first_stage_only=$true
+        awb_hold_constraint='disabled_with_compatibility_awb'
     }
 }
 
@@ -288,6 +288,7 @@ $route=''
 if(-not $SkipRoute) {
     $route=@'
     load_run_param -run phy_1
+PLACE_SEED_COMMAND
     commit_param -step place
     place
     update_timing -mode manhattan
@@ -302,6 +303,12 @@ if(-not $SkipRoute) {
     export_db system_pr.db
     puts "IMAGE_QUALITY_ROUTE_PASS"
 '@
+    $placeSeedCommand=if($PlaceSeed -ge 0) {
+        "    set_param place seed $PlaceSeed"
+    } else {
+        ''
+    }
+    $route=$route.Replace('PLACE_SEED_COMMAND',$placeSeedCommand)
 }
 $resourceGate=''
 if($ResourceLimits.Count) {
@@ -413,7 +420,7 @@ try {
         $targetFrameConstraint=Assert-TargetFrameConstraintHealth (Join-Path $work 'constraint_health.timing')
         Write-Output 'TARGET_FRAME_CDC_CONSTRAINT_PASS context=20ns result=20ns display=13ns'
         $aeConstraint=Assert-AeConstraintHealth (Join-Path $work 'constraint_health.timing') (Join-Path $work 'td_project\anlogic_edge_osd.sdc')
-        Write-Output "AE_CDC_CONSTRAINT_PASS paths=$($aeConstraint.payload_paths) max_delay_ns=$($aeConstraint.max_delay_ns) awb_hold_first_stage_only=True"
+        Write-Output "AE_CDC_CONSTRAINT_PASS paths=$($aeConstraint.payload_paths) max_delay_ns=$($aeConstraint.max_delay_ns) awb_hold_constraint=$($aeConstraint.awb_hold_constraint)"
     }
     Select-String -LiteralPath console.log -Pattern '^IMAGE_QUALITY_.*PASS' |
         ForEach-Object { $_.Line }

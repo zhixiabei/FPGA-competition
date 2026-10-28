@@ -6,7 +6,19 @@ module target_frame_bridge #(
     // Production target_detect_switch uses first-valid color bounds and
     // clears motion multi-boxes. Other users retain independent fields.
     parameter integer COMPACT_MODE_PAYLOAD = 0,
-    parameter integer USE_EXTERNAL_WRITE_PROGRESS = 0
+    // Single-target production keeps one set of bounds/center, valid/hold
+    // and shape. The outward four-slot interface is zero-expanded after CDC.
+    parameter integer SINGLE_TARGET_ONLY = 0,
+    parameter integer USE_EXTERNAL_WRITE_PROGRESS = 0,
+    // The production detector emits one result per frame, while this CDC
+    // mailbox drains in a few clock cycles. Disable its unreachable second
+    // queued record to save registers; keep the generic queued behavior for
+    // simulations and other users that may burst results.
+    parameter integer RESULT_PENDING_ENABLE = 1,
+    // A display slot is selected once per video frame and the CDC handshake
+    // completes in a few clocks. Production therefore cannot issue a second
+    // read selection while one is in flight; generic users keep the queue.
+    parameter integer READ_PENDING_ENABLE = 1
 ) (
     input wire I_csi_clk,
     input wire I_ddr_clk,
@@ -60,9 +72,11 @@ module target_frame_bridge #(
     // Clipped 720p coordinates need 11 x bits and 10 y bits. Keep the
     // external 12-bit ports while storing only significant payload bits.
     localparam integer BOX_WIDTH = 42;
-    localparam integer BODY_WIDTH = COMPACT_MODE_PAYLOAD ? 210 : 252;
+    localparam integer NONCE_WIDTH = 12;
+    localparam integer BODY_WIDTH = SINGLE_TARGET_ONLY ? 71 :
+        (COMPACT_MODE_PAYLOAD ? 210 : 252);
     localparam integer EXPANDED_BODY_WIDTH = 285;
-    localparam integer RESULT_WIDTH = 16+10+BODY_WIDTH;
+    localparam integer RESULT_WIDTH = NONCE_WIDTH+10+BODY_WIDTH;
     localparam integer READ_WIDTH = BODY_WIDTH+13;
     localparam integer COUNT_WIDTH = (FRAME_WORDS < 2) ? 1 : $clog2(FRAME_WORDS+1);
 
@@ -146,9 +160,22 @@ module target_frame_bridge #(
         input read_valid;
         integer index;
         reg [BOX_WIDTH-1:0] single_box;
+        reg [62:0] single_coordinates;
         reg [11:0] motion_zero;
         begin
-            if (COMPACT_MODE_PAYLOAD) begin
+            if (SINGLE_TARGET_ONLY) begin
+                single_coordinates = body[BODY_WIDTH-5 -: 63];
+                single_box = {single_coordinates[30:21],single_coordinates[40:31],
+                              single_coordinates[51:41],single_coordinates[62:52]};
+                F_expand_body = {body[BODY_WIDTH-1 -: 4],
+                    F_expand_single(single_coordinates),
+                    3'b0,body[3],3'b0,body[2],6'b0,body[1:0],
+                    144'b0,48'b0,1'b0};
+                // Motion uses the independent single bounds. Unused target
+                // slots stay zero rather than recreating four empty boxes.
+                if (!body[BODY_WIDTH-1])
+                    F_expand_body[1 +: 48] = F_expand_box(single_box);
+            end else if (COMPACT_MODE_PAYLOAD) begin
                 // Both formats keep flags and the shared box area at the
                 // same low offsets. Only the single bounds are omitted.
                 if (body[BODY_WIDTH-1] || body[4*BOX_WIDTH+13])
@@ -185,33 +212,36 @@ module target_frame_bridge #(
         end
     endfunction
 
-    reg [15:0] S_nonce_counter;
+    reg [NONCE_WIDTH-1:0] S_nonce_counter;
     // Held from ISP SOF until the next ISP SOF. video_in crosses that same
     // SOF through two DDR stages before I_write_start samples these registers.
-    reg [15:0] S_start_nonce;
+    reg [NONCE_WIDTH-1:0] S_start_nonce;
     reg [9:0] S_start_frame_id;
     reg [11:0] S_start_effect_config;
     reg S_start_motion_mode, S_start_valid;
     reg [1:0] S_start_color_mode;
     reg [3:0] S_context_valid;
-    reg [9:0] S_context_id [0:3];
-    reg [15:0] S_context_nonce [0:3];
-    reg [11:0] S_context_config [0:3];
+    reg [7:0] S_context_id_high [0:3];
+    reg [NONCE_WIDTH-1:0] S_context_nonce [0:3];
+    reg [3:0] S_context_effect_mode [0:3];
     reg S_context_motion [0:3];
     reg [1:0] S_context_color [0:3];
 
     wire [1:0] S_context_index = I_result_frame_id[1:0];
     // A replaced context is unusable on the replacement edge too.
     wire S_context_match = S_context_valid[S_context_index] &&
-        S_context_id[S_context_index] == I_result_frame_id &&
+        S_context_id_high[S_context_index] == I_result_frame_id[9:2] &&
         S_context_motion[S_context_index] == I_result_motion_mode &&
         S_context_color[S_context_index] == I_result_color_mode &&
         !(I_frame_start && I_frame_id[1:0] == S_context_index);
-    wire [1:0] S_result_offset = F_offset(S_context_config[S_context_index]);
+    wire [1:0] S_result_offset = F_offset(
+        {S_context_effect_mode[S_context_index],8'd0});
     wire [4*BOX_WIDTH-1:0] S_adjusted_boxes;
     genvar box_index;
     generate
-        for (box_index=0; box_index<4; box_index=box_index+1) begin : g_adjust_boxes
+        if (SINGLE_TARGET_ONLY) begin : g_single_adjusted_boxes
+            assign S_adjusted_boxes = {(4*BOX_WIDTH){1'b0}};
+        end else for (box_index=0; box_index<4; box_index=box_index+1) begin : g_adjust_boxes
             // Every box is {ymax,ymin,xmax,xmin}; box zero occupies [47:0].
             assign S_adjusted_boxes[BOX_WIDTH*box_index +: BOX_WIDTH] = F_pack_box({
                 F_clip_y(I_multi_boxes[48*box_index+36 +: 12], S_result_offset),
@@ -229,7 +259,15 @@ module target_frame_bridge #(
         F_clip_y(I_result_center_y,S_result_offset)});
     wire [RESULT_WIDTH-1:0] S_new_result;
     generate
-        if (COMPACT_MODE_PAYLOAD) begin : g_compact_payload
+        if (SINGLE_TARGET_ONLY) begin : g_single_payload
+            assign S_new_result = {
+                S_context_nonce[S_context_index],I_result_frame_id,
+                I_result_motion_mode,I_result_color_mode,I_result_found,
+                S_adjusted_single,
+                I_result_motion_mode ? 1'b0 : I_multi_valid[0],
+                I_result_motion_mode ? 1'b0 : I_multi_hold[0],
+                I_result_motion_mode ? 2'b0 : I_multi_shapes[1:0]};
+        end else if (COMPACT_MODE_PAYLOAD) begin : g_compact_payload
             // Keep centers independently: averaging clipped bounds changes
             // their rounding/saturation. Motion uses box zero for its bounds;
             // its original zero multi-boxes are reconstructed after CDC.
@@ -268,9 +306,9 @@ module target_frame_bridge #(
             S_result_request <= 0; S_result_pending_valid <= 0;
             S_result_ack_meta <= 0; S_result_ack_sync <= 0; S_result_dropped <= 0;
             for (context_index=0; context_index<4; context_index=context_index+1) begin
-                S_context_id[context_index] <= 0;
+                S_context_id_high[context_index] <= 0;
                 S_context_nonce[context_index] <= 0;
-                S_context_config[context_index] <= DEFAULT_EFFECT_CONFIG;
+                S_context_effect_mode[context_index] <= DEFAULT_EFFECT_CONFIG[11:8];
                 S_context_motion[context_index] <= 0;
                 S_context_color[context_index] <= 0;
             end
@@ -279,38 +317,50 @@ module target_frame_bridge #(
             S_result_ack_sync <= S_result_ack_meta;
             S_result_dropped <= I_result_ready && !S_context_match;
             if (I_frame_start) begin
-                S_nonce_counter <= S_nonce_counter+16'd1;
-                S_start_nonce <= S_nonce_counter+16'd1;
+                S_nonce_counter <= S_nonce_counter+1'b1;
+                S_start_nonce <= S_nonce_counter+1'b1;
                 S_start_frame_id <= I_frame_id;
                 S_start_effect_config <= I_effect_config;
                 S_start_motion_mode <= I_motion_mode;
                 S_start_color_mode <= I_color_mode;
                 S_start_valid <= 1'b1;
                 S_context_valid[I_frame_id[1:0]] <= 1'b1;
-                S_context_id[I_frame_id[1:0]] <= I_frame_id;
-                S_context_nonce[I_frame_id[1:0]] <= S_nonce_counter+16'd1;
-                S_context_config[I_frame_id[1:0]] <= I_effect_config;
+                S_context_id_high[I_frame_id[1:0]] <= I_frame_id[9:2];
+                S_context_nonce[I_frame_id[1:0]] <= S_nonce_counter+1'b1;
+                S_context_effect_mode[I_frame_id[1:0]] <= I_effect_config[11:8];
                 S_context_motion[I_frame_id[1:0]] <= I_motion_mode;
                 S_context_color[I_frame_id[1:0]] <= I_color_mode;
             end
-            if (S_result_request == S_result_ack_sync) begin
-                if (S_result_pending_valid) begin
-                    S_result_payload <= S_result_pending_payload;
-                    S_result_request <= !S_result_request;
-                    S_result_pending_valid <= S_new_result_valid;
-                    if (S_new_result_valid)
-                        S_result_pending_payload <= S_new_result;
+            if (RESULT_PENDING_ENABLE != 0) begin
+                if (S_result_request == S_result_ack_sync) begin
+                    if (S_result_pending_valid) begin
+                        S_result_payload <= S_result_pending_payload;
+                        S_result_request <= !S_result_request;
+                        S_result_pending_valid <= S_new_result_valid;
+                        if (S_new_result_valid)
+                            S_result_pending_payload <= S_new_result;
+                    end else if (S_new_result_valid) begin
+                        S_result_payload <= S_new_result;
+                        S_result_request <= !S_result_request;
+                    end
                 end else if (S_new_result_valid) begin
-                    S_result_payload <= S_new_result;
-                    S_result_request <= !S_result_request;
+                    if (!S_result_pending_valid) begin
+                        S_result_pending_payload <= S_new_result;
+                        S_result_pending_valid <= 1'b1;
+                    end else begin
+                        // Keep the two older complete records; drop this entire
+                        // result rather than overwrite a bus awaiting its ACK.
+                        S_result_dropped <= 1'b1;
+                    end
                 end
-            end else if (S_new_result_valid) begin
-                if (!S_result_pending_valid) begin
-                    S_result_pending_payload <= S_new_result;
-                    S_result_pending_valid <= 1'b1;
-                end else begin
-                    // Keep the two older complete records; drop this entire
-                    // result rather than overwrite a bus awaiting its ACK.
+            end else begin
+                S_result_pending_valid <= 1'b0;
+                if (S_result_request == S_result_ack_sync) begin
+                    if (S_new_result_valid) begin
+                        S_result_payload <= S_new_result;
+                        S_result_request <= !S_result_request;
+                    end
+                end else if (S_new_result_valid) begin
                     S_result_dropped <= 1'b1;
                 end
             end
@@ -318,12 +368,13 @@ module target_frame_bridge #(
     end
 
     (* async_reg = "true" *) reg S_result_req_meta, S_result_req_sync;
-    reg [15:0] S_slot_nonce [0:3];
+    reg [NONCE_WIDTH-1:0] S_slot_nonce [0:3];
     reg [9:0] S_slot_frame_id [0:3];
     reg [11:0] S_slot_effect_config [0:3];
     reg [3:0] S_slot_motion_mode, S_slot_started, S_slot_complete, S_slot_result_valid;
     reg [1:0] S_slot_color_mode [0:3];
-    reg [BODY_WIDTH-1:0] S_slot_result [0:3];
+    reg [3:0] S_slot_write_pending;
+    reg S_result_write_active;
     reg [1:0] S_active_write_slot;
     reg [COUNT_WIDTH-1:0] S_write_count;
     reg S_write_active;
@@ -331,7 +382,9 @@ module target_frame_bridge #(
     reg S_last_result_valid;
 
     wire S_result_message = S_result_req_sync != S_result_ack;
-    wire [15:0] S_message_nonce = S_result_payload[BODY_WIDTH+10 +: 16];
+    wire S_initial_result_message = S_result_message && !S_result_write_active;
+    wire [NONCE_WIDTH-1:0] S_message_nonce =
+        S_result_payload[BODY_WIDTH+10 +: NONCE_WIDTH];
     wire [9:0] S_message_id = S_result_payload[BODY_WIDTH +: 10];
     wire S_message_motion = S_result_payload[BODY_WIDTH-1];
     wire [1:0] S_message_color = S_result_payload[BODY_WIDTH-2 -: 2];
@@ -340,18 +393,27 @@ module target_frame_bridge #(
         S_message_motion == S_start_motion_mode &&
         S_message_color == S_start_color_mode;
     wire S_last_matches_start = S_last_result_valid && S_start_valid &&
-        S_last_result_payload[BODY_WIDTH+10 +: 16] == S_start_nonce &&
+        S_last_result_payload[BODY_WIDTH+10 +: NONCE_WIDTH] == S_start_nonce &&
         S_last_result_payload[BODY_WIDTH +: 10] == S_start_frame_id &&
         S_last_result_payload[BODY_WIDTH-1] == S_start_motion_mode &&
         S_last_result_payload[BODY_WIDTH-2 -: 2] == S_start_color_mode;
 
+    wire [BODY_WIDTH-1:0] S_slot_result_ram;
+    wire [3:0] S_take_message_mask, S_take_last_mask;
+    wire [3:0] S_write_start_mask = I_write_start ?
+        (4'b0001 << I_write_slot) : 4'b0000;
+    wire [3:0] S_active_pending_mask = S_slot_write_pending &
+        ~(S_write_start_mask & ~S_take_last_mask);
+    wire [BODY_WIDTH-1:0] S_slot_result_read =
+        S_result_write_active && S_active_pending_mask[I_read_slot] ?
+        S_result_payload[BODY_WIDTH-1:0] : S_slot_result_ram;
     wire S_read_valid = S_slot_started[I_read_slot] &&
         S_slot_complete[I_read_slot] && S_slot_result_valid[I_read_slot] &&
         !(I_write_start && I_write_slot == I_read_slot);
     wire [READ_WIDTH-1:0] S_read_snapshot = S_read_valid ?
         {1'b1,S_slot_effect_config[I_read_slot],
-         S_slot_result[I_read_slot][BODY_WIDTH-1 -: 3],
-         S_slot_result[I_read_slot][BODY_WIDTH-4:0]} :
+         S_slot_result_read[BODY_WIDTH-1 -: 3],
+         S_slot_result_read[BODY_WIDTH-4:0]} :
         {1'b0,S_slot_effect_config[I_read_slot],S_slot_motion_mode[I_read_slot],
          S_slot_color_mode[I_read_slot],{(BODY_WIDTH-3){1'b0}}};
     reg [READ_WIDTH-1:0] S_read_payload, S_read_pending_payload;
@@ -366,24 +428,17 @@ module target_frame_bridge #(
                 S_slot_frame_id[slot_bank] == S_message_id &&
                 S_slot_motion_mode[slot_bank] == S_message_motion &&
                 S_slot_color_mode[slot_bank] == S_message_color;
-            wire S_take_message = S_start_selected ? S_message_matches_start :
-                S_result_message && S_message_matches_slot;
-            wire S_take_last = S_start_selected && !S_message_matches_start &&
+            wire S_take_message = S_start_selected ?
+                S_initial_result_message && S_message_matches_start :
+                S_initial_result_message && S_message_matches_slot;
+            wire S_take_last = S_start_selected && !S_take_message &&
                 S_last_matches_start;
-
-            // The two sources are exclusive, with write-start taking priority.
-            // One static write port per bank avoids a second dynamic array write.
+            assign S_take_message_mask[slot_bank] = S_take_message;
+            assign S_take_last_mask[slot_bank] = S_take_last;
             always @(posedge I_ddr_clk or negedge I_rst_n) begin
                 if (!I_rst_n) begin
-                    S_slot_result[slot_bank] <= 0;
                     S_slot_result_valid[slot_bank] <= 1'b0;
                 end else begin
-                    if (S_take_message || S_take_last)
-                        S_slot_result[slot_bank] <=
-                            ({BODY_WIDTH{S_take_message}} &
-                             S_result_payload[BODY_WIDTH-1:0]) |
-                            ({BODY_WIDTH{S_take_last}} &
-                             S_last_result_payload[BODY_WIDTH-1:0]);
                     if (S_start_selected)
                         S_slot_result_valid[slot_bank] <= S_take_message || S_take_last;
                     else if (S_take_message)
@@ -392,10 +447,71 @@ module target_frame_bridge #(
             end
         end
     endgenerate
+
+    function [3:0] F_first_mask;
+        input [3:0] mask;
+        begin
+            F_first_mask = mask[0] ? 4'b0001 : mask[1] ? 4'b0010 :
+                           mask[2] ? 4'b0100 : mask[3] ? 4'b1000 : 4'b0000;
+        end
+    endfunction
+    function [1:0] F_mask_index;
+        input [3:0] mask;
+        begin
+            F_mask_index = mask[0] ? 2'd0 : mask[1] ? 2'd1 :
+                           mask[2] ? 2'd2 : 2'd3;
+        end
+    endfunction
+    wire [3:0] S_ram_candidate_mask = |S_take_last_mask ? S_take_last_mask :
+        |S_take_message_mask ? S_take_message_mask :
+        S_result_write_active ? S_active_pending_mask : 4'b0000;
+    wire [3:0] S_ram_write_mask = F_first_mask(S_ram_candidate_mask);
+    wire S_ram_write = |S_ram_write_mask;
+    wire S_ram_write_last = |S_take_last_mask;
+    wire [3:0] S_pending_after_write =
+        (S_active_pending_mask | S_take_last_mask) & ~S_ram_write_mask;
+    wire [BODY_WIDTH-1:0] S_ram_write_data = S_ram_write_last ?
+        S_last_result_payload[BODY_WIDTH-1:0] :
+        S_result_payload[BODY_WIDTH-1:0];
+
+    PH1P_LOGIC_DRAM #(
+        .DATA_WIDTH_W(BODY_WIDTH),.DATA_WIDTH_R(BODY_WIDTH),
+        .ADDR_WIDTH_W(2),.ADDR_WIDTH_R(2),
+        .DATA_DEPTH_W(4),.DATA_DEPTH_R(4),
+        .READREG("DISABLE"),.RESETMODE("ASYNC"),
+        .INIT_FILE("NONE"),.FILL_ALL("NONE")
+    ) u_slot_result_memory(
+        .di(S_ram_write_data),.waddr(F_mask_index(S_ram_write_mask)),
+        .we(S_ram_write),.wclk(I_ddr_clk),
+        .raddr(I_read_slot),.rclk(I_ddr_clk),.rrst(!I_rst_n),.rce(1'b1),
+        .rdo(S_slot_result_ram),.rdoq()
+    );
+
+    // synthesis translate_off
+    reg [BODY_WIDTH-1:0] S_slot_result [0:3];
+    integer result_mirror_index;
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            for (result_mirror_index=0; result_mirror_index<4;
+                 result_mirror_index=result_mirror_index+1)
+                S_slot_result[result_mirror_index] <= 0;
+        end else begin
+            for (result_mirror_index=0; result_mirror_index<4;
+                 result_mirror_index=result_mirror_index+1)
+                if (S_take_message_mask[result_mirror_index])
+                    S_slot_result[result_mirror_index] <=
+                        S_result_payload[BODY_WIDTH-1:0];
+            if (I_write_start && S_take_last_mask[I_write_slot])
+                S_slot_result[I_write_slot] <=
+                    S_last_result_payload[BODY_WIDTH-1:0];
+        end
+    end
+    // synthesis translate_on
     integer slot_index;
     always @(posedge I_ddr_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             S_result_req_meta <= 0; S_result_req_sync <= 0; S_result_ack <= 0;
+            S_slot_write_pending <= 0; S_result_write_active <= 0;
             S_slot_motion_mode <= 0; S_slot_started <= 0;
             S_slot_complete <= 0;
             S_active_write_slot <= 0; S_write_count <= 0; S_write_active <= 0;
@@ -413,10 +529,24 @@ module target_frame_bridge #(
             S_result_req_sync <= S_result_req_meta;
             S_read_ack_meta <= S_read_ack;
             S_read_ack_sync <= S_read_ack_meta;
-            if (S_result_message) begin
-                S_result_ack <= S_result_req_sync;
+            if (S_initial_result_message) begin
                 S_last_result_payload <= S_result_payload;
                 S_last_result_valid <= 1'b1;
+                S_slot_write_pending <= S_take_message_mask &
+                    ~(S_ram_write_last ? 4'b0000 : S_ram_write_mask);
+                if (|(S_take_message_mask &
+                      ~(S_ram_write_last ? 4'b0000 : S_ram_write_mask))) begin
+                    S_result_write_active <= 1'b1;
+                end else begin
+                    S_result_ack <= S_result_req_sync;
+                    S_result_write_active <= 1'b0;
+                end
+            end else if (S_result_write_active) begin
+                S_slot_write_pending <= S_pending_after_write;
+                if (~|S_pending_after_write) begin
+                    S_result_ack <= S_result_req_sync;
+                    S_result_write_active <= 1'b0;
+                end
             end
             if (I_write_start) begin
                 S_active_write_slot <= I_write_slot;
@@ -441,20 +571,28 @@ module target_frame_bridge #(
                     S_write_count <= S_write_count+1'b1;
                 end
             end
-            if (S_read_request == S_read_ack_sync) begin
-                if (I_read_start) begin
+            if (READ_PENDING_ENABLE != 0) begin
+                if (S_read_request == S_read_ack_sync) begin
+                    if (I_read_start) begin
+                        S_read_payload <= S_read_snapshot;
+                        S_read_request <= !S_read_request;
+                        S_read_pending_valid <= 1'b0;
+                    end else if (S_read_pending_valid) begin
+                        S_read_payload <= S_read_pending_payload;
+                        S_read_request <= !S_read_request;
+                        S_read_pending_valid <= 1'b0;
+                    end
+                end else if (I_read_start) begin
+                    // Only the newest not-yet-sent read selection can be useful.
+                    S_read_pending_payload <= S_read_snapshot;
+                    S_read_pending_valid <= 1'b1;
+                end
+            end else begin
+                S_read_pending_valid <= 1'b0;
+                if (I_read_start && S_read_request == S_read_ack_sync) begin
                     S_read_payload <= S_read_snapshot;
                     S_read_request <= !S_read_request;
-                    S_read_pending_valid <= 1'b0;
-                end else if (S_read_pending_valid) begin
-                    S_read_payload <= S_read_pending_payload;
-                    S_read_request <= !S_read_request;
-                    S_read_pending_valid <= 1'b0;
                 end
-            end else if (I_read_start) begin
-                // Only the newest not-yet-sent read selection can be useful.
-                S_read_pending_payload <= S_read_snapshot;
-                S_read_pending_valid <= 1'b1;
             end
         end
     end

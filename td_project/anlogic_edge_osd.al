@@ -512,28 +512,28 @@
                     <Attr Name="CompileOrder" Val="66"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handcnn/handcnn_confidence.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handcnn_confidence.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1000"/>
+                    <Attr Name="CompileOrder" Val="77"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handcnn/handcnn_core.v">
+            <File Path="../user_source/hdl_source/fruit_merged/fruitcnn128_core.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1001"/>
+                    <Attr Name="CompileOrder" Val="78"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handcnn/handcnn_normalize.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handcnn_normalize.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1002"/>
+                    <Attr Name="CompileOrder" Val="79"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/handcnn/handcnn_snapshot.v">
@@ -541,7 +541,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1003"/>
+                    <Attr Name="CompileOrder" Val="80"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/cnn/cnn_eram_byte_dp.v">
@@ -549,7 +549,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1004"/>
+                    <Attr Name="CompileOrder" Val="81"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/resnet18/resnet18_memory_bridge.v">
@@ -557,7 +557,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1005"/>
+                    <Attr Name="CompileOrder" Val="82"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/resnet18/resnet18_uart.v">
@@ -565,7 +565,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1006"/>
+                    <Attr Name="CompileOrder" Val="83"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/resnet18/resnet18_weight_loader.v">
@@ -573,7 +573,7 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1007"/>
+                    <Attr Name="CompileOrder" Val="84"/>
                 </FileInfo>
             </File>
             <File Path="../user_source/hdl_source/resnet/resnet_ph1p_dsp.v">
@@ -581,55 +581,71 @@
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1008"/>
+                    <Attr Name="CompileOrder" Val="85"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handfixed/handfixed_background.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handfixed_background.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1009"/>
+                    <Attr Name="CompileOrder" Val="86"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handfixed/handfixed_decode.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handfixed_key_control.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1010"/>
+                    <Attr Name="CompileOrder" Val="87"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handfixed/handfixed_key_control.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handfixed_preprocess.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1011"/>
+                    <Attr Name="CompileOrder" Val="88"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handfixed/handfixed_preprocess.v">
+            <File Path="../user_source/hdl_source/fruit_merged/fruitfixed_system.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1012"/>
+                    <Attr Name="CompileOrder" Val="89"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handfixed/handfixed_result_filter.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handfixed_program.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1013"/>
+                    <Attr Name="CompileOrder" Val="90"/>
                 </FileInfo>
             </File>
-            <File Path="../user_source/hdl_source/handfixed/handfixed_system.v">
+            <File Path="../user_source/hdl_source/fruit_merged/handfixed_config.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>
-                    <Attr Name="CompileOrder" Val="1014"/>
+                    <Attr Name="CompileOrder" Val="91"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/fruit_merged/fruitfixed_decode.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="92"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/fruit_merged/fruitfixed_result_filter.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="93"/>
                 </FileInfo>
             </File>
         </Verilog>

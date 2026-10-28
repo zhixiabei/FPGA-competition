@@ -1,7 +1,10 @@
 `timescale 1ns/1ps
 module tb_red_multi_target #(
     parameter integer W=256,
-    parameter integer H=128
+    parameter integer H=128,
+    parameter integer CANDIDATE_SLOTS=8,
+    parameter integer MAX_TARGETS=3,
+    parameter integer RATE_ONLY=0
 );
     localparam integer GROUPS=W/4;
     reg clk=0, rst_n=0, clear=0, user=0, valid=0;
@@ -10,12 +13,14 @@ module tb_red_multi_target #(
     wire ready, overflow;
     wire [3:0] found, hold;
     wire [191:0] boxes;
+    wire [7:0] shapes;
     wire [9:0] result_id;
     always #5 clk=~clk;
 
     red_target_detect_96 #(
         .IMG_WIDTH(W), .IMG_HEIGHT(H), .MIN_PIXELS(32),
-        .MIN_WIDTH(4), .MIN_HEIGHT(4), .MULTI_ENABLE(1)
+        .MIN_WIDTH(4), .MIN_HEIGHT(4), .MULTI_ENABLE(1),
+        .CANDIDATE_SLOTS(CANDIDATE_SLOTS), .MAX_TARGETS(MAX_TARGETS)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user), .I_tvalid(valid), .I_tdata(data),
         .I_color_mode(2'd0), .I_mask_view_mode(4'd0), .O_mask_pixels(),
@@ -23,7 +28,7 @@ module tb_red_multi_target #(
         .O_result_ready(), .O_found(), .O_xmin(), .O_xmax(), .O_ymin(), .O_ymax(),
         .O_center_x(), .O_center_y(), .O_pixels(), .O_frame_toggle(),
         .O_multi_ready(ready), .O_multi_valid(found), .O_multi_hold(hold),
-        .O_multi_boxes(boxes), .O_multi_shapes(),
+        .O_multi_boxes(boxes), .O_multi_shapes(shapes),
         .O_multi_frame_id(result_id), .O_multi_overflow(overflow)
     );
 
@@ -34,21 +39,51 @@ module tb_red_multi_target #(
     reg seen_overflow [0:127];
     integer result_count=0, checks=0, i, a_slot, b_slot, n;
     integer fifo_high_water=0;
+    integer clock_count=0, eof_clock[0:127], post_frame_cycles;
+    integer max_post_frame_cycles=0;
+    integer capacity_fifo_high_water=0, candidate_limit_high_water=0;
     reg capacity_limit_seen=0;
     always @(posedge clk) begin
+        clock_count=clock_count+1;
         #1;
         if (rst_n && dut.gen_multi.u_engine.fifo_count > fifo_high_water)
             fifo_high_water=dut.gen_multi.u_engine.fifo_count;
         if (rst_n && dut.gen_multi.u_engine.context_id == 65 &&
+            dut.gen_multi.u_engine.fifo_count > capacity_fifo_high_water)
+            capacity_fifo_high_water=dut.gen_multi.u_engine.fifo_count;
+        if (rst_n && dut.gen_multi.u_engine.context_id == 74) begin
+            integer live_count;
+            live_count=0;
+            for(integer slot=0;slot<CANDIDATE_SLOTS;slot=slot+1)
+                live_count=live_count+dut.gen_multi.u_engine.candidate_valid[slot];
+            if(live_count > candidate_limit_high_water) candidate_limit_high_water=live_count;
+        end
+        if (rst_n && dut.gen_multi.u_engine.context_id == 65 &&
             dut.gen_multi.u_engine.context_bad && dut.gen_multi.u_engine.fifo_count < 62)
             capacity_limit_seen=1;
+        if (rst_n) begin
+            for(integer lane=MAX_TARGETS;lane<4;lane=lane+1)
+                if(found[lane] !== 1'b0 || hold[lane] !== 1'b0 ||
+                   boxes[lane*48+:48] !== 48'd0 || shapes[lane*2+:2] !== 2'd0)
+                    $fatal(1,"Unused output lane %0d is not zero",lane);
+        end
         if (rst_n && ready) begin
             if (result_id >= 128 || seen[result_id])
                 $fatal(1,"Duplicate/unexpected result id=%0d",result_id);
+            if (pop4(found) > MAX_TARGETS)
+                $fatal(1,"Result exceeds configured output capacity");
             seen[result_id]=1;
             seen_found[result_id]=found; seen_hold[result_id]=hold;
             seen_boxes[result_id]=boxes; seen_overflow[result_id]=overflow;
             result_count=result_count+1;
+            if (eof_clock[result_id]>=0) begin
+                post_frame_cycles=clock_count-eof_clock[result_id];
+                if (post_frame_cycles>max_post_frame_cycles)
+                    max_post_frame_cycles=post_frame_cycles;
+                if (RATE_ONLY)
+                    $display("RED_MULTI_FRAME_PROCESSING id=%0d eof_to_ready_cycles=%0d",
+                        result_id,post_frame_cycles);
+            end
         end
     end
     function integer pop4;
@@ -91,9 +126,9 @@ module tb_red_multi_target #(
                 end
                 1: begin
                     rectangle(16+offset,39+offset,16,35);
-                    rectangle(96+offset,119+offset,16,35);
-                    rectangle(16+offset,39+offset,80,99);
-                    rectangle(176+offset,199+offset,80,99);
+                    rectangle(96+offset,123+offset,16,39);
+                    rectangle(16+offset,47+offset,80,107);
+                    rectangle(176+offset,211+offset,76,107);
                 end
                 2: begin end
                 3: begin
@@ -104,14 +139,16 @@ module tb_red_multi_target #(
                 5: begin
                     for(y=2;y<H-2;y=y+1)
                         for(x=0;x<W;x=x+1)
-                            if ((x/8)%2 == 0) image[y*W+x]=24'hff0000;
+                            if ((y-2)%16 < 6 || (x/8)%2 == 0)
+                                image[y*W+x]=24'hff0000;
                 end
                 6: begin
                     rectangle(16,39,16,35);
                     rectangle(16,39,70,89);
                 end
                 7: begin
-                    for(x=0;x<18;x=x+1) rectangle(2+14*x,9+14*x,10,25);
+                    for(x=0;x<CANDIDATE_SLOTS+1;x=x+1)
+                        rectangle(4+14*x,11+14*x,10,25);
                 end
                 8: begin
                     rectangle(10,17,10,17); rectangle(50,61,10,21);
@@ -119,8 +156,14 @@ module tb_red_multi_target #(
                     rectangle(60,83,70,93); rectangle(130,157,70,97);
                 end
                 9: begin
-                    rectangle(16,39,10,H-11); rectangle(80,103,10,H-11);
-                    rectangle(144,167,10,H-11); rectangle(208,231,10,H-11);
+                    rectangle(16+offset,31+offset,10,H-11);
+                    rectangle(80+offset,99+offset,10,H-11);
+                    rectangle(144+offset,167+offset,10,H-11);
+                    rectangle(208+offset,235+offset,10,H-11);
+                end
+                10: begin
+                    for(x=0;x<CANDIDATE_SLOTS;x=x+1)
+                        rectangle(4+14*x,11+14*x,10,25);
                 end
                 default: $fatal(1,"Unknown pattern");
             endcase
@@ -158,6 +201,7 @@ module tb_red_multi_target #(
                 if(y != rows-1) blank(line_blanking);
             end
             @(negedge clk); valid=0; data=0; user=0;
+            if (rows==H) eof_clock[id]=clock_count;
         end
     endtask
     task wait_result;
@@ -200,10 +244,36 @@ module tb_red_multi_target #(
     endtask
 
     initial begin
+        if ((MAX_TARGETS != 3 && MAX_TARGETS != 4) ||
+            (CANDIDATE_SLOTS != 8 && CANDIDATE_SLOTS != 16))
+            $fatal(1,"Test requires MAX_TARGETS=3/4 and CANDIDATE_SLOTS=8/16");
         for(n=0;n<128;n=n+1) begin
             seen[n]=0; seen_found[n]=0; seen_hold[n]=0; seen_boxes[n]=0; seen_overflow[n]=0;
+            eof_clock[n]=-1;
         end
         blank(4); @(negedge clk); rst_n=1;
+        if(RATE_ONLY) begin
+            if(W < 1280 || H < 720)
+                $fatal(1,"Rate-only regression requires production-size frames");
+            pattern(9,0);
+            send_frame(72,H,0); count_is(72,0,0);
+            send_frame(73,H,0); count_is(73,MAX_TARGETS,0);
+            if(MAX_TARGETS == 4) find_box(73,16,31,10,H-11,n);
+            find_box(73,80,99,10,H-11,n);
+            find_box(73,144,167,10,H-11,n); find_box(73,208,235,10,H-11,n);
+            pattern(9,2);
+            send_frame(74,H,0); count_is(74,MAX_TARGETS,0);
+            for(n=0;n<MAX_TARGETS;n=n+1)
+                if(bxmin(74,n) != bxmin(73,n)+2 || bymin(74,n) != bymin(73,n))
+                    $fatal(1,"Production-rate tracking changed slot %0d",n);
+            if(MAX_TARGETS == 4) find_box(74,18,33,10,H-11,n);
+            find_box(74,82,101,10,H-11,n);
+            find_box(74,146,169,10,H-11,n); find_box(74,210,237,10,H-11,n);
+            $display("RED_MULTI_TARGET_PASS W=%0d H=%0d candidates=%0d targets=%0d rate_only=1 results=%0d checks=%0d fifo_high_water=%0d max_eof_to_ready_cycles=%0d",
+                W,H,CANDIDATE_SLOTS,MAX_TARGETS,result_count,checks,fifo_high_water,
+                max_post_frame_cycles);
+            $finish;
+        end
         pattern(0,0);
         send_frame(1,H,96); count_is(1,0,0);
         send_frame(2,H,96); count_is(2,2,0);
@@ -223,14 +293,17 @@ module tb_red_multi_target #(
         clear_tracking();
         pattern(1,0);
         send_frame(10,H,96); count_is(10,0,0);
-        send_frame(11,H,96); count_is(11,4,0);
-        find_box(11,16,39,16,35,n); find_box(11,96,119,16,35,n);
-        find_box(11,16,39,80,99,n); find_box(11,176,199,80,99,n);
+        send_frame(11,H,96); count_is(11,MAX_TARGETS,0);
+        if(MAX_TARGETS == 4) find_box(11,16,39,16,35,n);
+        find_box(11,96,123,16,39,n);
+        find_box(11,16,47,80,107,n); find_box(11,176,211,76,107,n);
         pattern(1,2);
-        send_frame(12,H,96); count_is(12,4,0);
-        for(n=0;n<4;n=n+1)
+        send_frame(12,H,96); count_is(12,MAX_TARGETS,0);
+        for(n=0;n<MAX_TARGETS;n=n+1)
             if(bxmin(12,n) != bxmin(11,n)+2 || bymin(12,n) != bymin(11,n))
-                $fatal(1,"Four-object tracking changed slot %0d",n);
+                $fatal(1,"Tracking changed slot %0d",n);
+        find_box(12,98,125,16,39,n);
+        find_box(12,18,49,80,107,n); find_box(12,178,213,76,107,n);
 
         clear_tracking();
         pattern(3,0);
@@ -280,37 +353,53 @@ module tb_red_multi_target #(
         send_frame(63,H,96); count_is(63,0,0);
         send_frame(64,H,96); count_is(64,2,0);
 
-        // The sixteen-live-candidate limit is distinct from FIFO pressure.
+        // Exceed the configured live-candidate capacity without FIFO pressure.
         clear_tracking();
         pattern(7,0);
         send_frame(65,H,1024); wait_result(65);
-        if(!capacity_limit_seen || !seen_overflow[65] || seen_found[65] != 0)
+        if(!capacity_limit_seen || !seen_overflow[65] || seen_found[65] != 0 ||
+           capacity_fifo_high_water >= 62)
             $fatal(1,"Candidate-capacity overflow was not rejected");
+        pattern(0,0);
+        send_frame(66,H,96); count_is(66,0,0);
+        send_frame(67,H,96); count_is(67,2,0);
         pattern(1,0);
-        send_frame(66,H,0);
+        send_frame(68,H,0);
         @(negedge clk); clear=1;
         @(negedge clk); clear=0;
         blank(300);
-        if(seen[66] || found != 0) $fatal(1,"Mode clear retained queued work");
+        if(seen[68] || found != 0) $fatal(1,"Mode clear retained queued work");
 
-        // Completed regions retire, so more than four objects in one frame
+        // Completed regions retire, so more objects than output slots
         // are ranked by actual filtered-pixel support rather than scan order.
         pattern(8,0);
         send_frame(70,H,96); count_is(70,0,0);
-        send_frame(71,H,96); count_is(71,4,0);
-        find_box(71,100,115,10,25,n); find_box(71,10,29,70,89,n);
+        send_frame(71,H,96); count_is(71,MAX_TARGETS,0);
+        if(MAX_TARGETS == 4) find_box(71,100,115,10,25,n);
+        find_box(71,10,29,70,89,n);
         find_box(71,60,83,70,93,n); find_box(71,130,157,70,97,n);
 
         // Four runs on every active row must sustain production beat rate.
         clear_tracking();
         pattern(9,0);
         send_frame(72,H,W >= 1280 ? 0 : 96); count_is(72,0,0);
-        send_frame(73,H,W >= 1280 ? 0 : 96); count_is(73,4,0);
-        find_box(73,16,39,10,H-11,n); find_box(73,80,103,10,H-11,n);
-        find_box(73,144,167,10,H-11,n); find_box(73,208,231,10,H-11,n);
+        send_frame(73,H,W >= 1280 ? 0 : 96); count_is(73,MAX_TARGETS,0);
+        if(MAX_TARGETS == 4) find_box(73,16,31,10,H-11,n);
+        find_box(73,80,99,10,H-11,n);
+        find_box(73,144,167,10,H-11,n); find_box(73,208,235,10,H-11,n);
 
-        $display("RED_MULTI_TARGET_PASS W=%0d H=%0d results=%0d checks=%0d fifo_high_water=%0d",
-            W,H,result_count,checks,fifo_high_water);
+        // Exactly the configured number of simultaneous components must fit.
+        clear_tracking();
+        pattern(10,0);
+        send_frame(74,H,1024); count_is(74,0,0);
+        send_frame(75,H,1024); count_is(75,MAX_TARGETS,0);
+        if(candidate_limit_high_water != CANDIDATE_SLOTS)
+            $fatal(1,"Exact candidate-capacity case reached %0d of %0d slots",
+                candidate_limit_high_water,CANDIDATE_SLOTS);
+
+        $display("RED_MULTI_TARGET_PASS W=%0d H=%0d candidates=%0d targets=%0d results=%0d checks=%0d fifo_high_water=%0d capacity_fifo_high_water=%0d candidate_limit_high_water=%0d",
+            W,H,CANDIDATE_SLOTS,MAX_TARGETS,result_count,checks,fifo_high_water,
+            capacity_fifo_high_water,candidate_limit_high_water);
         $finish;
     end
     initial begin #500000000; $fatal(1,"Simulation watchdog"); end

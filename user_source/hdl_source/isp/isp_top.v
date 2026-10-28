@@ -1,6 +1,7 @@
 module isp_top #(
     parameter integer ENABLE_EDGE = 1, // Reset default, not a generate-time bypass.
     parameter integer RED_MULTI_ENABLE = 0,
+    parameter integer SINGLE_SHAPE_ENABLE = 0,
     // LSC_PROFILE_RGB_20261015: small residual fit from 15 PRE-WB RGB regions.
     // Preserve global channel ratios; fit the six intermediate regions too.
     // Nodes 1..9 are row-major; Gr/Gb share each fitted scale.
@@ -11,6 +12,7 @@ module isp_top #(
     parameter [71:0] LSC_MESH_GB_Q8 = {8'd224,8'd195,8'd214,8'd219,8'd161,8'd206,8'd220,8'd183,8'd208},
     parameter [80:0] LSC_MESH_B_Q8 = {9'd291,9'd261,9'd272,9'd291,9'd255,9'd277,9'd291,9'd272,9'd281},
     parameter integer ENABLE_HANDCNN_TAP = 0,
+    parameter integer ENABLE_DISPLAY_EFFECTS = 1,
     parameter integer IQ_DIAGNOSTIC_ENABLE = 0
 ) (
     input 			axi4s_video_aclk,
@@ -220,7 +222,9 @@ data128_96 u_data128_96 (
 
 awb #(
     .IMG_HEIGHT(720),
-    .IMG_WIDTH (1280), .CONFIDENCE_ENABLE(1),
+    // Match the original fruit pipeline: update from every complete frame.
+    // The confidence/reacquire path remains available as an opt-in mode.
+    .IMG_WIDTH (1280), .CONFIDENCE_ENABLE(0),
     .DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
 ) u_awb (
     .I_clk   (axi4s_video_aclk),
@@ -291,27 +295,36 @@ end else begin : no_iq_diagnostics
     assign O_iq_diag_data=128'd0;
 end endgenerate
 
-rgb_edge_switch_96 #(
-    .IMG_WIDTH (1280),
-    .IMG_HEIGHT(720),
-    .EDGE_TH   (20), // Scharr: compare |Gx|+|Gy| against 16*EDGE_TH.
-    .DEFAULT_EDGE_MODE(ENABLE_EDGE)
-) u_rgb_edge_switch (
-    .I_clk   (axi4s_video_aclk),
-    .I_rst_n (I_rst_n),
-    .I_effect_config(I_effect_config),
-    .I_tlast (awb_O_tlast),
-    .I_tuser (awb_O_tuser),
-    .I_tdata (awb_O_tdata),
-    .I_tvalid(awb_O_tvalid),
-    .I_mask_pixels(target_mask_pixels),
-    .O_tlast (edge_O_tlast),
-    .O_tuser (edge_O_tuser),
-    .O_tdata (edge_O_tdata),
-    .O_tvalid(edge_O_tvalid),
-    .O_edge_mode(O_edge_mode_active),
-    .O_effect_config(O_effect_config)
-);
+generate if (ENABLE_DISPLAY_EFFECTS != 0) begin : display_effects
+    rgb_edge_switch_96 #(
+        .IMG_WIDTH (1280),
+        .IMG_HEIGHT(720),
+        .EDGE_TH   (20), // Scharr: compare |Gx|+|Gy| against 16*EDGE_TH.
+        .DEFAULT_EDGE_MODE(ENABLE_EDGE)
+    ) u_rgb_edge_switch (
+        .I_clk   (axi4s_video_aclk),
+        .I_rst_n (I_rst_n),
+        .I_effect_config(I_effect_config),
+        .I_tlast (awb_O_tlast),
+        .I_tuser (awb_O_tuser),
+        .I_tdata (awb_O_tdata),
+        .I_tvalid(awb_O_tvalid),
+        .I_mask_pixels(target_mask_pixels),
+        .O_tlast (edge_O_tlast),
+        .O_tuser (edge_O_tuser),
+        .O_tdata (edge_O_tdata),
+        .O_tvalid(edge_O_tvalid),
+        .O_edge_mode(O_edge_mode_active),
+        .O_effect_config(O_effect_config)
+    );
+end else begin : direct_awb_display
+    assign edge_O_tlast = awb_O_tlast;
+    assign edge_O_tuser = awb_O_tuser;
+    assign edge_O_tdata = awb_O_tdata;
+    assign edge_O_tvalid = awb_O_tvalid;
+    assign O_edge_mode_active = 1'b0;
+    assign O_effect_config = 12'd0;
+end endgenerate
 
 target_detect_switch_96 #(
     .IMG_WIDTH (1280),
@@ -320,7 +333,8 @@ target_detect_switch_96 #(
     .DIFF_THRESHOLD(10),
     .MIN_BLOCKS(12),
     .GLOBAL_CHANGE_PERCENT(40),
-    .RED_MULTI_ENABLE(RED_MULTI_ENABLE)
+    .RED_MULTI_ENABLE(RED_MULTI_ENABLE),
+    .SINGLE_SHAPE_ENABLE(SINGLE_SHAPE_ENABLE)
 ) u_target_detect_switch (
     .I_clk(axi4s_video_aclk),
     .I_rst_n(I_rst_n),

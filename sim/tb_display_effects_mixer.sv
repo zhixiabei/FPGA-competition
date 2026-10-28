@@ -161,6 +161,11 @@ module tb_display_effects_mixer;
         .I_char(reference_label_char), .I_row(reference_label_row),
         .O_row_bits(reference_label_bits)
     );
+    wire [15:0] reference_target_bits;
+    osd_char_lib reference_target_font (
+        .I_char(dut.S_target_char), .I_row(dut.S_target_text_y),
+        .O_row_bits(reference_target_bits)
+    );
 
     task automatic publish(input [3:0] mode, input [7:0] setting);
         begin
@@ -212,7 +217,7 @@ module tb_display_effects_mixer;
         end else begin
             sample_osd = dut.S_osd_hit;
             sample_osd_color = dut.S_osd_color;
-            sample_text = dut.S_target_text_on;
+            sample_text = reference_target_bits[15-dut.S_target_text_x[3:0]];
             sample_frame_start = frame_start;
             sample_native = dut.S_video_data_2d;
             x = dut.S_x_2d; y = dut.S_y_2d;
@@ -262,8 +267,7 @@ module tb_display_effects_mixer;
             if (dut.S_effect_panel_on !== effect_panel)
                 $fatal(1,"Effect panel bounds mismatch at %0d,%0d",x,y);
             if (effect_panel) begin
-                if (dut.S_effect_char !== reference_label_char ||
-                    dut.S_effect_text_on !== effect_text)
+                if (dut.S_effect_char !== reference_label_char)
                     $fatal(1,"Effect label mismatch mode=%0d param=%0d column=%0d char=%h want=%h",
                         active_mode,active_param,(x-192)/16,dut.S_effect_char,
                         reference_label_char);

@@ -2,7 +2,9 @@
 module tb_color_shape_target #(
     parameter integer W=320,
     parameter integer H=240,
-    parameter integer GEOMETRY_PROBE_ONLY=0
+    parameter integer GEOMETRY_PROBE_ONLY=0,
+    parameter integer CANDIDATE_SLOTS=8,
+    parameter integer MAX_TARGETS=3
 );
     localparam integer GROUPS=W/4;
     localparam [1:0] SH_UNKNOWN=0, SH_SQUARE=1, SH_TRIANGLE=2, SH_CIRCLE=3;
@@ -20,7 +22,8 @@ module tb_color_shape_target #(
 
     red_target_detect_96 #(
         .IMG_WIDTH(W), .IMG_HEIGHT(H), .MIN_PIXELS(64),
-        .MIN_WIDTH(8), .MIN_HEIGHT(8), .MULTI_ENABLE(1)
+        .MIN_WIDTH(8), .MIN_HEIGHT(8), .MULTI_ENABLE(1),
+        .CANDIDATE_SLOTS(CANDIDATE_SLOTS), .MAX_TARGETS(MAX_TARGETS)
     ) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user), .I_tvalid(valid),
         .I_tdata(data), .I_color_mode(color_mode),
@@ -47,6 +50,7 @@ module tb_color_shape_target #(
     integer raw_unknown=0, raw_hard_bad=0, raw_size_border=0;
     integer raw_geometry=0, raw_centroid=0, raw_metric=0, geometry_probes=0;
     integer current_probe=-1;
+    integer unused_slot;
 
     // Observe the classifier before track smoothing. A passing held label
     // must not conceal a persistent contour or geometry rejection.
@@ -108,6 +112,11 @@ module tb_color_shape_target #(
     always @(posedge clk) begin
         #1;
         if (rst_n && ready) begin
+            for(unused_slot=MAX_TARGETS;unused_slot<4;unused_slot=unused_slot+1)
+                if(found[unused_slot]!==0 || held[unused_slot]!==0 ||
+                   shapes[unused_slot*2+:2]!==0 || boxes[unused_slot*48+:48]!==0)
+                    $fatal(1,"Unused target lane is not zero lane=%0d frame=%0d",
+                        unused_slot,result_id);
             if (result_id >= 128 || seen[result_id])
                 $fatal(1,"Duplicate/unexpected shape result id=%0d",result_id);
             seen[result_id]=1;
@@ -294,7 +303,7 @@ module tb_color_shape_target #(
                     square(48+offset,48,21,1024,0);
                     disk(140+offset,48,24);
                     triangle(216+offset,72,264+offset,72,226+offset,24);
-                    square(130+offset,158,23,724,724);
+                    if(MAX_TARGETS==4) square(130+offset,158,23,724,724);
                 end
                 11: begin end
                 12: begin
@@ -670,21 +679,23 @@ module tb_color_shape_target #(
         clear_tracking(); color_mode=1; foreground=24'h50961e;
         pattern(10,0);
         send_frame(30,H,96); count_is(30,0,0);
-        send_frame(31,H,96); count_is(31,4,0);
+        send_frame(31,H,96); count_is(31,MAX_TARGETS,0);
         locate_shape(31,48,48,SH_SQUARE,multi_slots[0]);
         locate_shape(31,140,48,SH_CIRCLE,multi_slots[1]);
         locate_shape(31,240,48,SH_TRIANGLE,multi_slots[2]);
-        locate_shape(31,130,158,SH_SQUARE,multi_slots[3]);
+        if(MAX_TARGETS==4) locate_shape(31,130,158,SH_SQUARE,multi_slots[3]);
         pattern(10,4);
-        send_frame(32,H,96); count_is(32,4,0);
+        send_frame(32,H,96); count_is(32,MAX_TARGETS,0);
         locate_shape(32,52,48,SH_SQUARE,slot);
         if(slot != multi_slots[0]) $fatal(1,"Moving square changed slot");
         locate_shape(32,144,48,SH_CIRCLE,slot);
         if(slot != multi_slots[1]) $fatal(1,"Moving circle changed slot");
         locate_shape(32,244,48,SH_TRIANGLE,slot);
         if(slot != multi_slots[2]) $fatal(1,"Moving triangle changed slot");
-        locate_shape(32,134,158,SH_SQUARE,slot);
-        if(slot != multi_slots[3]) $fatal(1,"Moving rotated square changed slot");
+        if(MAX_TARGETS==4) begin
+            locate_shape(32,134,158,SH_SQUARE,slot);
+            if(slot != multi_slots[3]) $fatal(1,"Moving rotated square changed slot");
+        end
 
         clear_tracking(); color_mode=2; foreground=24'h2020f0;
         pattern(4,0);
@@ -780,8 +791,8 @@ module tb_color_shape_target #(
             $fatal(1,"Incomplete real-mask robustness coverage: %0d views=%h",
                 noisy_cases,noisy_view_modes);
 
-        $display("COLOR_SHAPE_TARGET_PASS W=%0d H=%0d results=%0d checks=%0d colors=RED,GRN,BLU shapes=SQR,TRI,CIR,UNK noisy_cases=%0d probes=%0d raw_unknown=%0d hard_bad=%0d size_border=%0d geometry=%0d centroid=%0d metric=%0d",
-            W,H,results,checks,noisy_cases,geometry_probes,raw_unknown,
+        $display("COLOR_SHAPE_TARGET_PASS W=%0d H=%0d candidates=%0d targets=%0d results=%0d checks=%0d colors=RED,GRN,BLU shapes=SQR,TRI,CIR,UNK noisy_cases=%0d probes=%0d raw_unknown=%0d hard_bad=%0d size_border=%0d geometry=%0d centroid=%0d metric=%0d",
+            W,H,CANDIDATE_SLOTS,MAX_TARGETS,results,checks,noisy_cases,geometry_probes,raw_unknown,
             raw_hard_bad,raw_size_border,raw_geometry,raw_centroid,raw_metric);
         $finish;
     end

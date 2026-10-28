@@ -18,6 +18,7 @@ foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
 $simulationDir = Join-Path $env:TEMP ('anlogic_bridge_payload_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $simulationDir | Out-Null
 $sources = @(
+    (Join-Path $PSScriptRoot 'reference\ph1p_logic_dram_asym_sim.v'),
     (Join-Path $projectRoot 'user_source\hdl_source\target_frame_bridge.v'),
     (Join-Path $PSScriptRoot 'tb_target_frame_bridge_payload_equivalence.sv')
 )

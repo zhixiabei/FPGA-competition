@@ -871,3 +871,106 @@ module osd_char_lib (
 
 endmodule
 
+// Same glyphs as osd_char_lib, read synchronously from one 1024x16 ROM.
+// Uppercase ASCII keeps its low six bits; digits/colon keep 48..58.
+// The two Chinese glyphs use otherwise empty entries 32 and 33.
+module osd_char_rom_sync (
+    input wire I_clk,
+    input wire [7:0] I_char,
+    input wire [3:0] I_row,
+    output reg [15:0] O_row_bits
+);
+    wire [5:0] font_index =
+        I_char[7:1]==7'h40 ? {5'b10000,I_char[0]} :
+        I_char[7:5]==3'b010 ? {1'b0,I_char[4:0]} :
+        I_char[7:4]==4'h3 ? {2'b11,I_char[3:0]} : 6'd63;
+    (* rom_style = "bram" *) reg [15:0] font_rom [0:1023];
+    localparam [255:0] GLYPH_AN = 256'h0000000000000000000070200cc003001c80104008407ff0040044107ff00200;
+    localparam [255:0] GLYPH_LU = 256'h0000000000000000000062205be0522052205be01630114078804d404a2079e0;
+    localparam [255:0] GLYPH_A = 256'h000000000000000000000000220022003e0036001400140014001c0000000000;
+    localparam [255:0] GLYPH_B = 256'h0000000000000000000000003e003300330033003e00330033003e0000000000;
+    localparam [255:0] GLYPH_C = 256'h00000000000003f00c0c18003000300030003000300018000c0c03f000000000;
+    localparam [255:0] GLYPH_D = 256'h0000000000000000000000003c003600330033003300330033003e0000000000;
+    localparam [255:0] GLYPH_E = 256'h0000000000000000000000003e003000300030003e00300030003e0000000000;
+    localparam [255:0] GLYPH_F = 256'h0000000000000000000000003000300030003e003000300030003e0000000000;
+    localparam [255:0] GLYPH_G = 256'h0000000000000000000000001e00360066006e006000600032001c0000000000;
+    localparam [255:0] GLYPH_H = 256'h00000000000000000000000033003300330033003f0033003300330000000000;
+    localparam [255:0] GLYPH_I = 256'h0000000000000000000000001e000c000c000c000c000c000c001e0000000000;
+    localparam [255:0] GLYPH_J = 256'h0000000000000000000000001c002600060006000600060006003e0000000000;
+    localparam [255:0] GLYPH_K = 256'h0000000000000000000000003300360034003c003c0034003600330000000000;
+    localparam [255:0] GLYPH_L = 256'h0000000000000000000000003e00300030003000300030003000300000000000;
+    localparam [255:0] GLYPH_M = 256'h000000000000000000000000220022002a002a00360036003600360000000000;
+    localparam [255:0] GLYPH_N = 256'h000000000000300c301c303c306c30cc318c330c360c3c0c380c300c00000000;
+    localparam [255:0] GLYPH_O = 256'h0000000000000000000000003c003600630063006300630032001e0000000000;
+    localparam [255:0] GLYPH_P = 256'h0000000000000000000000003000300030003e003300330033003e0000000000;
+    localparam [255:0] GLYPH_Q = 256'h000000000000000007000c003c007600630063006300630032001e0000000000;
+    localparam [255:0] GLYPH_R = 256'h0000000000000000000000003200360036003c003300330033003e0000000000;
+    localparam [255:0] GLYPH_S = 256'h0000000000000000000000003e00030003000f003c00300030001e0000000000;
+    localparam [255:0] GLYPH_T = 256'h00000000000003c003c003c003c003c003c003c003c003c003c03ffc00000000;
+    localparam [255:0] GLYPH_U = 256'h0000000000000000000000001e00330033003300330033003300330000000000;
+    localparam [255:0] GLYPH_V = 256'h0000000000000000000000001c001c0014001400360036002200220000000000;
+    localparam [255:0] GLYPH_W = 256'h00000000000000000000000036003600360036002a002a002200220000000000;
+    localparam [255:0] GLYPH_X = 256'h0000000000000000000000003200360014001c0008001c001c003e0000000000;
+    localparam [255:0] GLYPH_Y = 256'h0000000000000000000000000c000c000c000c001e001b001300318000000000;
+    localparam [255:0] GLYPH_Z = 256'h0000000000000000000000003e0010001800080008000c0004003e0000000000;
+    localparam [255:0] GLYPH_0 = 256'h0000000000001ff81ff8300c300c300c00000000300c300c300c1ff81ff80000;
+    localparam [255:0] GLYPH_1 = 256'h000000000000000c000c000c000c000c00000000000c000c000c000c000c0000;
+    localparam [255:0] GLYPH_2 = 256'h0000000000001ff81ff83000300030001ff81ff8000c000c000c1ff81ff80000;
+    localparam [255:0] GLYPH_3 = 256'h0000000000001ff81ff8000c000c000c1ff81ff8000c000c000c1ff81ff80000;
+    localparam [255:0] GLYPH_4 = 256'h000000000000000c000c000c000c000c1ff81ff8300c300c300c300c300c0000;
+    localparam [255:0] GLYPH_5 = 256'h0000000000001ff81ff8000c000c000c1ff81ff83000300030001ff81ff80000;
+    localparam [255:0] GLYPH_6 = 256'h0000000000001ff81ff8300c300c300c1ff81ff83000300030001ff81ff80000;
+    localparam [255:0] GLYPH_7 = 256'h000000000000000c000c000c000c000c00000000000c000c000c1ff81ff80000;
+    localparam [255:0] GLYPH_8 = 256'h0000000000001ff81ff8300c300c300c1ff81ff8300c300c300c1ff81ff80000;
+    localparam [255:0] GLYPH_9 = 256'h0000000000001ff81ff8000c000c000c1ff81ff8300c300c300c1ff81ff80000;
+    localparam [255:0] GLYPH_COLON = 256'h0000000000000000018001800000000001800180000000000000000000000000;
+    integer init_address, init_row;
+    initial begin
+        for(init_address=0;init_address<1024;init_address=init_address+1)
+            font_rom[init_address]=16'd0;
+        for(init_row=0;init_row<16;init_row=init_row+1) begin
+            font_rom[32*16+init_row]=GLYPH_AN[16*init_row+:16];
+            font_rom[33*16+init_row]=GLYPH_LU[16*init_row+:16];
+            font_rom[1*16+init_row]=GLYPH_A[16*init_row+:16];
+            font_rom[2*16+init_row]=GLYPH_B[16*init_row+:16];
+            font_rom[3*16+init_row]=GLYPH_C[16*init_row+:16];
+            font_rom[4*16+init_row]=GLYPH_D[16*init_row+:16];
+            font_rom[5*16+init_row]=GLYPH_E[16*init_row+:16];
+            font_rom[6*16+init_row]=GLYPH_F[16*init_row+:16];
+            font_rom[7*16+init_row]=GLYPH_G[16*init_row+:16];
+            font_rom[8*16+init_row]=GLYPH_H[16*init_row+:16];
+            font_rom[9*16+init_row]=GLYPH_I[16*init_row+:16];
+            font_rom[10*16+init_row]=GLYPH_J[16*init_row+:16];
+            font_rom[11*16+init_row]=GLYPH_K[16*init_row+:16];
+            font_rom[12*16+init_row]=GLYPH_L[16*init_row+:16];
+            font_rom[13*16+init_row]=GLYPH_M[16*init_row+:16];
+            font_rom[14*16+init_row]=GLYPH_N[16*init_row+:16];
+            font_rom[15*16+init_row]=GLYPH_O[16*init_row+:16];
+            font_rom[16*16+init_row]=GLYPH_P[16*init_row+:16];
+            font_rom[17*16+init_row]=GLYPH_Q[16*init_row+:16];
+            font_rom[18*16+init_row]=GLYPH_R[16*init_row+:16];
+            font_rom[19*16+init_row]=GLYPH_S[16*init_row+:16];
+            font_rom[20*16+init_row]=GLYPH_T[16*init_row+:16];
+            font_rom[21*16+init_row]=GLYPH_U[16*init_row+:16];
+            font_rom[22*16+init_row]=GLYPH_V[16*init_row+:16];
+            font_rom[23*16+init_row]=GLYPH_W[16*init_row+:16];
+            font_rom[24*16+init_row]=GLYPH_X[16*init_row+:16];
+            font_rom[25*16+init_row]=GLYPH_Y[16*init_row+:16];
+            font_rom[26*16+init_row]=GLYPH_Z[16*init_row+:16];
+            font_rom[48*16+init_row]=GLYPH_0[16*init_row+:16];
+            font_rom[49*16+init_row]=GLYPH_1[16*init_row+:16];
+            font_rom[50*16+init_row]=GLYPH_2[16*init_row+:16];
+            font_rom[51*16+init_row]=GLYPH_3[16*init_row+:16];
+            font_rom[52*16+init_row]=GLYPH_4[16*init_row+:16];
+            font_rom[53*16+init_row]=GLYPH_5[16*init_row+:16];
+            font_rom[54*16+init_row]=GLYPH_6[16*init_row+:16];
+            font_rom[55*16+init_row]=GLYPH_7[16*init_row+:16];
+            font_rom[56*16+init_row]=GLYPH_8[16*init_row+:16];
+            font_rom[57*16+init_row]=GLYPH_9[16*init_row+:16];
+            font_rom[58*16+init_row]=GLYPH_COLON[16*init_row+:16];
+        end
+    end
+    always @(posedge I_clk)
+        O_row_bits<=font_rom[{font_index,I_row}];
+endmodule
+

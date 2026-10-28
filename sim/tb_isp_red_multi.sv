@@ -1,7 +1,9 @@
 `timescale 1ns/1ps
 // Production post-demosaic path. Only the demosaic output boundary is driven;
-// AWB, target selection, four-target detection, display delay and packing run.
-module tb_isp_red_multi;
+// AWB, target selection, multi-target detection, display delay and packing run.
+module tb_isp_red_multi #(
+    parameter integer CANDIDATE_SLOTS=8, MAX_TARGETS=3
+);
     localparam integer W=1280, H=720, GROUPS=W/4;
     localparam integer FRAME_GROUPS=W*H/4, FRAME_WORDS=W*H*3/16;
     reg clk=0, rst_n=0;
@@ -42,6 +44,8 @@ module tb_isp_red_multi;
         .O_ae_stats_valid(), .O_ae_sum_y(), .O_ae_sample_count(),
         .O_ae_bright_count(), .O_latency_frame_id(latency_id)
     );
+    defparam dut.u_target_detect_switch.u_red.CANDIDATE_SLOTS=CANDIDATE_SLOTS;
+    defparam dut.u_target_detect_switch.u_red.MAX_TARGETS=MAX_TARGETS;
 
     integer awb_frame=-1, edge_frame=-1, packed_frame=-1;
     integer awb_count[0:2], edge_count[0:2], packed_count[0:2];
@@ -95,7 +99,7 @@ module tb_isp_red_multi;
             // Neutral background keeps the real AWB at unity. Saturated
             // red objects are excluded from its neutral sample population.
             scene=24'h808080;
-            for(object_number=0;object_number<4;object_number=object_number+1) begin
+            for(object_number=0;object_number<MAX_TARGETS;object_number=object_number+1) begin
                 x0=object_x0(frame_number,object_number);
                 y0=object_y0(frame_number,object_number);
                 if(x>=x0 && x<x0+64 && y>=y0 && y<y0+64)
@@ -159,20 +163,25 @@ module tb_isp_red_multi;
                     (^{target_valid,target_hold,target_found,target_boxes,target_shapes})===1'bx)
                     $fatal(1,"Production multi result token mismatch result=%0d id=%0d expected=%0d",
                         target_results,target_id,expected_id(target_results));
+                for(slot_index=MAX_TARGETS;slot_index<4;slot_index=slot_index+1)
+                    if(target_valid[slot_index]!==1'b0 || target_hold[slot_index]!==1'b0 ||
+                       target_boxes[slot_index*48+:48]!==48'd0 ||
+                       target_shapes[slot_index*2+:2]!==2'd0)
+                        $fatal(1,"Unused production target lane is not zero slot=%0d",slot_index);
                 if(target_results==0) begin
                     if(target_valid!==4'b0 || target_hold!==4'b0 ||
                        target_found!==1'b0 || target_shapes!==8'd0)
                         $fatal(1,"First frame bypassed two-frame confirmation");
                 end else begin
-                    if(target_valid!==4'b1111 || target_hold!==4'b0 || target_found!==1'b1)
-                        $fatal(1,"Confirmed frame lacks four active boxes result=%0d valid=%b hold=%b",
+                    if(target_valid!==((1<<MAX_TARGETS)-1) || target_hold!==4'b0 || target_found!==1'b1)
+                        $fatal(1,"Confirmed frame lacks configured active boxes result=%0d valid=%b hold=%b",
                             target_results,target_valid,target_hold);
                     // Expected geometry comes solely from the input scene.
                     // It does not inspect any detector state or intermediate ROI.
-                    for(object_index=0;object_index<4;object_index=object_index+1) begin
+                    for(object_index=0;object_index<MAX_TARGETS;object_index=object_index+1) begin
                         located_slot=-1;
                         matching_slots=0;
-                        for(slot_index=0;slot_index<4;slot_index=slot_index+1) begin
+                        for(slot_index=0;slot_index<MAX_TARGETS;slot_index=slot_index+1) begin
                             checked_box=target_boxes[slot_index*48+:48];
                             if(checked_box[11:0]==object_x0(target_results,object_index) &&
                                checked_box[23:12]==object_x0(target_results,object_index)+63 &&
@@ -280,7 +289,8 @@ module tb_isp_red_multi;
                packed_count[f]!=FRAME_WORDS)
                 $fatal(1,"Frame%0d production count mismatch AWB=%0d display=%0d packed=%0d",
                     f,awb_count[f],edge_count[f],packed_count[f]);
-        if(target_results!=3 || boxes_checked!=8 || shapes_checked!=8 || stable_slots!=4 ||
+        if(target_results!=3 || boxes_checked!=2*MAX_TARGETS ||
+           shapes_checked!=2*MAX_TARGETS || stable_slots!=MAX_TARGETS ||
            packed_labels!=3 || pixel_labels!=3*FRAME_WORDS ||
            awb_frame!=2 || edge_frame!=2 || packed_frame!=2)
             $fatal(1,"Production multi-target integration coverage incomplete");

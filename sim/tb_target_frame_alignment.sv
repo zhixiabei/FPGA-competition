@@ -56,7 +56,8 @@ module tb_target_frame_alignment;
     reg request_seen = 0;
 
     // RAW readout is verified separately with the real tap/CDC/HDMI chain.
-    design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(0)) dut (
+    design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(0),
+        .SINGLE_SHAPE_ENABLE(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
         .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1)
@@ -691,11 +692,13 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
     (input wire [127:0] I_native_clk, I_rst_n, I_data, I_data_valid,
     I_data_start, I_data_end, axis_tvalid, axis_tdata, axis_tuser, axis_tlast);
 endmodule
-module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, IQ_DIAGNOSTIC_ENABLE=0)
+module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, SINGLE_SHAPE_ENABLE=0, IQ_DIAGNOSTIC_ENABLE=0,
+    ENABLE_DISPLAY_EFFECTS=0, ENABLE_HANDCNN_TAP=0)
     (input wire [127:0] axi4s_video_aclk, I_rst_n, I_effect_config, I_motion_mode_async,
     I_color_mode_async, I_awb_hold_async,
     I_tlast, I_tuser, I_tdata, I_tvalid, I_tdest, O_tready, O_tdata,
-    O_tlast, O_tuser, O_tvalid, O_target_result_ready, O_target_found,
+    O_tlast, O_tuser, O_tvalid, O_hand_rgb_data, O_hand_rgb_valid,
+    O_hand_rgb_sof, O_target_result_ready, O_target_found,
     O_target_xmin, O_target_xmax, O_target_ymin, O_target_ymax,
     O_target_center_x, O_target_center_y, O_target_pixels,
     O_target_frame_toggle, O_target_motion_mode, O_target_color_mode,
@@ -721,7 +724,8 @@ module ph1p35_324_ddr_wrapper(input wire [127:0] I_sys_clk, I_sys_rst_n,
     O_ddr_clk, O_init_calib_complete, I_mc_app_addr, I_mc_app_cmd,
     I_mc_app_en, I_mc_app_wdf_data, I_mc_app_wdf_end, I_mc_app_wdf_mask,
     I_mc_app_wdf_wren, O_mc_app_rd_data, O_mc_app_rd_data_end,
-    O_mc_app_rd_data_valid, O_mc_app_rdy, O_mc_app_wdf_rdy, ddr_addr,
+    O_mc_app_rd_data_valid, O_mc_app_rdy, O_mc_app_wdf_rdy,
+    O_mc_read_ready, O_mc_write_ready, O_mc_data_ready, ddr_addr,
     ddr_ba, ddr_cke, ddr_odt, ddr_cs_n, ddr_ras_n, ddr_cas_n, ddr_we_n,
     ddr_ck_p, ddr_ck_n, ddr_dm, ddr_dq, ddr_dqs_p, ddr_dqs_n);
 endmodule

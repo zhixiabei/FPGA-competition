@@ -1,0 +1,103 @@
+m255
+K4
+z2
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 dD:/vivado_work/anlogic_edge_osd
+vhandcnn_normalize
+Z1 DXx6 sv_std 3 std 0 22 <EOTafDcUY:cQeO^ICn]m3
+Z2 !s110 1793081929
+!i10b 1
+!s100 X7iI3ITc0Rg[N;;]LEVPz2
+I<1`iOgf1_2^S5?lO8ZS1U3
+Z3 V`JN@9S9cnhjKRR_L]QIcM3
+!s105 handcnn_normalize_v_unit
+S1
+R0
+w1793029976
+8user_source/hdl_source/fruit_merged/handcnn_normalize.v
+Fuser_source/hdl_source/fruit_merged/handcnn_normalize.v
+L0 2
+Z4 OV;L;10.3c;59
+r1
+!s85 0
+31
+Z5 !s108 1793081929.142000
+Z6 !s107 D:/TD/sim_release/ph1p/ph1p_logic_dram.v|sim/tb_handfixed_preprocess_interp.sv|user_source/hdl_source/fruit_merged/handcnn_normalize.v|user_source/hdl_source/fruit_merged/handfixed_preprocess.v|
+Z7 !s90 -sv|-work|sim/preprocess_compile_work/work|user_source/hdl_source/fruit_merged/handfixed_preprocess.v|user_source/hdl_source/fruit_merged/handcnn_normalize.v|sim/tb_handfixed_preprocess_interp.sv|D:/TD/sim_release/ph1p/ph1p_logic_dram.v|
+!i113 1
+Z8 o-sv -work sim/preprocess_compile_work/work
+vhandfixed_preprocess
+R1
+R2
+!i10b 1
+!s100 Ee]Q:;b[a;TVK0;Yc2][^1
+IJX9ljbBKg9XMd;kXaf7BR0
+R3
+!s105 handfixed_preprocess_v_unit
+S1
+R0
+w1793081898
+8user_source/hdl_source/fruit_merged/handfixed_preprocess.v
+Fuser_source/hdl_source/fruit_merged/handfixed_preprocess.v
+L0 5
+R4
+r1
+!s85 0
+31
+R5
+R6
+R7
+!i113 1
+R8
+vPH1P_LOGIC_DRAM
+R1
+R2
+!i10b 1
+!s100 iPcgfoVESE8[SE0z[?S@i1
+Ik5?91CZj^aab6a4Fo]eB`1
+R3
+!s105 ph1p_logic_dram_v_unit
+S1
+R0
+w1752052164
+8D:/TD/sim_release/ph1p/ph1p_logic_dram.v
+FD:/TD/sim_release/ph1p/ph1p_logic_dram.v
+L0 33
+R4
+r1
+!s85 0
+31
+R5
+R6
+R7
+!i113 1
+R8
+n@p@h1@p_@l@o@g@i@c_@d@r@a@m
+vtb_handfixed_preprocess_interp
+R1
+R2
+!i10b 1
+!s100 4Fh8ZSR4ZN:d;UVeR]am30
+I[`7UYXh6zCFaDY`Zi6DjW3
+R3
+!s105 tb_handfixed_preprocess_interp_sv_unit
+S1
+R0
+w1793017804
+8sim/tb_handfixed_preprocess_interp.sv
+Fsim/tb_handfixed_preprocess_interp.sv
+L0 3
+R4
+r1
+!s85 0
+31
+R5
+R6
+R7
+!i113 1
+R8

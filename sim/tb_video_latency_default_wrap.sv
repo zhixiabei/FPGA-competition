@@ -1,9 +1,10 @@
 `timescale 1ns/1ps
 
 // Use the production timestamp width and one-second expiry. One reference
-// clock cycle advances one microsecond to exercise complete 24-bit wraps.
+// clock cycle advances one microsecond to exercise complete counter wraps.
 module tb_video_latency_default_wrap;
-    localparam integer PERIOD = 16777216;
+    localparam integer TIME_WIDTH = 21;
+    localparam integer PERIOD = 1 << TIME_WIDTH;
     localparam integer MAX_AGE = 1000000;
     reg time_clk = 0, csi_clk = 0, ddr_clk = 0, hdmi_clk = 0;
     bit csi_run = 1;
@@ -25,7 +26,9 @@ module tb_video_latency_default_wrap;
     integer captured_id, captured_total, captured_isp, captured_buffer;
     bit captured_valid = 0;
 
-    video_latency_monitor #(.TIME_DEN(1), .FRAME_WORDS(8)) dut (
+    video_latency_monitor #(
+        .TIME_WIDTH(TIME_WIDTH), .TIME_DEN(1), .FRAME_WORDS(8)
+    ) dut (
         .I_time_clk(time_clk), .I_csi_clk(csi_clk), .I_ddr_clk(ddr_clk),
         .I_hdmi_clk(hdmi_clk), .I_rst_n(rst_n),
         .I_raw_sof(raw_sof), .I_raw_valid(raw_valid), .O_raw_frame_id(raw_id),
@@ -142,8 +145,8 @@ module tb_video_latency_default_wrap;
 
     integer next_wrap;
     initial begin
-        if (dut.TIME_WIDTH != 24 || dut.MAX_AGE_US != MAX_AGE)
-            $fatal(1, "Default-width test must use 24 bits and the production 1s expiry");
+        if (dut.TIME_WIDTH != TIME_WIDTH || dut.MAX_AGE_US != MAX_AGE)
+            $fatal(1, "Production-width test must use 21 bits and the 1s expiry");
         repeat (8) @(negedge time_clk);
         rst_n = 1;
         repeat (12) @(negedge csi_clk);
@@ -160,10 +163,10 @@ module tb_video_latency_default_wrap;
         display_check(0, "new read of stopped-camera frame is stale");
         idle_until(raw_time + PERIOD + 500);
         select_read();
-        display_check(0, "expired slot cannot revive after first complete 24-bit wrap");
+        display_check(0, "expired slot cannot revive after first complete timestamp wrap");
         idle_until(raw_time + 2*PERIOD + 500);
         select_read();
-        display_check(0, "expired slot cannot revive after second complete 24-bit wrap");
+        display_check(0, "expired slot cannot revive after second complete timestamp wrap");
         csi_run = 1;
         repeat (12) @(negedge csi_clk);
         complete_frame();
@@ -183,8 +186,8 @@ module tb_video_latency_default_wrap;
         if (checks != 8 || valid_checks != 4 || ideal_us/PERIOD != 3)
             $fatal(1, "Default wrap coverage incomplete checks=%0d valid=%0d wraps=%0d",
                    checks, valid_checks, ideal_us/PERIOD);
-        $display("VIDEO_LATENCY_DEFAULT_WRAP_PASS width=24 max_age_us=1000000 resolution_us=1 checks=%0d valid=%0d full_wraps=%0d camera_stop=1 recovery=1",
-                 checks, valid_checks, ideal_us/PERIOD);
+        $display("VIDEO_LATENCY_DEFAULT_WRAP_PASS width=%0d max_age_us=1000000 resolution_us=1 checks=%0d valid=%0d full_wraps=%0d camera_stop=1 recovery=1",
+                 TIME_WIDTH, checks, valid_checks, ideal_us/PERIOD);
         $finish;
     end
 

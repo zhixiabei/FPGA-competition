@@ -1,0 +1,12 @@
+# vsim -c -do "run -all; quit -f" work.tb_handcnn_normalize_equivalence 
+# Start time: 23:46:59 on Oct 26,2026
+# Loading sv_std.std
+# Loading work.tb_handcnn_normalize_equivalence
+# Loading work.handcnn_normalize
+# Loading work.handcnn_normalize_case_ref
+# run -all
+# HANDCNN_NORMALIZE_EQUIVALENCE_PASS addresses=2048
+# ** Note: $finish    : ../tb_handcnn_normalize_equivalence.sv(28)
+#    Time: 20486 ns  Iteration: 0  Instance: /tb_handcnn_normalize_equivalence
+# End time: 23:46:59 on Oct 26,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0

@@ -1,4 +1,6 @@
 param(
+    [ValidateSet(8,16)][int] $CandidateSlots = 8,
+    [ValidateSet(3,4)][int] $MaxTargets = 3,
     [string] $SimBin = 'D:\XILINX\Vivado\2021.1\bin',
     [string] $TdSimLib = 'D:\TD\sim_release\ph1p'
 )
@@ -73,6 +75,8 @@ try {
         @compiledSources $testbench -log xvlog.log *> compile_console.log
     if ($LASTEXITCODE -ne 0) { throw 'Production ISP multi-target compile failed; see compile_console.log' }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
+        -generic_top ('"CANDIDATE_SLOTS=' + $CandidateSlots + '"') `
+        -generic_top ('"MAX_TARGETS=' + $MaxTargets + '"') `
         work.tb_isp_red_multi -s isp_red_multi -log xelab.log *> elaborate_console.log
     if ($LASTEXITCODE -ne 0) { throw 'Production ISP multi-target elaboration failed; see elaborate_console.log' }
     & (Join-Path $SimBin 'xsim.bat') isp_red_multi -runall -log xsim.log *> simulate_console.log

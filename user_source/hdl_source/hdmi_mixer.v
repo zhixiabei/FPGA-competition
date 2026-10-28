@@ -17,10 +17,13 @@ module hdmi_mixer #(
     parameter integer SHOW_CNN = 0,
     parameter integer CNN_FULL_FRAME_INPUT = 0,
     parameter integer HANDCNN_DYNAMIC_ROI = 0,
+    parameter integer FRUIT_CNN = 0,
     parameter integer SHOW_RESNET_PROBE = 0,
     parameter integer SHOW_RESNET_RUNTIME = 0,
     parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60,
-    parameter integer MULTI_TARGET_ENABLE = 0
+    parameter integer MULTI_TARGET_ENABLE = 0,
+    // Limit retained target state and replicated box/label rendering.
+    parameter integer TARGET_SLOTS = 4
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -284,11 +287,11 @@ module hdmi_mixer #(
             S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
         end else if (I_cnn_result_valid) begin
             if(!HANDCNN_DYNAMIC_ROI || I_video_user)
-                S_cnn_class <= (I_cnn_class >= 3'd1 && I_cnn_class <= 3'd4) ? I_cnn_class : 3'd1;
+                S_cnn_class <= (I_cnn_class >= 3'd1 && I_cnn_class <= (FRUIT_CNN != 0 ? 3'd6 : 3'd4)) ? I_cnn_class : 3'd1;
             S_cnn_result_age <= {CNN_AGE_WIDTH{1'b0}};
         end else if(HANDCNN_DYNAMIC_ROI && I_video_user) begin
             S_cnn_class <= ((CNN_RESULT_TIMEOUT_FRAMES != 0) && S_cnn_result_age>=CNN_RESULT_TIMEOUT_FRAMES-1) ?
-                3'd1 : (I_cnn_class>=1 && I_cnn_class<=4 ? I_cnn_class : 3'd1);
+                3'd1 : (I_cnn_class>=1 && I_cnn_class<=(FRUIT_CNN != 0 ? 6 : 4) ? I_cnn_class : 3'd1);
             if(CNN_RESULT_TIMEOUT_FRAMES != 0 && S_cnn_result_age<CNN_RESULT_TIMEOUT_FRAMES)
                 S_cnn_result_age<=S_cnn_result_age+1'b1;
         end else if (!HANDCNN_DYNAMIC_ROI && (CNN_RESULT_TIMEOUT_FRAMES != 0) &&
@@ -378,15 +381,15 @@ module hdmi_mixer #(
     wire [7:0] S_follow_char;
     wire [3:0] S_follow_row;
     wire [3:0] S_follow_col;
-    wire S_follow_text_on;
+    wire [1:0] S_target_primary_shape;
     localparam TARGET_TEXT_X = 16;
     localparam TARGET_TEXT_Y = IMG_HEIGHT-32;
 
-    function F_rect_overlap;
-        input [12:0] ax, ay, aw, ah, bx, by, bw, bh;
+    function F_bounds_overlap;
+        input [12:0] ax, ay, aright, abottom, bx, by, bright, bbottom;
         begin
-            F_rect_overlap = (ax < bx+bw) && (bx < ax+aw) &&
-                             (ay < by+bh) && (by < ay+ah);
+            F_bounds_overlap = (ax < bright) && (bx < aright) &&
+                               (ay < bbottom) && (by < abottom);
         end
     endfunction
 
@@ -479,19 +482,28 @@ module hdmi_mixer #(
     endfunction
 
     generate if (MULTI_TARGET_ENABLE != 0) begin: multi_target
-        reg [3:0] valid, held;
-        reg [7:0] shapes;
+        localparam integer ACTIVE_TARGETS = TARGET_SLOTS < 1 ? 1 :
+            (TARGET_SLOTS > 4 ? 4 : TARGET_SLOTS);
+        localparam integer SLOT_INDEX_WIDTH = ACTIVE_TARGETS < 2 ? 1 :
+            $clog2(ACTIVE_TARGETS);
+        localparam integer PEER_TARGETS = ACTIVE_TARGETS > 1 ? ACTIVE_TARGETS : 0;
+        reg [ACTIVE_TARGETS-1:0] valid, held;
+        reg [2*ACTIVE_TARGETS-1:0] shapes;
         reg overflow;
-        reg [11:0] xmin [0:3], xmax [0:3], ymin [0:3], ymax [0:3];
-        reg [3:0] label_valid, label_compact;
-        reg [11:0] label_x [0:3], label_y [0:3];
+        reg [11:0] xmin [0:ACTIVE_TARGETS-1], xmax [0:ACTIVE_TARGETS-1];
+        reg [11:0] ymin [0:ACTIVE_TARGETS-1], ymax [0:ACTIVE_TARGETS-1];
+        reg [ACTIVE_TARGETS-1:0] label_valid, label_compact;
+        reg [11:0] label_x [0:ACTIVE_TARGETS-1], label_y [0:ACTIVE_TARGETS-1];
         reg layout_busy;
-        reg [1:0] layout_slot;
+        reg [SLOT_INDEX_WIDTH-1:0] layout_slot;
         reg [4:0] layout_attempt;
+        reg [11:0] layout_xmin, layout_xmax, layout_ymin, layout_ymax;
         reg [12:0] candidate_x, candidate_y, candidate_width;
+        reg [12:0] candidate_right, candidate_bottom;
         reg candidate_valid;
         reg [12:0] anchor_x, box_right;
-        integer target_index, peer_index, render_index;
+        integer target_index, peer_index, render_index, count_index;
+        reg [2:0] target_count;
         reg box_hit, label_hit;
         reg [1:0] box_slot, label_slot;
         reg [11:0] label_local_x, label_local_y;
@@ -499,118 +511,169 @@ module hdmi_mixer #(
         wire [12:0] full_width = S_target_motion_mode ? 13'd128 : 13'd192;
         wire [12:0] compact_width = S_target_motion_mode ? 13'd64 : 13'd128;
 
-        assign S_multi_count = {2'd0,valid[0]} + {2'd0,valid[1]} +
-                               {2'd0,valid[2]} + {2'd0,valid[3]};
+        always @(*) begin
+            target_count = 3'd0;
+            for (count_index=0; count_index<ACTIVE_TARGETS; count_index=count_index+1)
+                target_count = target_count+valid[count_index];
+        end
+        assign S_multi_count = target_count;
         assign S_multi_overflow = overflow;
         assign S_multi_box_on = box_hit;
         assign S_multi_box_color = F_target_color(box_slot);
+        assign S_target_primary_shape = shapes[1:0];
         assign S_follow_panel_on = label_hit;
         assign S_follow_color = F_target_color(label_slot);
         assign S_follow_char = label_char;
         assign S_follow_row = label_local_y[3:0];
         assign S_follow_col = label_local_x[3:0];
 
-        // Four labels take at most 128 clocks to place. Starting at row 16
-        // keeps the scan behind layout, including worst-case rejected slots.
+        // Each retained label takes at most 32 clocks to place. Starting at
+        // row 16 keeps the scan behind layout even with four retained slots.
         always @(*) begin
             candidate_width = layout_attempt[4] ? compact_width : full_width;
-            anchor_x = {1'b0,xmin[layout_slot]};
-            box_right = {1'b0,xmax[layout_slot]};
+            anchor_x = {1'b0,layout_xmin};
+            box_right = {1'b0,layout_xmax};
             candidate_x = anchor_x;
             candidate_y = 13'd16;
+            candidate_right = anchor_x+candidate_width;
+            candidate_bottom = 13'd32;
             candidate_valid = IMG_WIDTH >= candidate_width && IMG_HEIGHT >= 32;
-            if (candidate_x+candidate_width > IMG_WIDTH)
+            if (candidate_x+candidate_width > IMG_WIDTH) begin
                 candidate_x = IMG_WIDTH-candidate_width;
+                candidate_right = IMG_WIDTH;
+            end
+            // Generate both edges in parallel. In particular, a left-side
+            // label ends at anchor_x-2 regardless of its selected width.
+            // Keep the original 13-bit overlap arithmetic and the separate,
+            // parameter-width frame-bound checks below.
             case (layout_attempt[3:2])
                 1: begin
-                    if (anchor_x >= candidate_width+13'd2)
+                    if (anchor_x >= candidate_width+13'd2) begin
                         candidate_x = anchor_x-candidate_width-13'd2;
-                    else
+                        candidate_right = anchor_x-13'd2;
+                    end else
                         candidate_valid = 1'b0;
                 end
-                2: candidate_x = box_right+13'd3;
-                3: candidate_x = (box_right+13'd1 >= candidate_width) ?
-                    box_right+13'd1-candidate_width : 13'd0;
+                2: begin
+                    candidate_x = box_right+13'd3;
+                    candidate_right = box_right+13'd3+candidate_width;
+                end
+                3: begin
+                    candidate_x = (box_right+13'd1 >= candidate_width) ?
+                        box_right+13'd1-candidate_width : 13'd0;
+                    candidate_right = (box_right+13'd1 >= candidate_width) ?
+                        box_right+13'd1 : candidate_width;
+                end
                 default: begin end
             endcase
             case (layout_attempt[1:0])
                 0: begin
-                    if (ymin[layout_slot] >= 12'd20)
-                        candidate_y = {1'b0,ymin[layout_slot]}-13'd18;
-                    else
+                    if (layout_ymin >= 12'd20) begin
+                        candidate_y = {1'b0,layout_ymin}-13'd18;
+                        candidate_bottom = {1'b0,layout_ymin}-13'd2;
+                    end else
                         candidate_valid = 1'b0;
                 end
-                1: candidate_y = {1'b0,ymax[layout_slot]}+13'd3;
-                2: candidate_y = {1'b0,ymin[layout_slot]}+13'd3;
+                1: begin
+                    candidate_y = {1'b0,layout_ymax}+13'd3;
+                    candidate_bottom = {1'b0,layout_ymax}+13'd19;
+                end
+                2: begin
+                    candidate_y = {1'b0,layout_ymin}+13'd3;
+                    candidate_bottom = {1'b0,layout_ymin}+13'd19;
+                end
                 default: begin
-                    if (ymax[layout_slot] >= 12'd20)
-                        candidate_y = {1'b0,ymax[layout_slot]}-13'd18;
-                    else
+                    if (layout_ymax >= 12'd20) begin
+                        candidate_y = {1'b0,layout_ymax}-13'd18;
+                        candidate_bottom = {1'b0,layout_ymax}-13'd2;
+                    end else
                         candidate_valid = 1'b0;
                 end
             endcase
             if (candidate_x+candidate_width > IMG_WIDTH ||
                 candidate_y < 16 || candidate_y+13'd16 > IMG_HEIGHT)
                 candidate_valid = 1'b0;
-            if (F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+            if (F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
                     13'd0,13'd0,13'd160,13'd160) ||
-                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
-                    13'd375,13'd120,13'd200,13'd24) ||
-                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
-                    13'd16,TARGET_TEXT_Y,13'd240,13'd16))
+                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
+                    13'd375,13'd120,13'd575,13'd144) ||
+                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
+                    13'd16,TARGET_TEXT_Y,13'd256,TARGET_TEXT_Y+13'd16))
                 candidate_valid = 1'b0;
             if ((SHOW_CAMERA_STATUS != 0) &&
-                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
-                    13'd192,13'd16,13'd88,13'd48))
+                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
+                    13'd192,13'd16,13'd280,13'd64))
                 candidate_valid = 1'b0;
             if ((SHOW_EFFECT_LABEL != 0) &&
-                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
-                    13'd192,13'd80,13'd240,13'd16))
+                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
+                    13'd192,13'd80,13'd432,13'd96))
                 candidate_valid = 1'b0;
             if ((SHOW_LATENCY != 0) && S_latency_visible &&
-                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
-                    13'd864,13'd16,13'd400,13'd216))
+                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
+                    13'd864,13'd16,13'd1264,13'd232))
                 candidate_valid = 1'b0;
             if ((SHOW_RAW_STATS != 0) &&
-                F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
-                    13'd496,13'd176,13'd768,13'd352))
+                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
+                    13'd496,13'd176,13'd1264,13'd528))
                 candidate_valid = 1'b0;
-            for (peer_index=0; peer_index<4; peer_index=peer_index+1)
+            for (peer_index=0; peer_index<PEER_TARGETS; peer_index=peer_index+1)
                 if (label_valid[peer_index] &&
-                    F_rect_overlap(candidate_x,candidate_y,candidate_width,13'd16,
+                    F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
                         {1'b0,label_x[peer_index]},{1'b0,label_y[peer_index]},
-                        label_compact[peer_index] ? compact_width : full_width,13'd16))
+                        {1'b0,label_x[peer_index]}+
+                            (label_compact[peer_index] ? compact_width : full_width),
+                        {1'b0,label_y[peer_index]}+13'd16))
                     candidate_valid = 1'b0;
         end
 
         always @(posedge I_clk or negedge I_rst_n) begin
             if (!I_rst_n) begin
-                valid <= 4'd0;
-                held <= 4'd0;
-                shapes <= 8'd0;
+                valid <= 0;
+                held <= 0;
+                shapes <= 0;
                 overflow <= 1'b0;
-                label_valid <= 4'd0;
-                label_compact <= 4'd0;
+                label_valid <= 0;
+                label_compact <= 0;
                 layout_busy <= 1'b0;
-                layout_slot <= 2'd0;
+                layout_slot <= 0;
                 layout_attempt <= 5'd0;
-                for (target_index=0; target_index<4; target_index=target_index+1) begin
+                layout_xmin <= 12'd0; layout_xmax <= 12'd0;
+                layout_ymin <= 12'd0; layout_ymax <= 12'd0;
+                for (target_index=0; target_index<ACTIVE_TARGETS; target_index=target_index+1) begin
                     xmin[target_index] <= 12'd0; xmax[target_index] <= 12'd0;
                     ymin[target_index] <= 12'd0; ymax[target_index] <= 12'd0;
                     label_x[target_index] <= 12'd0;
                     label_y[target_index] <= 12'd0;
                 end
             end else if (I_video_user) begin
-                held <= I_target_motion_mode ? 4'd0 : I_target_multi_hold;
-                shapes <= I_target_motion_mode ? 8'd0 : I_target_multi_shapes;
-                overflow <= I_target_result_ready && !I_target_motion_mode &&
+                held <= I_target_motion_mode ? 0 :
+                    I_target_multi_hold[ACTIVE_TARGETS-1:0];
+                shapes <= I_target_motion_mode ? 0 :
+                    I_target_multi_shapes[2*ACTIVE_TARGETS-1:0];
+                overflow <= ACTIVE_TARGETS > 1 &&
+                            I_target_result_ready && !I_target_motion_mode &&
                             I_target_multi_overflow;
-                label_valid <= 4'd0;
-                label_compact <= 4'd0;
+                label_valid <= 0;
+                label_compact <= 0;
                 layout_busy <= I_target_result_ready;
-                layout_slot <= 2'd0;
+                layout_slot <= 0;
                 layout_attempt <= 5'd0;
-                for (target_index=0; target_index<4; target_index=target_index+1) begin
+                // Slot zero is already available at the frame edge. Later
+                // slots are prefetched when the previous slot finishes, so
+                // rectangle arithmetic never follows a slot-to-box mux.
+                layout_xmin <= I_target_motion_mode ? I_target_xmin :
+                    I_target_multi_boxes[11:0];
+                layout_xmax <= I_target_motion_mode ?
+                    (I_target_xmax >= IMG_WIDTH ? IMG_WIDTH-1 : I_target_xmax) :
+                    (I_target_multi_boxes[23:12] >= IMG_WIDTH ?
+                        IMG_WIDTH-1 : I_target_multi_boxes[23:12]);
+                layout_ymin <= I_target_motion_mode ? I_target_ymin :
+                    I_target_multi_boxes[35:24];
+                layout_ymax <= I_target_motion_mode ?
+                    (I_target_ymax >= IMG_HEIGHT ? IMG_HEIGHT-1 : I_target_ymax) :
+                    (I_target_multi_boxes[47:36] >= IMG_HEIGHT ?
+                        IMG_HEIGHT-1 : I_target_multi_boxes[47:36]);
+                for (target_index=0; target_index<ACTIVE_TARGETS; target_index=target_index+1) begin
                     if (I_target_motion_mode) begin
                         valid[target_index] <= I_target_result_ready &&
                             I_target_found && target_index == 0 &&
@@ -653,10 +716,15 @@ module hdmi_mixer #(
                         label_y[layout_slot] <= candidate_y[11:0];
                     end
                     layout_attempt <= 5'd0;
-                    if (layout_slot == 3)
+                    if (layout_slot == ACTIVE_TARGETS-1)
                         layout_busy <= 1'b0;
-                    else
+                    else begin
                         layout_slot <= layout_slot+1'b1;
+                        layout_xmin <= xmin[layout_slot+2'd1];
+                        layout_xmax <= xmax[layout_slot+2'd1];
+                        layout_ymin <= ymin[layout_slot+2'd1];
+                        layout_ymax <= ymax[layout_slot+2'd1];
+                    end
                 end else
                     layout_attempt <= layout_attempt+1'b1;
             end
@@ -670,7 +738,7 @@ module hdmi_mixer #(
             label_local_x = 12'd0;
             label_local_y = 12'd0;
             label_char = " ";
-            for (render_index=3; render_index>=0; render_index=render_index-1) begin
+            for (render_index=ACTIVE_TARGETS-1; render_index>=0; render_index=render_index-1) begin
                 if (valid[render_index] && S_video_de_2d &&
                     S_x_2d >= xmin[render_index] && S_x_2d <= xmax[render_index] &&
                     S_y_2d >= ymin[render_index] && S_y_2d <= ymax[render_index] &&
@@ -740,6 +808,7 @@ module hdmi_mixer #(
         assign S_multi_overflow = 1'b0;
         assign S_multi_box_on = 1'b0;
         assign S_multi_box_color = 24'd0;
+        assign S_target_primary_shape = 2'd0;
         assign S_follow_panel_on = 1'b0;
         assign S_follow_color = 24'd0;
         assign S_follow_char = 8'h20;
@@ -760,7 +829,26 @@ module hdmi_mixer #(
     wire [15:0] S_target_char_bits;
     always @(*) begin
         S_target_char = 8'h20;
-        if (MULTI_TARGET_ENABLE != 0) begin
+        if (MULTI_TARGET_ENABLE != 0 && TARGET_SLOTS <= 1) begin
+            case (S_target_char_index)
+                0: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
+                1: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);
+                2: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,2);
+                3: S_target_char = ":";
+                4: S_target_char = S_target_found ? "F" : "N";
+                5: S_target_char = "O";
+                6: S_target_char = S_target_found ? "U" : "N";
+                7: S_target_char = S_target_found ? "N" : "E";
+                8: S_target_char = S_target_found ? "D" : " ";
+                10: S_target_char = S_target_found && !S_target_motion_mode ?
+                    F_target_shape_char(S_target_primary_shape,0) : " ";
+                11: S_target_char = S_target_found && !S_target_motion_mode ?
+                    F_target_shape_char(S_target_primary_shape,1) : " ";
+                12: S_target_char = S_target_found && !S_target_motion_mode ?
+                    F_target_shape_char(S_target_primary_shape,2) : " ";
+                default: S_target_char = " ";
+            endcase
+        end else if (MULTI_TARGET_ENABLE != 0) begin
             case (S_target_char_index)
                 0: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
                 1: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);
@@ -846,12 +934,13 @@ module hdmi_mixer #(
     localparam CNN_TEXT_Y = 16;
     wire S_cnn_panel_on = S_cnn_visible && S_video_de_2d &&
         (S_x_2d >= CNN_TEXT_X) &&
-        (S_x_2d < CNN_TEXT_X+(SHOW_RESNET_PROBE != 0 ? 320 : SHOW_RESNET_RUNTIME != 0 ? 256 : 192)) &&
+        (S_x_2d < CNN_TEXT_X+(SHOW_RESNET_PROBE != 0 ? 320 : SHOW_RESNET_RUNTIME != 0 ? 256 : FRUIT_CNN != 0 ? 208 : 192)) &&
         (S_y_2d >= CNN_TEXT_Y) && (S_y_2d < CNN_TEXT_Y+(SHOW_RESNET_RUNTIME != 0 ? 32 : 16));
     wire [11:0] S_cnn_text_x = S_x_2d - CNN_TEXT_X;
     wire [3:0] S_cnn_text_y = S_y_2d - CNN_TEXT_Y;
     wire [4:0] S_cnn_char_index = S_cnn_text_x[8:4];
     reg [7:0] S_cnn_char;
+    reg S_cnn_runtime_row_2d;
     reg [127:0] S_runtime_text;
     always @(*) begin
         if(I_resnet_probe_status[29]) S_runtime_text="DDR ERROR       ";
@@ -889,7 +978,8 @@ module hdmi_mixer #(
     wire S_cnn_roi_on=HANDCNN_DYNAMIC_ROI ? S_hand_roi_on : S_legacy_cnn_roi_on;
 
     // Fixed panels and all following labels share one character lookup.
-    osd_char_lib u_target_char_lib (
+    osd_char_rom_sync u_target_char_lib (
+        .I_clk(I_clk),
         .I_char(S_effect_panel_on ? S_effect_char :
                 S_cnn_panel_on ? S_cnn_char :
                 S_target_panel_on ? S_target_char : S_follow_char),
@@ -898,14 +988,9 @@ module hdmi_mixer #(
                S_target_panel_on ? S_target_text_y : S_follow_row),
         .O_row_bits(S_target_char_bits)
     );
-    wire S_target_text_on = S_target_panel_on &&
-        S_target_char_bits[15-S_target_text_x[3:0]];
-    wire S_effect_text_on = S_effect_panel_on &&
-        S_target_char_bits[15-S_effect_text_x[3:0]];
-    wire S_cnn_text_on = S_cnn_panel_on &&
-        S_target_char_bits[15-S_cnn_text_x[3:0]];
-    assign S_follow_text_on = S_follow_panel_on &&
-        S_target_char_bits[15-S_follow_col];
+    wire [3:0] S_font_col = S_effect_panel_on ? S_effect_text_x[3:0] :
+                           S_cnn_panel_on ? S_cnn_text_x[3:0] :
+                           S_target_panel_on ? S_target_text_x[3:0] : S_follow_col;
 
     always @(*) begin
         S_cnn_char = 8'h20;
@@ -955,6 +1040,27 @@ module hdmi_mixer #(
             11: S_cnn_char = S_cnn_class == 3'd1 ? "G" : " ";
             default: S_cnn_char = 8'h20;
         endcase
+        if (FRUIT_CNN != 0) begin
+            case (S_cnn_char_index)
+                0: S_cnn_char="F";
+                1: S_cnn_char="R";
+                2: S_cnn_char="U";
+                3: S_cnn_char="I";
+                4: S_cnn_char="T";
+                5: S_cnn_char=" ";
+                6,7,8,9,10,11,12: begin
+                    case (S_cnn_class)
+                        3'd2: S_cnn_char=F_fruit_char(56'h4150504c452020,S_cnn_char_index-6);
+                        3'd3: S_cnn_char=F_fruit_char(56'h42414e414e4120,S_cnn_char_index-6);
+                        3'd4: S_cnn_char=F_fruit_char(56'h47524150452020,S_cnn_char_index-6);
+                        3'd5: S_cnn_char=F_fruit_char(56'h4f52414e474520,S_cnn_char_index-6);
+                        3'd6: S_cnn_char=F_fruit_char(56'h53545241574252,S_cnn_char_index-6);
+                        default: S_cnn_char=F_fruit_char(56'h554e4b4e4f574e,S_cnn_char_index-6);
+                    endcase
+                end
+                default: S_cnn_char=" ";
+            endcase
+        end
         if (SHOW_RESNET_PROBE != 0) begin
             case (S_cnn_char_index)
                 0: S_cnn_char="R";
@@ -972,7 +1078,7 @@ module hdmi_mixer #(
                 default: S_cnn_char=" ";
             endcase
         end
-        if (SHOW_RESNET_RUNTIME != 0 && S_y_2d >= CNN_TEXT_Y+16) begin
+        if (SHOW_RESNET_RUNTIME != 0 && S_cnn_runtime_row_2d) begin
             S_cnn_char=S_runtime_text[127-S_cnn_char_index*8 -: 8];
             if(S_cnn_char_index==10 && I_resnet_probe_status[28])
                 S_cnn_char=F_probe_hex(I_resnet_probe_status[15:12]);
@@ -982,6 +1088,12 @@ module hdmi_mixer #(
             if(S_cnn_char_index==15) S_cnn_char=F_probe_hex(I_resnet_probe_status[3:0]);
         end
     end
+
+    function [7:0] F_fruit_char;
+        input [55:0] label;
+        input [4:0] position;
+        begin F_fruit_char=label[55-position*8 -: 8];end
+    endfunction
 
     function [7:0] F_probe_hex;
         input [3:0] nibble;
@@ -1512,12 +1624,16 @@ module hdmi_mixer #(
             S_x_2d <= 12'd0;
             S_y_1d <= 12'd0;
             S_y_2d <= 12'd0;
+            S_cnn_runtime_row_2d <= 1'b0;
         end
         else begin
             S_x_1d <= I_video_user ? 12'd0 : S_x;
             S_x_2d <= S_x_1d;
             S_y_1d <= I_video_user ? 12'd0 : S_y;
             S_y_2d <= S_y_1d;
+            // This predicate describes the same pixel as S_y_2d. Moving
+            // its comparison into stage one adds no video/output delay.
+            S_cnn_runtime_row_2d <= S_y_1d >= CNN_TEXT_Y+16;
         end
     end
 
@@ -1630,6 +1746,17 @@ module hdmi_mixer #(
         end
     end
 
+    // Put the pixel context on the same boundary as the synchronous font
+    // read. The last selection uses only that registered context and the ROM
+    // output, preserving the original RGB/control output cycle.
+    reg [23:0] S_rgb_next;
+    reg [23:0] S_font_color_next;
+    reg S_font_valid_next;
+    reg [23:0] S_output_base;
+    reg [23:0] S_output_font_color;
+    reg S_output_font_valid;
+    reg [3:0] S_output_font_col;
+
     always @(posedge I_clk or negedge I_rst_n) begin
         if(!I_rst_n) begin
             S_video_vsync_1d <= 1'b0;
@@ -1641,7 +1768,10 @@ module hdmi_mixer #(
             O_hdmi_vsync     <= 1'b0;
             O_hdmi_hsync     <= 1'b0;
             O_hdmi_de        <= 1'b0;
-            O_hdmi_data      <= 24'd0;
+            S_output_base       <= 24'd0;
+            S_output_font_color <= 24'd0;
+            S_output_font_valid <= 1'b0;
+            S_output_font_col   <= 4'd0;
         end
         else begin
             S_video_vsync_1d <= I_video_vsync;
@@ -1656,121 +1786,136 @@ module hdmi_mixer #(
             S_video_de_2d    <= S_video_de_1d;
             O_hdmi_de        <= S_video_de_2d;
 
-            if(DEBUG_MODE == 1) begin
-                if(S_video_de_2d) begin
-                    if(S_x < 12'd128)
-                        O_hdmi_data <= 24'hff0000;
-                    else if(S_x < 12'd256)
-                        O_hdmi_data <= 24'h00ff00;
-                    else if(S_x < 12'd384)
-                        O_hdmi_data <= 24'h0000ff;
-                    else if(S_x < 12'd512)
-                        O_hdmi_data <= 24'hffff00;
-                    else if(S_x < 12'd640)
-                        O_hdmi_data <= 24'h00ffff;
-                    else if(S_x < 12'd768)
-                        O_hdmi_data <= 24'hff00ff;
-                    else if(S_x < 12'd896)
-                        O_hdmi_data <= 24'hffffff;
-                    else
-                        O_hdmi_data <= 24'h202020;
-                end
-                else begin
-                    O_hdmi_data <= 24'd0;
-                end
-            end
-            else if(DEBUG_MODE == 2) begin
-                if(S_video_de_2d) begin
-                    case (I_debug_status)
-                        4'b0000: O_hdmi_data <= 24'h000000;
-                        4'b0001: O_hdmi_data <= 24'hff0000;
-                        4'b0011: O_hdmi_data <= 24'hffff00;
-                        4'b0111: O_hdmi_data <= 24'h00ff00;
-                        4'b1111: O_hdmi_data <= I_video_rd_data;
-                        default: O_hdmi_data <= 24'h0000ff;
-                    endcase
-                end
-                else begin
-                    O_hdmi_data <= 24'd0;
-                end
-            end
-            else if(DEBUG_MODE == 3) begin
-                if(S_video_de_2d) begin
-                    if(S_x < 12'd256)
-                        O_hdmi_data <= I_debug_status[0] ? 24'hff8000 : 24'h201000;
-                    else if(S_x < 12'd512)
-                        O_hdmi_data <= I_debug_status[1] ? 24'hffff00 : 24'h202000;
-                    else if(S_x < 12'd768)
-                        O_hdmi_data <= I_debug_status[2] ? 24'hff0000 : 24'h200000;
-                    else
-                        O_hdmi_data <= I_debug_status[3] ? 24'h00ffff : 24'h002020;
-                end
-                else begin
-                    O_hdmi_data <= 24'd0;
-                end
-            end
-            else begin
-                // Four 16x16 status blocks at (192,16), with 8-pixel gaps.
-                // Left to right: sensor ID, init, default AE/AG ACKed, no NACK.
-                // This overlay does not change the camera pixels elsewhere.
-                if(SHOW_CAMERA_STATUS && S_video_de_2d &&
-                   (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
-                   (S_x_2d >= 12'd192) && (S_x_2d < 12'd208))
-                    O_hdmi_data <= I_debug_status[0] ? 24'h00ff00 : 24'hff0000;
-                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
-                        (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
-                        (S_x_2d >= 12'd216) && (S_x_2d < 12'd232))
-                    O_hdmi_data <= I_debug_status[1] ? 24'h00ff00 : 24'hff0000;
-                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
-                        (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
-                        (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
-                    O_hdmi_data <= I_debug_status[2] ? 24'h00ff00 : 24'hff0000;
-                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
-                        (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
-                        (S_x_2d >= 12'd264) && (S_x_2d < 12'd280))
-                    O_hdmi_data <= I_debug_status[3] ? 24'h00ff00 : 24'hff0000;
-                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
-                        I_debug_status[0] && !I_debug_status[3] &&
-                        (S_y_2d >= 12'd40) && (S_y_2d < 12'd64) &&
-                        (S_x_2d >= 12'd216) && (S_x_2d < 12'd232))
-                    O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[7:4],
-                        S_x_2d - 12'd216, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
-                else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
-                        I_debug_status[0] && !I_debug_status[3] &&
-                        (S_y_2d >= 12'd40) && (S_y_2d < 12'd64) &&
-                        (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
-                    O_hdmi_data <= F_fail_digit_on(I_cam_fail_index[3:0],
-                        S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
-                else if(S_effect_panel_on)
-                    O_hdmi_data <= S_effect_text_on ? 24'h00e6ff : 24'h101010;
-                else if(S_cnn_panel_on)
-                    O_hdmi_data <= S_cnn_text_on ? 24'h40ff80 : 24'h101010;
-                else if(S_latency_panel)
-                    O_hdmi_data <= S_latency_text ?
-                        (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
-                else if(S_raw_panel)
-                    O_hdmi_data <= S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
-                else if(S_osd_hit)
-                    O_hdmi_data <= S_osd_color;
-                else if(S_target_panel_on)
-                    O_hdmi_data <= S_target_text_on ? 24'hfff200 : 24'h101010;
-                else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_follow_panel_on)
-                    O_hdmi_data <= S_follow_text_on ? S_follow_color : 24'h101010;
-                else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_multi_box_on)
-                    O_hdmi_data <= S_multi_box_color;
-                else if((MULTI_TARGET_ENABLE == 0) &&
-                        SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_box_on)
-                    O_hdmi_data <= 24'hff3030;
-                else if(((MULTI_TARGET_ENABLE == 0) ||
-                        (S_target_motion_mode && S_multi_count != 0)) &&
-                        SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_cross_on)
-                    O_hdmi_data <= 24'hfff200;
-                else if(S_cnn_roi_on)
-                    O_hdmi_data <= 24'h40ff80;
-                else
-                    O_hdmi_data <= S_video_data_2d;
-            end
+            S_output_base       <= S_rgb_next;
+            S_output_font_color <= S_font_color_next;
+            S_output_font_valid <= S_font_valid_next;
+            S_output_font_col   <= S_font_col;
         end
+    end
+
+    always @(*) begin
+        S_rgb_next = S_video_data_2d;
+        S_font_color_next = 24'd0;
+        S_font_valid_next = 1'b0;
+        if(DEBUG_MODE == 1) begin
+            if(S_video_de_2d) begin
+                if(S_x < 12'd128)
+                    S_rgb_next = 24'hff0000;
+                else if(S_x < 12'd256)
+                    S_rgb_next = 24'h00ff00;
+                else if(S_x < 12'd384)
+                    S_rgb_next = 24'h0000ff;
+                else if(S_x < 12'd512)
+                    S_rgb_next = 24'hffff00;
+                else if(S_x < 12'd640)
+                    S_rgb_next = 24'h00ffff;
+                else if(S_x < 12'd768)
+                    S_rgb_next = 24'hff00ff;
+                else if(S_x < 12'd896)
+                    S_rgb_next = 24'hffffff;
+                else
+                    S_rgb_next = 24'h202020;
+            end else begin
+                S_rgb_next = 24'd0;
+            end
+        end else if(DEBUG_MODE == 2) begin
+            if(S_video_de_2d) begin
+                case (I_debug_status)
+                    4'b0000: S_rgb_next = 24'h000000;
+                    4'b0001: S_rgb_next = 24'hff0000;
+                    4'b0011: S_rgb_next = 24'hffff00;
+                    4'b0111: S_rgb_next = 24'h00ff00;
+                    4'b1111: S_rgb_next = I_video_rd_data;
+                    default: S_rgb_next = 24'h0000ff;
+                endcase
+            end else begin
+                S_rgb_next = 24'd0;
+            end
+        end else if(DEBUG_MODE == 3) begin
+            if(S_video_de_2d) begin
+                if(S_x < 12'd256)
+                    S_rgb_next = I_debug_status[0] ? 24'hff8000 : 24'h201000;
+                else if(S_x < 12'd512)
+                    S_rgb_next = I_debug_status[1] ? 24'hffff00 : 24'h202000;
+                else if(S_x < 12'd768)
+                    S_rgb_next = I_debug_status[2] ? 24'hff0000 : 24'h200000;
+                else
+                    S_rgb_next = I_debug_status[3] ? 24'h00ffff : 24'h002020;
+            end else begin
+                S_rgb_next = 24'd0;
+            end
+        end else begin
+            // Four 16x16 status blocks at (192,16), with 8-pixel gaps.
+            // Keep the existing priority over the opaque font panels.
+            if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+               (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+               (S_x_2d >= 12'd192) && (S_x_2d < 12'd208))
+                S_rgb_next = I_debug_status[0] ? 24'h00ff00 : 24'hff0000;
+            else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                    (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                    (S_x_2d >= 12'd216) && (S_x_2d < 12'd232))
+                S_rgb_next = I_debug_status[1] ? 24'h00ff00 : 24'hff0000;
+            else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                    (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                    (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
+                S_rgb_next = I_debug_status[2] ? 24'h00ff00 : 24'hff0000;
+            else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                    (S_y_2d >= 12'd16) && (S_y_2d < 12'd32) &&
+                    (S_x_2d >= 12'd264) && (S_x_2d < 12'd280))
+                S_rgb_next = I_debug_status[3] ? 24'h00ff00 : 24'hff0000;
+            else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                    I_debug_status[0] && !I_debug_status[3] &&
+                    (S_y_2d >= 12'd40) && (S_y_2d < 12'd64) &&
+                    (S_x_2d >= 12'd216) && (S_x_2d < 12'd232))
+                S_rgb_next = F_fail_digit_on(I_cam_fail_index[7:4],
+                    S_x_2d - 12'd216, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
+            else if(SHOW_CAMERA_STATUS && S_video_de_2d &&
+                    I_debug_status[0] && !I_debug_status[3] &&
+                    (S_y_2d >= 12'd40) && (S_y_2d < 12'd64) &&
+                    (S_x_2d >= 12'd240) && (S_x_2d < 12'd256))
+                S_rgb_next = F_fail_digit_on(I_cam_fail_index[3:0],
+                    S_x_2d - 12'd240, S_y_2d - 12'd40) ? 24'hfff200 : 24'h101010;
+            else if(S_effect_panel_on) begin
+                S_rgb_next = 24'h101010;
+                S_font_valid_next = 1'b1;
+                S_font_color_next = 24'h00e6ff;
+            end else if(S_cnn_panel_on) begin
+                S_rgb_next = 24'h101010;
+                S_font_valid_next = 1'b1;
+                S_font_color_next = 24'h40ff80;
+            end else if(S_latency_panel)
+                S_rgb_next = S_latency_text ?
+                    (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
+            else if(S_raw_panel)
+                S_rgb_next = S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
+            else if(S_osd_hit)
+                S_rgb_next = S_osd_color;
+            else if(S_target_panel_on) begin
+                S_rgb_next = 24'h101010;
+                S_font_valid_next = 1'b1;
+                S_font_color_next = 24'hfff200;
+            end else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_follow_panel_on) begin
+                S_rgb_next = 24'h101010;
+                S_font_valid_next = 1'b1;
+                S_font_color_next = S_follow_color;
+            end else if(SHOW_COLOR_TARGET && !S_cnn_visible && S_multi_box_on)
+                S_rgb_next = S_multi_box_color;
+            else if((MULTI_TARGET_ENABLE == 0) &&
+                    SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_box_on)
+                S_rgb_next = 24'hff3030;
+            else if(((MULTI_TARGET_ENABLE == 0) ||
+                    (S_target_motion_mode && S_multi_count != 0)) &&
+                    SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_cross_on)
+                S_rgb_next = 24'hfff200;
+            else if(S_cnn_roi_on)
+                S_rgb_next = 24'h40ff80;
+        end
+    end
+
+    always @(*) begin
+        O_hdmi_data = S_output_base;
+        if (S_output_font_valid && S_target_char_bits[15-S_output_font_col])
+            O_hdmi_data = S_output_font_color;
     end
 
 endmodule

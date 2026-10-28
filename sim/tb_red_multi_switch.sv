@@ -1,5 +1,8 @@
 `timescale 1ns/1ps
-module tb_red_multi_switch;
+module tb_red_multi_switch #(
+    parameter integer CANDIDATE_SLOTS=8,
+    parameter integer MAX_TARGETS=3
+);
     localparam integer W=256, H=128, GROUPS=W/4;
     reg clk=0, rst_n=0, request_motion=0, user=0, last=0, valid=0;
     reg [95:0] data=0;
@@ -10,6 +13,7 @@ module tb_red_multi_switch;
     wire [23:0] pixels;
     wire [3:0] multi_valid,multi_hold;
     wire [191:0] boxes;
+    wire [7:0] shapes;
     always #5 clk=~clk;
     target_detect_switch_96 #(
         .IMG_WIDTH(W), .IMG_HEIGHT(H), .RED_MIN_PIXELS(32),
@@ -24,8 +28,10 @@ module tb_red_multi_switch;
         .O_frame_toggle(toggle), .O_target_motion_mode(result_motion),
         .O_motion_mode_active(active_motion), .O_result_frame_id(result_id),
         .O_multi_valid(multi_valid), .O_multi_hold(multi_hold), .O_multi_boxes(boxes),
-        .O_multi_shapes(), .O_multi_overflow(overflow)
+        .O_multi_shapes(shapes), .O_multi_overflow(overflow)
     );
+    defparam dut.u_red.CANDIDATE_SLOTS=CANDIDATE_SLOTS;
+    defparam dut.u_red.MAX_TARGETS=MAX_TARGETS;
     reg seen [0:127], seen_mode [0:127], seen_found [0:127];
     reg [3:0] seen_multi [0:127], seen_hold [0:127];
     reg [191:0] seen_boxes [0:127];
@@ -57,6 +63,15 @@ module tb_red_multi_switch;
             if (toggle !== !previous_toggle)
                 $fatal(1,"Output toggle did not follow each completion");
             if (overflow) $fatal(1,"Ordinary switch case overflowed %0d",result_id);
+            if (!forcing && !result_motion) begin
+                if (pop4(multi_valid) > MAX_TARGETS)
+                    $fatal(1,"Real detector exceeded target capacity %0d",result_id);
+                for(integer lane=MAX_TARGETS;lane<4;lane=lane+1)
+                    if(multi_valid[lane] !== 1'b0 || multi_hold[lane] !== 1'b0 ||
+                       boxes[lane*48+:48] !== 48'd0 || shapes[lane*2+:2] !== 2'd0)
+                        $fatal(1,"Inactive real target lane retained metadata id=%0d lane=%0d",
+                            result_id,lane);
+            end
             previous_toggle=toggle;
             seen[result_id]=1; seen_mode[result_id]=result_motion;
             seen_found[result_id]=found; seen_multi[result_id]=multi_valid;
@@ -90,6 +105,32 @@ module tb_red_multi_switch;
             for(c=0;c<cycles;c=c+1) begin
                 @(negedge clk); user=0; valid=0; last=0; data=0;
             end
+        end
+    endtask
+    task expect_scene_boxes;
+        input integer id;
+        integer slot,object_index,matched_objects,object_bit;
+        reg [47:0] observed_box;
+        begin
+            matched_objects=0;
+            for(slot=0;slot<MAX_TARGETS;slot=slot+1) begin
+                if(!seen_multi[id][slot])
+                    $fatal(1,"Real target slot was empty id=%0d slot=%0d",id,slot);
+                observed_box=seen_boxes[id][slot*48+:48];
+                object_index=-1;
+                if(observed_box === {12'd35,12'd16,12'd39,12'd16}) object_index=0;
+                if(observed_box === {12'd35,12'd16,12'd119,12'd96}) object_index=1;
+                if(observed_box === {12'd99,12'd80,12'd39,12'd16}) object_index=2;
+                if(observed_box === {12'd99,12'd80,12'd199,12'd176}) object_index=3;
+                if(object_index<0)
+                    $fatal(1,"Real target geometry changed id=%0d slot=%0d box=%h",
+                        id,slot,observed_box);
+                object_bit=1<<object_index;
+                if((matched_objects & object_bit)!=0)
+                    $fatal(1,"Real target duplicated object id=%0d object=%0d",id,object_index);
+                matched_objects=matched_objects|object_bit;
+            end
+            checks=checks+MAX_TARGETS;
         end
     endtask
     task reset_dut;
@@ -132,7 +173,7 @@ module tb_red_multi_switch;
         integer c;
         begin
             c=0;
-            while(!seen[id] && c<2000) begin @(negedge clk); c=c+1; end
+            while(!seen[id] && c<2000+600*MAX_TARGETS) begin @(negedge clk); c=c+1; end
             if(!seen[id] || seen_mode[id] !== mode[0] || pop4(seen_multi[id]) != count)
                 $fatal(1,"Missing/mistagged switch result %0d seen=%b mode=%b multi=%b expected=%0d/%0d",
                     id,seen[id],seen_mode[id],seen_multi[id],mode,count);
@@ -176,6 +217,9 @@ module tb_red_multi_switch;
     endtask
 
     initial begin
+        if ((MAX_TARGETS != 3 && MAX_TARGETS != 4) ||
+            (CANDIDATE_SLOTS != 8 && CANDIDATE_SLOTS != 16))
+            $fatal(1,"Test requires MAX_TARGETS=3/4 and CANDIDATE_SLOTS=8/16");
         for(n=0;n<128;n=n+1) begin
             seen[n]=0; seen_mode[n]=0; seen_multi[n]=0; seen_found[n]=0; seen_hold[n]=0;
             seen_boxes[n]=0; seen_pixels[n]=0; seen_xmin[n]=0;
@@ -185,7 +229,9 @@ module tb_red_multi_switch;
         send_frame(1,0,0,0);
         send_frame(2,0,0,0);
         send_frame(3,0,0,0);
-        expect_result(1,0,0); expect_result(2,0,4); expect_result(3,0,4);
+        expect_result(1,0,0);
+        expect_result(2,0,MAX_TARGETS); expect_result(3,0,MAX_TARGETS);
+        expect_scene_boxes(2); expect_scene_boxes(3);
         if(result_cycle[1] <= sof_cycle[2] || result_cycle[2] <= sof_cycle[3])
             $fatal(1,"Red pipeline did not cross the following SOF");
         cross_sof=cross_sof+2;
@@ -196,7 +242,8 @@ module tb_red_multi_switch;
         send_frame(10,0,1,0);
         send_frame(11,0,0,0);
         expect_result(10,1,0); expect_result(11,0,0);
-        send_frame(12,0,0,0); expect_result(12,0,4);
+        send_frame(12,0,0,0); expect_result(12,0,MAX_TARGETS);
+        expect_scene_boxes(12);
         if(result_cycle[10] <= sof_cycle[11])
             $fatal(1,"Motion pipeline did not cross next SOF");
         cross_sof=cross_sof+1;
@@ -241,11 +288,16 @@ module tb_red_multi_switch;
 
         marker(42,0); marker(43,1);
         @(negedge clk);
+        inject_valid=4'b1000;
+        inject_boxes=192'b0;
+        inject_boxes[191:144]={12'd49,12'd20,12'd79,12'd50};
         inject_red_id=42; inject_motion_id=43; inject_pixels=24'd2240;
         inject_red=1; inject_motion=1;
         @(negedge clk); inject_red=0; inject_motion=0;
         expect_result(42,0,1); expect_result(43,1,0);
-        if(seen_pixels[43] != 2240) $fatal(1,"Second collision changed motion payload");
+        if(seen_pixels[43] != 2240 || seen_multi[42] !== 4'b1000 ||
+           seen_xmin[42] != 50 || result_cycle[43] != result_cycle[42]+1)
+            $fatal(1,"Second collision changed motion payload or fourth-lane ABI");
         end_forcing();
 
         // Exercise the real stabilizer with raw completions in adjacent
@@ -279,8 +331,8 @@ module tb_red_multi_switch;
         release dut.raw_motion_pixels; release dut.gen_multi_result.completion_id;
         forcing=0;
         blank(30);
-        $display("RED_MULTI_SWITCH_PASS results=%0d checks=%0d cross_sof=%0d real_raw=%0d",
-            results,checks,cross_sof,queued_raw);
+        $display("RED_MULTI_SWITCH_PASS candidates=%0d targets=%0d results=%0d checks=%0d cross_sof=%0d real_raw=%0d",
+            CANDIDATE_SLOTS,MAX_TARGETS,results,checks,cross_sof,queued_raw);
         $finish;
     end
     initial begin #10000000; $fatal(1,"Multi switch watchdog"); end

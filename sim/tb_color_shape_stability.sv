@@ -1,6 +1,11 @@
 `timescale 1ns/1ps
-module tb_color_shape_stability;
+module tb_color_shape_stability #(
+    parameter integer CANDIDATE_SLOTS=8,
+    parameter integer MAX_TARGETS=3
+);
     localparam integer W=256,H=160,GROUPS=W/4;
+    localparam [3:0] TARGET_MASK=(1<<MAX_TARGETS)-1;
+    localparam [7:0] SHAPE_MASK=(1<<(2*MAX_TARGETS))-1;
     reg clk=0,rst_n=0,user=0,valid=0,last=0;
     reg [95:0] data=0;
     reg [9:0] frame_id=0;
@@ -29,6 +34,8 @@ module tb_color_shape_stability;
         .O_multi_valid(found),.O_multi_hold(held),.O_multi_boxes(boxes),
         .O_multi_shapes(shapes),.O_mask_pixels(),.O_multi_overflow(overflow)
     );
+    defparam dut.u_red.CANDIDATE_SLOTS=CANDIDATE_SLOTS;
+    defparam dut.u_red.MAX_TARGETS=MAX_TARGETS;
 
     // Use real RGB masks, geometry, candidate ranking, frame IDs and tracking.
     // Replace only the shared descriptor's final class to create repeatable
@@ -55,6 +62,7 @@ module tb_color_shape_stability;
     reg [7:0] idle_shapes;
     reg [3:0] idle_found,idle_held;
     integer idle_results;
+    integer unused_slot;
 
     always @(posedge clk) begin
         #1;
@@ -64,6 +72,11 @@ module tb_color_shape_stability;
            dut.u_red.gen_multi.u_engine.fifo_count<62)
             saw_capacity_error=1;
         if(rst_n && ready) begin
+            for(unused_slot=MAX_TARGETS;unused_slot<4;unused_slot=unused_slot+1)
+                if(found[unused_slot]!==0 || held[unused_slot]!==0 ||
+                   shapes[unused_slot*2+:2]!==0 || boxes[unused_slot*48+:48]!==0)
+                    $fatal(1,"Unused temporal lane is not zero lane=%0d frame=%0d",
+                        unused_slot,result_id);
             if(seen[result_id])
                 $fatal(1,"Duplicate temporal result frame=%0d",result_id);
             seen[result_id]=1;
@@ -104,7 +117,7 @@ module tb_color_shape_stability;
                 2: rgb=24'h2020f0;
                 default: rgb=24'hf02020;
             endcase
-            for(i=0;i<4;i=i+1)
+            for(i=0;i<MAX_TARGETS;i=i+1)
                 if(present[i]) begin
                     left=i%2==0 ? 16 : 160;
                     top=i<2 ? 16 : 104;
@@ -187,11 +200,13 @@ module tb_color_shape_stability;
                         $fatal(1,"Matched object changed slot frame=%0d object=%0d",id,logical_object);
                 end
             end
-            if(actual_valid!==expected_valid || actual_held!==expected_held ||
-               actual_shapes!==expected_shapes)
+            if(actual_valid!==(expected_valid & TARGET_MASK) ||
+               actual_held!==(expected_held & TARGET_MASK) ||
+               actual_shapes!==(expected_shapes & SHAPE_MASK))
                 $fatal(1,"Temporal mismatch frame=%0d actual=%h/%h/%h expected=%h/%h/%h %0s",
                     id,actual_valid,actual_held,actual_shapes,
-                    expected_valid,expected_held,expected_shapes,description);
+                    expected_valid & TARGET_MASK,expected_held & TARGET_MASK,
+                    expected_shapes & SHAPE_MASK,description);
             previous_valid=actual_valid;
             for(i=0;i<4;i=i+1) previous_slots[i]=object_slots[i];
             checks=checks+1;
@@ -210,14 +225,15 @@ module tb_color_shape_stability;
             check_result(next_id,expected_valid,expected_held,expected_shapes,0,
                 requested_mode,description);
             $display("COLOR_SHAPE_STABILITY_STEP frame=%0d raw=%h valid=%h held=%h shapes=%h %0s",
-                next_id,raw_shapes,expected_valid,expected_held,expected_shapes,description);
+                next_id,raw_shapes,expected_valid & TARGET_MASK,
+                expected_held & TARGET_MASK,expected_shapes & SHAPE_MASK,description);
             next_id=next_id+1; steps=steps+1;
         end
     endtask
     task assert_class_state_clear;
         integer i;
         begin
-            for(i=0;i<4;i=i+1)
+            for(i=0;i<MAX_TARGETS;i=i+1)
                 if(dut.u_red.gen_multi.u_engine.track_shape[i]!==0 ||
                    dut.u_red.gen_multi.u_engine.track_pending_shape[i]!==0 ||
                    dut.u_red.gen_multi.u_engine.track_shape_hits[i]!==0 ||
@@ -248,10 +264,10 @@ module tb_color_shape_stability;
     endtask
     task clock_gap;
         integer i;
-        reg [7:0] saved_state [0:3];
+        reg [7:0] saved_state [0:MAX_TARGETS-1];
         begin
             idle_shapes=shapes; idle_found=found; idle_held=held; idle_results=results;
-            for(i=0;i<4;i=i+1)
+            for(i=0;i<MAX_TARGETS;i=i+1)
                 saved_state[i]={
                     dut.u_red.gen_multi.u_engine.track_shape[i],
                     dut.u_red.gen_multi.u_engine.track_pending_shape[i],
@@ -261,7 +277,7 @@ module tb_color_shape_stability;
             if(shapes!==idle_shapes || found!==idle_found ||
                held!==idle_held || results!=idle_results)
                 $fatal(1,"Idle clocks changed a published shape result");
-            for(i=0;i<4;i=i+1)
+            for(i=0;i<MAX_TARGETS;i=i+1)
                 if(saved_state[i]!=={
                     dut.u_red.gen_multi.u_engine.track_shape[i],
                     dut.u_red.gen_multi.u_engine.track_pending_shape[i],
@@ -280,7 +296,7 @@ module tb_color_shape_stability;
         for(n=0;n<4;n=n+1) previous_slots[n]=-1;
         blank(4); @(negedge clk); rst_n=1;
 
-        step(4'hf,8'h55,0,0,0,"first detection seeds four labels");
+        step(4'hf,8'h55,0,0,0,"first detection seeds labels");
         step(4'hf,8'h55,4'hf,0,8'h55,"second frame confirms immediately");
         raw_shapes=8'hff; clock_gap();
         step(4'hf,8'hff,4'hf,0,8'h55,"first different class retains SQR");
@@ -306,7 +322,7 @@ module tb_color_shape_stability;
         step(4'hf,8'h55,4'hf,0,0,"new consecutive SQR first");
         step(4'hf,8'h55,4'hf,0,8'h55,"new consecutive SQR second");
 
-        step(4'hf,8'h4b,4'hf,0,8'h55,"four independent class votes");
+        step(4'hf,8'h4b,4'hf,0,8'h55,"independent class votes");
         step(4'hd,8'h4b,4'hf,4'h2,8'h57,"miss interrupts only track one");
         step(4'hf,8'h4b,4'hf,0,8'h43,"mixed miss and UNK expire labels");
         step(4'hf,8'h4b,4'hf,0,8'h4b,"track one reconfirms TRI");
@@ -341,10 +357,11 @@ module tb_color_shape_stability;
         step(4'hf,8'h55,4'hf,0,8'h55,"abort cancels previous CIR state");
         aborts=aborts+1;
 
-        // Eighteen live components with large blanking exhaust candidate
-        // slots independently of FIFO backpressure.
+        // One excess live component exhausts candidate slots independently
+        // of FIFO backpressure.
         draw(0); raw_shapes=8'hff;
-        for(n=0;n<18;n=n+1) rectangle(2+14*n,9+14*n,10,25,24'hf02020);
+        for(n=0;n<CANDIDATE_SLOTS+1;n=n+1)
+            rectangle(2+14*n,9+14*n,10,25,24'hf02020);
         capacity_id=next_id; previous_valid=0;
         send_frame(next_id,H,1024);
         check_result(next_id,0,0,0,1,0,"live-candidate capacity error");
@@ -381,8 +398,9 @@ module tb_color_shape_stability;
         if(mode_switches!=4 || explicit_clears!=2 || aborts!=1 ||
            overflows!=1 || illegal_states!=1)
             $fatal(1,"Incomplete temporal recovery coverage");
-        $display("COLOR_SHAPE_STABILITY_PASS results=%0d checks=%0d steps=%0d tracks=4 mode_switches=%0d explicit_clears=%0d aborts=%0d overflows=%0d illegal_states=%0d",
-            results,checks,steps,mode_switches,explicit_clears,aborts,overflows,illegal_states);
+        $display("COLOR_SHAPE_STABILITY_PASS results=%0d checks=%0d steps=%0d tracks=%0d candidates=%0d mode_switches=%0d explicit_clears=%0d aborts=%0d overflows=%0d illegal_states=%0d",
+            results,checks,steps,MAX_TARGETS,CANDIDATE_SLOTS,
+            mode_switches,explicit_clears,aborts,overflows,illegal_states);
         $finish;
     end
     initial begin #200000000; $fatal(1,"Shape temporal regression watchdog"); end

@@ -11,7 +11,6 @@ module video_latency_osd #(
     output reg O_panel, O_text, O_alert
 );
     reg display_valid, current_overflow;
-    reg [19:0] convert_isp, convert_buffer;
     reg [23:0] bcd_total, bcd_isp, bcd_buffer;
     reg busy;
     reg [1:0] field;
@@ -38,7 +37,6 @@ module video_latency_osd #(
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             display_valid<=0; current_overflow<=0;
-            convert_isp<=0; convert_buffer<=0;
             bcd_total<=0; bcd_isp<=0; bcd_buffer<=0;
             busy<=0; field<=0; step<=0; bcd_work<=0;
         end else if (I_sample_strobe) begin
@@ -48,8 +46,6 @@ module video_latency_osd #(
             busy<=I_sample_valid;
             field<=0; step<=0;
             if (I_sample_valid) begin
-                convert_isp<=I_isp_us;
-                convert_buffer<=I_buffer_us;
                 bcd_work<={24'd0,text_value(I_total_us)};
             end
         end else if (busy) begin
@@ -60,12 +56,12 @@ module video_latency_osd #(
                 case (field)
                     0: begin
                         bcd_total<=bcd_shifted[43:20];
-                        bcd_work<={24'd0,text_value(convert_isp)};
+                        bcd_work<={24'd0,text_value(I_isp_us)};
                         field<=1;
                     end
                     1: begin
                         bcd_isp<=bcd_shifted[43:20];
-                        bcd_work<={24'd0,text_value(convert_buffer)};
+                        bcd_work<={24'd0,text_value(I_buffer_us)};
                         field<=2;
                     end
                     default: begin

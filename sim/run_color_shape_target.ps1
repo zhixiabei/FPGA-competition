@@ -3,6 +3,10 @@ param(
     [string] $Mode = 'Portable',
     [int] $Width = 320,
     [int] $Height = 240,
+    [ValidateSet(8, 16)]
+    [int] $CandidateSlots = 8,
+    [ValidateRange(3, 4)]
+    [int] $MaxTargets = 3,
     [int] $TimeoutSeconds = 180,
     [string] $RtlSource = '',
     [switch] $GeometryProbeOnly,
@@ -60,7 +64,7 @@ onbreak {resume}
 if {[file exists work]} {vdel -all -lib work}
 vlib work
 vlog -sv $compileOptions red_target_detect_96.v tb_color_shape_target.sv $vendorSources
-vsim -t ps -gW=$Width -gH=$Height -gGEOMETRY_PROBE_ONLY=$probeMode work.tb_color_shape_target $vendorTop
+vsim -t ps -gW=$Width -gH=$Height -gCANDIDATE_SLOTS=$CandidateSlots -gMAX_TARGETS=$MaxTargets -gGEOMETRY_PROBE_ONLY=$probeMode work.tb_color_shape_target $vendorTop
 run -all
 quit -code 0 -force
 "@

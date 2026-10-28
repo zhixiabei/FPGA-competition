@@ -21,6 +21,10 @@ set_pin_assignment { I_latency_switch } { LOCATION = A4; IOSTANDARD = LVCMOS33; 
 set_pin_assignment { I_fruit_switch } { LOCATION = B4; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
 set_pin_assignment { I_param_key_n } { LOCATION = C7; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 
+# On-board USB-UART used by the optional CNN model loader/status link.
+set_pin_assignment { I_resnet_uart_rx } { LOCATION = J1; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { O_resnet_uart_tx } { LOCATION = H1; IOSTANDARD = LVCMOS33; }
+
 set_pin_assignment	{ O_screen_pwm } 		{ LOCATION = R11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLDOWN; }
 set_pin_assignment	{ O_tmds_ch0_p }		{ LOCATION = G16; IOSTANDARD = TMDS33; PULLTYPE = NONE; }
 set_pin_assignment	{ O_tmds_ch1_p }		{ LOCATION = F17; IOSTANDARD = TMDS33; PULLTYPE = NONE; }
