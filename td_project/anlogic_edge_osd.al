@@ -11,6 +11,54 @@
     </HardWare>
     <Source_Files>
         <Verilog>
+            <File Path="../user_source/hdl_source/checkout/checkout_display.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="94"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/checkout/checkout_divider.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="95"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/checkout/checkout_key.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="96"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/checkout/checkout_scale_core.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="97"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/checkout/fruit_checkout.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="98"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/checkout/hx711_reader.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="99"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/target_frame_bridge.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>

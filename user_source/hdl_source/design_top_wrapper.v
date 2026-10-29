@@ -15,6 +15,10 @@ module design_top_wrapper #(
     input wire        I_rst_n,
     input wire        I_resnet_uart_rx,
     output wire       O_resnet_uart_tx,
+    input wire        I_hx711_dout,
+    output wire       O_hx711_sck,
+    output wire [7:0] O_seg_n,
+    output wire [7:0] O_seg_sel_n,
     input wire        I_fruit_switch, // Board SW2 (B4), high runs fruit recognition.
       
     output wire       O_cam_scl,
@@ -25,7 +29,7 @@ module design_top_wrapper #(
     inout wire [1:0]  I_button,
     input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
-    input wire        I_effect_key_n, // Board K3 (B9), reserved.
+    input wire        I_effect_key_n, // Board K3 (B9), effect select or scale calibration.
     input wire        I_latency_switch, // Board SW1 (A4), high to show latency panel.
     input wire        I_param_key_n, // Board K4 (C7), reserved.
 
@@ -752,7 +756,7 @@ module design_top_wrapper #(
     ) u_detection_mode_control (
         .I_clk(I_sys_clk),
         .I_rst_n(S_rst_n),
-        .I_key_n(I_detect_key_n),
+        .I_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? 1'b1 : I_detect_key_n),
         .O_detection_mode(S_detection_mode_requested),
         .O_edge_mode()
     );
@@ -1213,6 +1217,13 @@ generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
     wire [11:0] x1,y1,x2,y2;
     wire [15:0] result_frame;
     wire [31:0] probe_status;
+    checkout_scale_core #(.CLK_HZ(66666667),.CALIBRATION_GRAMS(227)) u_checkout(
+        .clk(S_ddr_clk),.rst_n(S_rst_n),.hx711_dout(I_hx711_dout),
+        .tare_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_detect_key_n : 1'b1),
+        .cal_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_effect_key_n : 1'b1),
+        .hx711_sck(O_hx711_sck),.fruit_valid(result_valid),.fruit_class(result_class),
+        .weight_g(),.weight_valid(),.status(),.raw_adc(),.sample_count(),
+        .seg_n(O_seg_n),.sel_n(O_seg_sel_n));
     fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),
         .SWITCH_CONTROL(FRUIT_SWITCH_CONTROL)) u_handcnn(
         .key4_n(I_param_key_n),.run_switch(I_fruit_switch),
@@ -1245,6 +1256,13 @@ generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
     assign S_cnn_class_hdmi=result_hdmi[51:49];
     assign S_cnn_result_valid_hdmi=result_hdmi!=result_seen;
 end else begin: recognition_disabled
+    checkout_scale_core #(.CLK_HZ(66666667),.CALIBRATION_GRAMS(227)) u_checkout(
+        .clk(S_ddr_clk),.rst_n(S_rst_n),.hx711_dout(I_hx711_dout),
+        .tare_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_detect_key_n : 1'b1),
+        .cal_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_effect_key_n : 1'b1),
+        .hx711_sck(O_hx711_sck),.fruit_valid(1'b0),.fruit_class(3'd1),
+        .weight_g(),.weight_valid(),.status(),.raw_adc(),.sample_count(),
+        .seg_n(O_seg_n),.sel_n(O_seg_sel_n));
     assign S_cnn_result_valid_hdmi=0;
     assign S_cnn_class_hdmi=3'd1;
     assign S_hand_box_hdmi=0;

@@ -4,6 +4,10 @@ module sc520_capture_top (
     input wire        I_rst_n,
     input wire        I_resnet_uart_rx, // Shared board UART pin; video-only mode ignores RX.
     output wire       O_resnet_uart_tx,
+    input wire        I_hx711_dout,
+    output wire       O_hx711_sck,
+    output wire [7:0] O_seg_n,
+    output wire [7:0] O_seg_sel_n,
       
     output wire       O_cam_scl,
     inout  wire       IO_cam_sda,
@@ -49,6 +53,10 @@ module sc520_capture_top (
         .I_rst_n(I_rst_n),
         .I_resnet_uart_rx(I_resnet_uart_rx),
         .O_resnet_uart_tx(O_resnet_uart_tx),
+        .I_hx711_dout(I_hx711_dout),
+        .O_hx711_sck(O_hx711_sck),
+        .O_seg_n(O_seg_n),
+        .O_seg_sel_n(O_seg_sel_n),
         .O_cam_scl(O_cam_scl),
         .IO_cam_sda(IO_cam_sda),
         .O_cam_24m(O_cam_24m),

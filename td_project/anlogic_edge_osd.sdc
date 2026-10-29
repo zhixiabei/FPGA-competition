@@ -92,3 +92,7 @@ set_false_path -from [get_ports {I_param_key_n I_fruit_switch}] -to [get_regs -n
 set_false_path -from [get_regs -nowarn {*u_status_cdc/req_toggle *u_hand_box_cdc/req_toggle}] -to [get_regs -nowarn {*u_status_cdc/req_meta *u_hand_box_cdc/req_meta}]
 set_false_path -from [get_regs -nowarn {*u_status_cdc/ack_toggle *u_hand_box_cdc/ack_toggle}] -to [get_regs -nowarn {*u_status_cdc/ack_meta *u_hand_box_cdc/ack_meta}]
 set_max_delay -datapath_only -from [get_regs -nowarn {*u_status_cdc/payload_hold[*] *u_hand_box_cdc/payload_hold[*]}] -to [get_regs -nowarn {*u_status_cdc/O_dst_data[*] *u_hand_box_cdc/O_dst_data[*]}] 13.000
+
+# HX711 DOUT is asynchronous; only its first synchronizer stage is excluded.
+set_false_path -from [get_ports {I_hx711_dout}] -to [get_regs -nowarn {*u_checkout/u_adc/dout_meta}]
+set_false_path -from [get_ports {I_fruit_switch}] -to [get_regs -nowarn {*u_checkout/u_tare/key_meta *u_checkout/u_cal/key_meta *u_detection_mode_control/key_meta}]

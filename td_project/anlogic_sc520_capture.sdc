@@ -78,3 +78,7 @@ set_false_path -from [get_regs {u_video/u_detection_mode_control/O_detection_mod
 set_false_path -from [get_ports {I_latency_switch}] -to [get_regs {u_video/u_hdmi_mixer/latency_switch$show_meta}]
 
 # The video-only wrapper keeps UART and SW2 ports but does not instantiate CNN.
+
+# HX711 DOUT and SW2 are asynchronous to the DDR user clock.
+set_false_path -from [get_ports {I_hx711_dout}] -to [get_regs -nowarn {*u_checkout/u_adc/dout_meta}]
+set_false_path -from [get_ports {I_fruit_switch}] -to [get_regs -nowarn {*u_checkout/u_tare/key_meta *u_checkout/u_cal/key_meta *u_detection_mode_control/key_meta}]

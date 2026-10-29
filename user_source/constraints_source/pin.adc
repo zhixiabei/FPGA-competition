@@ -32,3 +32,22 @@ set_pin_assignment	{ O_tmds_ch2_p }		{ LOCATION = H14; IOSTANDARD = TMDS33; PULL
 set_pin_assignment	{ O_tmds_clk_p }		{ LOCATION = C17; IOSTANDARD = TMDS33; PULLTYPE = NONE; }
 
 
+# HX711 on GPIOA and the eight on-board seven-segment digits (SW6 DIGVCC ON).
+set_pin_assignment { I_hx711_dout } { LOCATION = V2; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { O_hx711_sck } { LOCATION = V1; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[0] } { LOCATION = G15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[1] } { LOCATION = G14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[2] } { LOCATION = A17; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[3] } { LOCATION = A18; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[4] } { LOCATION = B16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[5] } { LOCATION = A15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[6] } { LOCATION = B15; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_sel_n[7] } { LOCATION = A14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[0] } { LOCATION = C9; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[1] } { LOCATION = C11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[2] } { LOCATION = B11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[3] } { LOCATION = E7; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[4] } { LOCATION = E6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[5] } { LOCATION = B6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[6] } { LOCATION = B7; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_seg_n[7] } { LOCATION = E5; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
