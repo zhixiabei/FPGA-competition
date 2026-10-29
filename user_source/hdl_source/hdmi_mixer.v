@@ -52,6 +52,10 @@ module hdmi_mixer #(
     input wire I_cnn_enable,
     input wire I_cnn_result_valid,
     input wire [2:0] I_cnn_class,
+    input wire [15:0] I_checkout_weight_bcd,
+    input wire [15:0] I_checkout_price_bcd,
+    input wire I_checkout_weight_valid,
+    input wire I_checkout_price_valid,
     input wire I_hand_box_valid,
     input wire [47:0] I_hand_box,
     input wire [31:0] I_resnet_probe_status,
@@ -932,16 +936,148 @@ module hdmi_mixer #(
     // implicit nets and the synthesized panel becomes undriven.
     localparam CNN_TEXT_X = 16;
     localparam CNN_TEXT_Y = 16;
-    wire S_cnn_panel_on = S_cnn_visible && S_video_de_2d &&
+    localparam integer FRUIT_PANEL_WIDTH = IMG_WIDTH >= 320 ? 320 : IMG_WIDTH;
+    localparam integer FRUIT_PANEL_X = IMG_WIDTH-FRUIT_PANEL_WIDTH;
+    wire S_fruit_showcase = (FRUIT_CNN != 0) &&
+        (SHOW_RESNET_PROBE == 0) && (SHOW_RESNET_RUNTIME == 0);
+    wire S_fruit_panel_bg_on = S_fruit_showcase && S_cnn_visible &&
+        S_video_de_2d && S_x_2d >= FRUIT_PANEL_X;
+    wire S_fruit_header_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+24 && S_x_2d < FRUIT_PANEL_X+296 &&
+        S_y_2d >= 64 && S_y_2d < 80;
+    wire S_fruit_status_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+80 && S_x_2d < FRUIT_PANEL_X+240 &&
+        S_y_2d >= 136 && S_y_2d < 152;
+    wire S_fruit_chinese_on = S_fruit_panel_bg_on && S_cnn_class != 3'd1 &&
+        S_x_2d >= FRUIT_PANEL_X+96 && S_x_2d < FRUIT_PANEL_X+224 &&
+        S_y_2d >= 216 && S_y_2d < 280;
+    wire S_fruit_english_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X && S_x_2d < FRUIT_PANEL_X+320 &&
+        S_y_2d >= 328 && S_y_2d < 360;
+    wire S_fruit_weight_label_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+160 &&
+        S_y_2d >= 392 && S_y_2d < 408;
+    wire S_fruit_weight_value_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+256 &&
+        S_y_2d >= 424 && S_y_2d < 456;
+    wire S_fruit_total_label_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+144 &&
+        S_y_2d >= 488 && S_y_2d < 504;
+    wire S_fruit_total_value_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+16 && S_x_2d < FRUIT_PANEL_X+304 &&
+        S_y_2d >= 520 && S_y_2d < 552;
+    wire S_fruit_footer_on = S_fruit_panel_bg_on &&
+        S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+256 &&
+        S_y_2d >= 656 && S_y_2d < 672;
+    wire S_fruit_text_on = S_fruit_header_on || S_fruit_status_on ||
+        S_fruit_chinese_on || S_fruit_english_on ||
+        S_fruit_weight_label_on || S_fruit_weight_value_on ||
+        S_fruit_total_label_on || S_fruit_total_value_on || S_fruit_footer_on;
+    wire S_legacy_cnn_panel_on = S_cnn_visible && S_video_de_2d &&
         (S_x_2d >= CNN_TEXT_X) &&
         (S_x_2d < CNN_TEXT_X+(SHOW_RESNET_PROBE != 0 ? 320 : SHOW_RESNET_RUNTIME != 0 ? 256 : FRUIT_CNN != 0 ? 208 : 192)) &&
         (S_y_2d >= CNN_TEXT_Y) && (S_y_2d < CNN_TEXT_Y+(SHOW_RESNET_RUNTIME != 0 ? 32 : 16));
-    wire [11:0] S_cnn_text_x = S_x_2d - CNN_TEXT_X;
-    wire [3:0] S_cnn_text_y = S_y_2d - CNN_TEXT_Y;
-    wire [4:0] S_cnn_char_index = S_cnn_text_x[8:4];
+    wire S_cnn_panel_on = S_fruit_showcase ? S_fruit_text_on : S_legacy_cnn_panel_on;
+    reg [11:0] S_cnn_text_x;
+    reg [11:0] S_cnn_local_y;
+    reg [3:0] S_cnn_text_y;
+    reg [3:0] S_cnn_font_col;
+    reg [4:0] S_cnn_char_index;
+    always @(*) begin
+        S_cnn_text_x=S_x_2d-CNN_TEXT_X;
+        S_cnn_local_y=S_y_2d-CNN_TEXT_Y;
+        S_cnn_char_index=S_cnn_text_x[8:4];
+        S_cnn_font_col=S_cnn_text_x[3:0];
+        S_cnn_text_y=S_cnn_local_y[3:0];
+        if(S_fruit_header_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+24);
+            S_cnn_local_y=S_y_2d-64;
+            S_cnn_char_index=S_cnn_text_x[8:4];
+            S_cnn_font_col=S_cnn_text_x[3:0];
+            S_cnn_text_y=S_cnn_local_y[3:0];
+        end else if(S_fruit_status_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+80);
+            S_cnn_local_y=S_y_2d-136;
+            S_cnn_char_index=S_cnn_text_x[8:4];
+            S_cnn_font_col=S_cnn_text_x[3:0];
+            S_cnn_text_y=S_cnn_local_y[3:0];
+        end else if(S_fruit_chinese_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+96);
+            S_cnn_local_y=S_y_2d-216;
+            S_cnn_char_index={4'd0,S_cnn_text_x[6]};
+            S_cnn_font_col=S_cnn_text_x[5:2];
+            S_cnn_text_y=S_cnn_local_y[5:2];
+        end else if(S_fruit_english_on) begin
+            S_cnn_text_x=S_x_2d-FRUIT_PANEL_X;
+            S_cnn_local_y=S_y_2d-328;
+            S_cnn_char_index=S_cnn_text_x[8:5];
+            S_cnn_font_col=S_cnn_text_x[4:1];
+            S_cnn_text_y=S_cnn_local_y[4:1];
+        end else if(S_fruit_weight_label_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+64);
+            S_cnn_local_y=S_y_2d-392;
+            S_cnn_char_index=S_cnn_text_x[8:4];
+            S_cnn_font_col=S_cnn_text_x[3:0];
+            S_cnn_text_y=S_cnn_local_y[3:0];
+        end else if(S_fruit_weight_value_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+64);
+            S_cnn_local_y=S_y_2d-424;
+            S_cnn_char_index=S_cnn_text_x[8:5];
+            S_cnn_font_col=S_cnn_text_x[4:1];
+            S_cnn_text_y=S_cnn_local_y[4:1];
+        end else if(S_fruit_total_label_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+64);
+            S_cnn_local_y=S_y_2d-488;
+            S_cnn_char_index=S_cnn_text_x[8:4];
+            S_cnn_font_col=S_cnn_text_x[3:0];
+            S_cnn_text_y=S_cnn_local_y[3:0];
+        end else if(S_fruit_total_value_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+16);
+            S_cnn_local_y=S_y_2d-520;
+            S_cnn_char_index=S_cnn_text_x[8:5];
+            S_cnn_font_col=S_cnn_text_x[4:1];
+            S_cnn_text_y=S_cnn_local_y[4:1];
+        end else if(S_fruit_footer_on) begin
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+64);
+            S_cnn_local_y=S_y_2d-656;
+            S_cnn_char_index=S_cnn_text_x[8:4];
+            S_cnn_font_col=S_cnn_text_x[3:0];
+            S_cnn_text_y=S_cnn_local_y[3:0];
+        end
+    end
     reg [7:0] S_cnn_char;
     reg S_cnn_runtime_row_2d;
     reg [127:0] S_runtime_text;
+    reg [135:0] S_fruit_header_text;
+    reg [79:0] S_fruit_status_text;
+    reg [79:0] S_fruit_english_text;
+    reg [15:0] S_fruit_chinese_text;
+    reg [47:0] S_fruit_weight_label_text;
+    reg [39:0] S_fruit_total_label_text;
+    reg [95:0] S_fruit_footer_text;
+    reg [23:0] S_fruit_color;
+    always @(*) begin
+        S_fruit_header_text="FRUIT RECOGNITION";
+        S_fruit_weight_label_text="WEIGHT";
+        S_fruit_total_label_text="TOTAL";
+        S_fruit_footer_text="ANLOGIC FPGA";
+        case(S_cnn_class)
+            3'd2: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  APPLE   "; S_fruit_chinese_text=16'h8283; S_fruit_color=24'hff4058; end
+            3'd3: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  BANANA  "; S_fruit_chinese_text=16'h8485; S_fruit_color=24'hffd43b; end
+            3'd4: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  GRAPE   "; S_fruit_chinese_text=16'h8687; S_fruit_color=24'hb080ff; end
+            3'd5: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  ORANGE  "; S_fruit_chinese_text=16'h8889; S_fruit_color=24'hff8a30; end
+            3'd6: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="STRAWBERRY"; S_fruit_chinese_text=16'h8a8b; S_fruit_color=24'hff4068; end
+            default: begin S_fruit_status_text="NO RESULT "; S_fruit_english_text=" UNKNOWN  "; S_fruit_chinese_text=16'h2020; S_fruit_color=24'hffc040; end
+        endcase
+    end
+    wire S_fruit_accent_on = S_fruit_panel_bg_on &&
+        ((S_x_2d < FRUIT_PANEL_X+8) ||
+         (S_y_2d >= 104 && S_y_2d < 108) ||
+         (S_y_2d >= 184 && S_y_2d < 192) ||
+         (S_y_2d >= 376 && S_y_2d < 380) ||
+         (S_y_2d >= 472 && S_y_2d < 476));
+    wire S_fruit_name_text_on = S_fruit_chinese_on || S_fruit_english_on;
+    wire S_fruit_value_text_on = S_fruit_weight_value_on || S_fruit_total_value_on;
     always @(*) begin
         if(I_resnet_probe_status[29]) S_runtime_text="DDR ERROR       ";
         else if(!I_resnet_probe_status[25]) S_runtime_text="WAIT MODEL      ";
@@ -989,7 +1125,7 @@ module hdmi_mixer #(
         .O_row_bits(S_target_char_bits)
     );
     wire [3:0] S_font_col = S_effect_panel_on ? S_effect_text_x[3:0] :
-                           S_cnn_panel_on ? S_cnn_text_x[3:0] :
+                           S_cnn_panel_on ? S_cnn_font_col :
                            S_target_panel_on ? S_target_text_x[3:0] : S_follow_col;
 
     always @(*) begin
@@ -1087,12 +1223,63 @@ module hdmi_mixer #(
             if(S_cnn_char_index==14) S_cnn_char=F_probe_hex(I_resnet_probe_status[7:4]);
             if(S_cnn_char_index==15) S_cnn_char=F_probe_hex(I_resnet_probe_status[3:0]);
         end
+        if(S_fruit_showcase) begin
+            if(S_fruit_header_on)
+                S_cnn_char=S_fruit_header_text[135-S_cnn_char_index*8 -: 8];
+            else if(S_fruit_status_on)
+                S_cnn_char=S_fruit_status_text[79-S_cnn_char_index*8 -: 8];
+            else if(S_fruit_chinese_on)
+                S_cnn_char=S_fruit_chinese_text[15-S_cnn_char_index*8 -: 8];
+            else if(S_fruit_english_on)
+                S_cnn_char=S_fruit_english_text[79-S_cnn_char_index*8 -: 8];
+            else if(S_fruit_weight_label_on)
+                S_cnn_char=S_fruit_weight_label_text[47-S_cnn_char_index*8 -: 8];
+            else if(S_fruit_weight_value_on) begin
+                case(S_cnn_char_index)
+                    0: S_cnn_char=!I_checkout_weight_valid ? "-" :
+                        (I_checkout_weight_bcd[15:12]==0 ? " " : F_decimal_digit(I_checkout_weight_bcd[15:12]));
+                    1: S_cnn_char=!I_checkout_weight_valid ? "-" :
+                        (I_checkout_weight_bcd[15:8]==0 ? " " : F_decimal_digit(I_checkout_weight_bcd[11:8]));
+                    2: S_cnn_char=!I_checkout_weight_valid ? "-" :
+                        (I_checkout_weight_bcd[15:4]==0 ? " " : F_decimal_digit(I_checkout_weight_bcd[7:4]));
+                    3: S_cnn_char=!I_checkout_weight_valid ? "-" : F_decimal_digit(I_checkout_weight_bcd[3:0]);
+                    4: S_cnn_char=" ";
+                    5: S_cnn_char="G";
+                    default: S_cnn_char=" ";
+                endcase
+            end else if(S_fruit_total_label_on)
+                S_cnn_char=S_fruit_total_label_text[39-S_cnn_char_index*8 -: 8];
+            else if(S_fruit_total_value_on) begin
+                case(S_cnn_char_index)
+                    0: S_cnn_char=!I_checkout_price_valid ? "-" :
+                        (I_checkout_price_bcd[15:12]==0 ? " " : F_decimal_digit(I_checkout_price_bcd[15:12]));
+                    1: S_cnn_char=!I_checkout_price_valid ? "-" : F_decimal_digit(I_checkout_price_bcd[11:8]);
+                    2: S_cnn_char=".";
+                    3: S_cnn_char=!I_checkout_price_valid ? "-" : F_decimal_digit(I_checkout_price_bcd[7:4]);
+                    4: S_cnn_char=!I_checkout_price_valid ? "-" : F_decimal_digit(I_checkout_price_bcd[3:0]);
+                    5: S_cnn_char=" ";
+                    6: S_cnn_char="R";
+                    7: S_cnn_char="M";
+                    8: S_cnn_char="B";
+                    default: S_cnn_char=" ";
+                endcase
+            end
+            else if(S_fruit_footer_on)
+                S_cnn_char=S_fruit_footer_text[95-S_cnn_char_index*8 -: 8];
+            else
+                S_cnn_char=" ";
+        end
     end
 
     function [7:0] F_fruit_char;
         input [55:0] label;
         input [4:0] position;
         begin F_fruit_char=label[55-position*8 -: 8];end
+    endfunction
+
+    function [7:0] F_decimal_digit;
+        input [3:0] digit;
+        begin F_decimal_digit=digit<10 ? 8'h30+digit : "-";end
     endfunction
 
     function [7:0] F_probe_hex;
@@ -1879,6 +2066,14 @@ module hdmi_mixer #(
                 S_rgb_next = 24'h101010;
                 S_font_valid_next = 1'b1;
                 S_font_color_next = 24'h00e6ff;
+            end else if(S_fruit_panel_bg_on) begin
+                S_rgb_next = S_fruit_accent_on ? S_fruit_color :
+                    (S_y_2d >= 608 ? 24'h181e24 : 24'h101418);
+                if(S_cnn_panel_on) begin
+                    S_font_valid_next = 1'b1;
+                    S_font_color_next = S_fruit_name_text_on ? S_fruit_color :
+                        ((S_fruit_header_on || S_fruit_value_text_on) ? 24'hffffff : 24'ha8b3bb);
+                end
             end else if(S_cnn_panel_on) begin
                 S_rgb_next = 24'h101010;
                 S_font_valid_next = 1'b1;
@@ -1908,7 +2103,7 @@ module hdmi_mixer #(
                     SHOW_COLOR_TARGET && !S_cnn_visible && S_video_de_2d && S_target_cross_on)
                 S_rgb_next = 24'hfff200;
             else if(S_cnn_roi_on)
-                S_rgb_next = 24'h40ff80;
+                S_rgb_next = S_fruit_showcase ? S_fruit_color : 24'h40ff80;
         end
     end
 

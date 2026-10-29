@@ -6,12 +6,13 @@ module checkout_display #(
     input wire clk,rst_n,
     input wire [13:0] weight_g,total_fen,
     input wire weight_valid,price_valid,
+    output reg [15:0] weight_bcd,price_bcd,
+    output wire weight_bcd_valid,price_bcd_valid,
     output reg [7:0] seg_n,sel_n
 );
     localparam integer SLOT_BITS=SLOT_CYCLES>1 ? $clog2(SLOT_CYCLES) : 1;
     reg [SLOT_BITS-1:0] slot_count;
     reg [2:0] digit;
-    reg [15:0] weight_bcd,price_bcd;
     reg shown_weight_valid,shown_price_valid;
     reg [31:0] conversion;
     reg [27:0] binary;
@@ -22,6 +23,8 @@ module checkout_display #(
     reg [7:0] encoded;
     reg valid_digit;
     integer j;
+    assign weight_bcd_valid=shown_weight_valid;
+    assign price_bcd_valid=shown_price_valid;
     always @* begin
         corrected=conversion;
         for(j=0;j<8;j=j+1)

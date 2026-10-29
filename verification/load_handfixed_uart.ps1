@@ -9,7 +9,10 @@
     [switch]$WinUsb,
     [switch]$ProbeUsb,
     [string]$UsbSerial='',
-    [switch]$Fruit
+    [switch]$Fruit,
+    [ValidateRange(1,268)][int]$ChunkBytes=32,
+    [ValidateRange(0,100)][int]$ChunkDelayMs=1,
+    [switch]$DiagnoseOnly
 )
 $ErrorActionPreference='Stop'
 if($Fruit -and -not $Project){$Project='build/fruit/td'}
@@ -19,7 +22,8 @@ if($Fruit -and -not $PSBoundParameters.ContainsKey('Model')) {
 }
 $expectedMagic=if($Fruit){'FRU1'}else{'HFX1'}
 if(($WinUsb -or $ProbeUsb) -and $Port){throw 'Choose either -WinUsb/-ProbeUsb or -Port, not both.'}
-if($ProbeUsb -and ($VerifyOnly -or $ListPorts)){throw 'Run -ProbeUsb separately from -VerifyOnly/-ListPorts.'}
+if($ProbeUsb -and ($VerifyOnly -or $ListPorts -or $DiagnoseOnly)){throw 'Run -ProbeUsb separately from -VerifyOnly/-ListPorts/-DiagnoseOnly.'}
+if($DiagnoseOnly -and ($VerifyOnly -or $ListPorts)){throw 'Run -DiagnoseOnly separately from -VerifyOnly/-ListPorts.'}
 function Import-BoardWinUsbTransport {
     if(-not ('FtdiWinUsbTransport' -as [type])) {
         Add-Type -Path (Join-Path $PSScriptRoot 'FtdiWinUsbTransport.cs')
@@ -111,6 +115,7 @@ public static class HandCnnPacket {
 $bytes=[IO.File]::ReadAllBytes($modelPath)
 if($bytes.Length -ne $modelManifest.model_bytes){throw 'Model byte count mismatch'}
 if($bytes.Length % 256 -ne 0){throw 'Model must be padded to 256 bytes'}
+$modelCrc32=[HandCnnPacket]::Crc32($bytes,$bytes.Length)
 if($VerifyOnly) {
     Write-Output "FIXED_UART_MODEL_VERIFIED magic=$expectedMagic bytes=$($bytes.Length) sha256=$($modelManifest.model_sha256) classes=$(if($Fruit){($modelManifest.classes -join ',').ToUpperInvariant()}else{'PEACE,PUNCH,STOP'}) threshold=$($modelManifest.classifier_threshold)"
     return
@@ -127,6 +132,95 @@ function Read-FixedStatus {
     }
     if([HandCnnPacket]::Crc32($response,32) -ne [BitConverter]::ToUInt32($response,32)) {throw 'Runtime status CRC mismatch'}
     return $response
+}
+function Get-LoaderReasonName {
+    param([int]$Reason)
+    switch($Reason) {
+        0 {'none'}
+        1 {'packet_crc'}
+        2 {'unexpected_sequence'}
+        3 {'not_calibrated'}
+        4 {'model_already_ready'}
+        5 {'sequence_out_of_range'}
+        6 {'full_model_crc'}
+        7 {'uart_framing'}
+        8 {'receive_timeout'}
+        9 {'crc_engine_overrun'}
+        default {'unknown'}
+    }
+}
+function Read-LoaderDiagnostics {
+    [byte[]]$request=82,49,56,76
+    [byte[]]$response=New-Object byte[] 36
+    $readCount=0
+    $timeoutProperty=$serial.PSObject.Properties['ReadTimeout']
+    $previousTimeout=$null
+    if($null -ne $timeoutProperty) {
+        $previousTimeout=$serial.ReadTimeout
+        if($previousTimeout -lt 1 -or $previousTimeout -gt 300){$serial.ReadTimeout=300}
+    }
+    try {
+        $serial.Write($request,0,$request.Length)
+        try {
+            for(;$readCount -lt $response.Length;$readCount++) {
+                $response[$readCount]=[byte]$serial.ReadByte()
+            }
+        } catch [TimeoutException] {
+            if($readCount -eq 0){return $null}
+            throw "Truncated loader diagnostic reply: received $readCount of 36 bytes."
+        }
+    } finally {
+        if($null -ne $previousTimeout){$serial.ReadTimeout=$previousTimeout}
+    }
+    if([Text.Encoding]::ASCII.GetString($response,0,4) -ne 'R18L' -or $response[4] -ne 1 -or $response[7] -ne 0) {
+        throw 'Invalid loader diagnostic header/version.'
+    }
+    if([HandCnnPacket]::Crc32($response,32) -ne [BitConverter]::ToUInt32($response,32)) {
+        throw 'Loader diagnostic CRC mismatch.'
+    }
+    return [pscustomobject]@{
+        version=[int]$response[4]
+        reason=[int]$response[5]
+        reason_name=Get-LoaderReasonName $response[5]
+        allow_load=($response[6] -band 1) -ne 0
+        model_ready=($response[6] -band 2) -ne 0
+        accepted_packets=[BitConverter]::ToUInt32($response,8)
+        packet_sequence=[BitConverter]::ToUInt32($response,12)
+        computed_packet_crc32=[BitConverter]::ToUInt32($response,16)
+        received_packet_crc32=[BitConverter]::ToUInt32($response,20)
+        model_bytes=[BitConverter]::ToUInt32($response,24)
+        model_crc32=[BitConverter]::ToUInt32($response,28)
+    }
+}
+function Format-LoaderDiagnostics {
+    param([object]$Diagnostics)
+    if($null -eq $Diagnostics){return 'Legacy bit cannot report the reject reason (R18L unsupported).'}
+    return ('reason={0}({1}) accepted_packets={2} packet_sequence={3} computed_packet_crc32=0x{4:X8} received_packet_crc32=0x{5:X8} allow_load={6} model_ready={7} model_bytes={8} model_crc32=0x{9:X8}' -f
+        $Diagnostics.reason_name,$Diagnostics.reason,$Diagnostics.accepted_packets,$Diagnostics.packet_sequence,
+        $Diagnostics.computed_packet_crc32,$Diagnostics.received_packet_crc32,
+        $Diagnostics.allow_load,$Diagnostics.model_ready,$Diagnostics.model_bytes,$Diagnostics.model_crc32)
+}
+function Assert-LoaderModel {
+    param([object]$Diagnostics,[int]$ExpectedBytes,[uint32]$ExpectedCrc32)
+    if($null -ne $Diagnostics -and
+       ($Diagnostics.model_bytes -ne $ExpectedBytes -or $Diagnostics.model_crc32 -ne $ExpectedCrc32)) {
+        throw ('FPGA model configuration mismatch: expected bytes={0} crc32=0x{1:X8}, board bytes={2} crc32=0x{3:X8}. No further weights were sent.' -f
+            $ExpectedBytes,$ExpectedCrc32,$Diagnostics.model_bytes,$Diagnostics.model_crc32)
+    }
+}
+function Write-WeightPacket {
+    param([byte[]]$Packet,[int]$Attempt=0)
+    $chunkSize=$ChunkBytes
+    $gapMs=$ChunkDelayMs
+    if($Attempt -gt 0) {
+        $chunkSize=[Math]::Min($chunkSize,16)
+        $gapMs=[Math]::Max($gapMs,2)
+    }
+    for($offset=0;$offset -lt $Packet.Length;$offset+=$count) {
+        $count=[Math]::Min($chunkSize,$Packet.Length-$offset)
+        $serial.Write($Packet,$offset,$count)
+        if($gapMs -gt 0 -and $offset+$count -lt $Packet.Length){Start-Sleep -Milliseconds $gapMs}
+    }
 }
 try {
     if($WinUsb) {
@@ -148,41 +242,86 @@ try {
         $serial.DtrEnable=$false
         $serial.RtsEnable=$false
         $serial.Handshake=[IO.Ports.Handshake]::None
+        $serial.DiscardNull=$false
         $serial.Open()
         $serial.DiscardInBuffer()
     }
-    $before=Read-FixedStatus
-    if(($before[5] -band 0xa0) -ne 0){throw 'FPGA DDR/core fault; reset the board before loading.'}
+    [byte[]]$before=Read-FixedStatus
+    $diagnostics=Read-LoaderDiagnostics
+    $diagnosticsSupported=$null -ne $diagnostics
+    if($DiagnoseOnly) {
+        [pscustomobject]@{
+            status_magic=[Text.Encoding]::ASCII.GetString($before,0,4)
+            version=[int]$before[4]
+            flags=('0x{0:X2}' -f $before[5])
+            calibrated=($before[5] -band 1) -ne 0
+            model_ready=($before[5] -band 2) -ne 0
+            snapshot_busy=($before[5] -band 4) -ne 0
+            snapshot_failed=($before[5] -band 8) -ne 0
+            executor_busy=($before[5] -band 16) -ne 0
+            memory_error=($before[5] -band 32) -ne 0
+            core_fault=($before[5] -band 128) -ne 0
+            loader_diagnostics_supported=$diagnosticsSupported
+            loader=$diagnostics
+        } | ConvertTo-Json -Depth 4
+        return
+    }
+    Assert-LoaderModel $diagnostics $bytes.Length $modelCrc32
+    if(($before[5] -band 0xa0) -ne 0){throw 'FPGA reports a DDR/core fault; no weights were sent.'}
     if(($before[5] -band 1) -eq 0){throw 'FPGA DDR is not calibrated yet.'}
     if(($before[5] -band 2) -ne 0){
-        if($projectConfig){throw 'A model is already loaded; runtime status cannot identify its weights. Program the selected matching bitstream before a fresh model replacement.'}
+        if($projectConfig -and -not $diagnosticsSupported) {
+            throw 'A model is already loaded. This legacy bit cannot report its model configuration (R18L unsupported); no weights were sent.'
+        }
         Write-Output 'HANDFIXED_MODEL_ALREADY_READY';return
     }
-    Write-Output "HANDFIXED_UART_LOADING packets=$($bytes.Length/256) bytes=$($bytes.Length)"
+    if($diagnosticsSupported -and $diagnostics.accepted_packets -ne 0) {
+        throw "FPGA has an existing partial upload; a fresh upload starts at packet 0. $(Format-LoaderDiagnostics $diagnostics)"
+    }
+    Write-Output "HANDFIXED_UART_LOADING packets=$($bytes.Length/256) bytes=$($bytes.Length) baud=$Baud chunk_bytes=$ChunkBytes chunk_delay_ms=$ChunkDelayMs loader_diagnostics=$diagnosticsSupported"
     for($index=0;$index -lt $bytes.Length/256;$index++) {
-        $packet=[HandCnnPacket]::Make($bytes,$index)
+        [byte[]]$packet=[HandCnnPacket]::Make($bytes,$index)
         $accepted=$false
         $answers=@()
+        $queriedAfterNak=$false
+        $packetDiagnostics=$null
+        $sentCrc=[BitConverter]::ToUInt32($packet,264)
         for($attempt=0;$attempt -lt 4;$attempt++) {
-            $serial.Write($packet,0,$packet.Length)
+            Write-WeightPacket $packet $attempt
             try {$answer=$serial.ReadByte()}catch [TimeoutException]{$answer=-1}
             $answers+=$answer
             if($answer -eq 0x79){$accepted=$true;break}
+            if($answer -eq 0x1f -and (-not $queriedAfterNak -or $diagnosticsSupported)) {
+                $packetDiagnostics=Read-LoaderDiagnostics
+                $queriedAfterNak=$true
+                $diagnosticsSupported=$null -ne $packetDiagnostics
+                Assert-LoaderModel $packetDiagnostics $bytes.Length $modelCrc32
+                if($null -ne $packetDiagnostics -and
+                   (($packetDiagnostics.reason -ge 2 -and $packetDiagnostics.reason -le 6) -or
+                    $packetDiagnostics.reason -notin @(0,1,7,8,9))) {
+                    throw ('FPGA rejected packet {0}; sent_packet_crc32=0x{1:X8}. {2}' -f
+                        $index,$sentCrc,(Format-LoaderDiagnostics $packetDiagnostics))
+                }
+            }
         }
         if(-not $accepted) {
             $replyText=($answers | ForEach-Object {if($_ -lt 0){'timeout'}else{'0x{0:X2}' -f $_}}) -join ','
-            if($index -eq 0 -and $answers -contains 0x1f) {
-                throw "FPGA rejected packet 0 (replies=$replyText). If loading already succeeded and the board has stayed powered without reset or reprogramming, the model is still loaded; use recognition without loading again. Otherwise, a prior partial load or DDR not ready may also cause rejection. Reinitialize the FPGA before a fresh load."
-            }
-            throw "Packet $index failed (replies=$replyText). Check that the matching FPGA bitstream is running, DDR is ready, and UART is connected. A prior partial load requires FPGA reinitialization before restarting at packet 0."
+            $stateText='runtime status unavailable'
+            try {
+                [byte[]]$failedStatus=Read-FixedStatus
+                $stateText='calibrated={0} model_ready={1} status_flags=0x{2:X2}' -f
+                    (($failedStatus[5] -band 1) -ne 0),(($failedStatus[5] -band 2) -ne 0),$failedStatus[5]
+            } catch {$stateText="runtime status query failed: $($_.Exception.Message)"}
+            throw ('Packet {0} failed (replies={1}); sent_packet_crc32=0x{2:X8}; {3}. {4}' -f
+                $index,$replyText,$sentCrc,$stateText,(Format-LoaderDiagnostics $packetDiagnostics))
         }
-        if($index % 1024 -eq 0) {
-            Write-Progress -Activity 'Load fixed-region classifier weights into FPGA DDR' -PercentComplete (100*$index/($bytes.Length/256))
+        if($index % 32 -eq 0 -or $index+1 -eq $bytes.Length/256) {
+            Write-Progress -Activity 'Load fixed-region classifier weights into FPGA DDR' -PercentComplete (100*($index+1)/($bytes.Length/256))
             Write-Output "HANDFIXED_UART_PROGRESS accepted=$($index+1) total=$($bytes.Length/256)"
         }
     }
     Write-Progress -Activity 'Load fixed-region classifier weights into FPGA DDR' -Completed
-    $after=Read-FixedStatus
+    [byte[]]$after=Read-FixedStatus
     if(($after[5] -band 2) -eq 0){throw 'All packets ACKed but FPGA model_ready is false. Check the matching model CRC and bitstream.'}
     Write-Output "HANDFIXED_UART_LOAD_VERIFIED bytes=$($bytes.Length) sha256=$($modelManifest.model_sha256) model_ready=true"
 } finally {if($null -ne $serial){$serial.Dispose()}}

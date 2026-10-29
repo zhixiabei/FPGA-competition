@@ -11,6 +11,38 @@
     </HardWare>
     <Source_Files>
         <Verilog>
+            <File Path="../user_source/hdl_source/flash/spi_flash_byte.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="100"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/flash/spi_flash_reader.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="101"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/flash/fruit_flash_boot.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="102"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/flash/flash_status_uart.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="103"/>
+                </FileInfo>
+            </File>
             <File Path="../user_source/hdl_source/checkout/checkout_display.v">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
@@ -618,6 +650,7 @@
             </File>
             <File Path="../user_source/hdl_source/resnet18/resnet18_weight_loader.v">
                 <FileInfo>
+                    <Attr Name="AutoExcluded" Val="true"/>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>
                     <Attr Name="BelongTo" Val="design_1"/>

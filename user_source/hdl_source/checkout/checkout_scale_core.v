@@ -10,8 +10,10 @@ module checkout_scale_core #(
     input wire fruit_valid,
     input wire [2:0] fruit_class,
     output wire hx711_sck,
-    output wire [13:0] weight_g,
-    output wire weight_valid,
+    output wire [13:0] weight_g,total_fen,
+    output wire weight_valid,price_valid,
+    output wire [15:0] weight_bcd,price_bcd,
+    output wire weight_bcd_valid,price_bcd_valid,
     output reg [3:0] status,
     output reg [23:0] raw_adc,
     output reg [15:0] sample_count,
@@ -33,8 +35,7 @@ module checkout_scale_core #(
     end
     assign tare=manual_tare || auto_tare;
     wire signed [23:0] sample;
-    wire [13:0] total_fen;
-    wire price_valid;
+    wire scale_price_valid;
     wire measured_valid,overload,tared,calibrated,pending;
     reg have_sample,saturated,pending_d,cal_command,cal_failed;
     hx711_reader #(.CLK_HZ(CLK_HZ),.TIMEOUT_CYCLES(TIMEOUT_CYCLES)) u_adc(
@@ -47,12 +48,16 @@ module checkout_scale_core #(
     fruit_checkout #(.CLK_HZ(CLK_HZ),.CALIBRATION_GRAMS(CALIBRATION_GRAMS)) u_scale(
         .clk(clk),.rst_n(rst_n),.sample_valid(sample_valid),.sensor_fault(sensor_fault),
         .sample(sample),.tare(tare),.calibrate(calibrate),.fruit_valid(fruit_valid),.fruit_class(fruit_class),
-        .weight_g(weight_g),.total_fen(total_fen),.weight_valid(measured_valid),.price_valid(price_valid),
+        .weight_g(weight_g),.total_fen(total_fen),.weight_valid(measured_valid),.price_valid(scale_price_valid),
         .overload(overload),.tared(tared),.calibrated(calibrated),.calibration_pending(pending));
     assign weight_valid=measured_valid && !sensor_fault && !saturated && !pending;
+    assign price_valid=scale_price_valid && weight_valid;
     checkout_display #(.SLOT_CYCLES(CLK_HZ/2000)) u_digits(
         .clk(clk),.rst_n(rst_n),.weight_g(weight_g),.total_fen(total_fen),
-        .weight_valid(weight_valid),.price_valid(price_valid && weight_valid),.seg_n(seg_n),.sel_n(sel_n));
+        .weight_valid(weight_valid),.price_valid(price_valid),
+        .weight_bcd(weight_bcd),.price_bcd(price_bcd),
+        .weight_bcd_valid(weight_bcd_valid),.price_bcd_valid(price_bcd_valid),
+        .seg_n(seg_n),.sel_n(sel_n));
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             raw_adc<=0;sample_count<=0;have_sample<=0;saturated<=0;

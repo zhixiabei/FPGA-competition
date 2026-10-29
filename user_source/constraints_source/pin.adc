@@ -25,6 +25,14 @@ set_pin_assignment { I_param_key_n } { LOCATION = C7; IOSTANDARD = LVCMOS33; PUL
 set_pin_assignment { I_resnet_uart_rx } { LOCATION = J1; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 set_pin_assignment { O_resnet_uart_tx } { LOCATION = H1; IOSTANDARD = LVCMOS33; }
 
+# Independent U30 N25Q128 user Flash; not the U33 FPGA configuration Flash.
+set_pin_assignment { O_model_flash_cs_n } { LOCATION = D14; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; PULLTYPE = PULLUP; }
+set_pin_assignment { O_model_flash_sck } { LOCATION = N6; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_model_flash_mosi } { LOCATION = E13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { I_model_flash_miso } { LOCATION = D16; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment { O_model_flash_wp_n } { LOCATION = C16; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+set_pin_assignment { O_model_flash_hold_n } { LOCATION = A13; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 4; }
+
 set_pin_assignment	{ O_screen_pwm } 		{ LOCATION = R11; IOSTANDARD = LVCMOS33; DRIVESTRENGTH = 8; PULLTYPE = PULLDOWN; }
 set_pin_assignment	{ O_tmds_ch0_p }		{ LOCATION = G16; IOSTANDARD = TMDS33; PULLTYPE = NONE; }
 set_pin_assignment	{ O_tmds_ch1_p }		{ LOCATION = F17; IOSTANDARD = TMDS33; PULLTYPE = NONE; }

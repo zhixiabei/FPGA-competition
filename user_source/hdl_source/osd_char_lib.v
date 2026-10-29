@@ -6,6 +6,16 @@ module osd_char_lib (
 
     localparam CHAR_AN    = 8'h80;
     localparam CHAR_LU    = 8'h81;
+    localparam CHAR_PING  = 8'h82;
+    localparam CHAR_GUO   = 8'h83;
+    localparam CHAR_XIANG = 8'h84;
+    localparam CHAR_JIAO  = 8'h85;
+    localparam CHAR_PU    = 8'h86;
+    localparam CHAR_TAO   = 8'h87;
+    localparam CHAR_JU    = 8'h88;
+    localparam CHAR_ZI    = 8'h89;
+    localparam CHAR_CAO   = 8'h8a;
+    localparam CHAR_MEI   = 8'h8b;
     localparam CHAR_A     = 8'h41;
     localparam CHAR_B     = 8'h42;
     localparam CHAR_C     = 8'h43;
@@ -43,6 +53,18 @@ module osd_char_lib (
     localparam CHAR_8     = 8'h38;
     localparam CHAR_9     = 8'h39;
     localparam CHAR_COLON = 8'h3a;
+    localparam CHAR_DOT   = 8'h2e;
+
+    localparam [255:0] GLYPH_PING = 256'h0000000000000080008000803ffe00800490088800801ffc000004103ffe0410;
+    localparam [255:0] GLYPH_GUO = 256'h000000000000008030860888049002a03ffe00800ff8088808880ff808880888;
+    localparam [255:0] GLYPH_XIANG = 256'h0000000000000ff8080808080ff8080808080ff830860c9802a03ffe00800fc0;
+    localparam [255:0] GLYPH_JIAO = 256'h000000000000211212240ffe08400ffc08402ffc18400ffe0440008004103ffe;
+    localparam [255:0] GLYPH_PU = 256'h000000000000096c09240fe409240fe409240fe401042ff411240ffc0a203ffe;
+    localparam [255:0] GLYPH_TAO = 256'h000000000000003000080fe4092401043ff41104090427e414040ffc0a203ffe;
+    localparam [255:0] GLYPH_JU = 256'h0000000000000906097a094a097a0986294a1bfe1c30089408523dfe08100828;
+    localparam [255:0] GLYPH_ZI = 256'h00000000000003800080008000800080008000803ffe00800040002000100008;
+    localparam [255:0] GLYPH_CAO = 256'h0000000000000080008000803ffe00800ff808080ff808080ff8000002203ffe;
+    localparam [255:0] GLYPH_MEI = 256'h000000000000003000080ffe088805083ffe044827f810000ffc080004103ffe;
 
     always @(*) begin
         case(I_char)
@@ -865,6 +887,17 @@ module osd_char_lib (
                     default: O_row_bits = 16'h0000;
                 endcase
             end
+            CHAR_DOT: O_row_bits = (I_row==4'd12 || I_row==4'd13) ? 16'h0180 : 16'h0000;
+            CHAR_PING: O_row_bits = GLYPH_PING[I_row*16 +: 16];
+            CHAR_GUO: O_row_bits = GLYPH_GUO[I_row*16 +: 16];
+            CHAR_XIANG: O_row_bits = GLYPH_XIANG[I_row*16 +: 16];
+            CHAR_JIAO: O_row_bits = GLYPH_JIAO[I_row*16 +: 16];
+            CHAR_PU: O_row_bits = GLYPH_PU[I_row*16 +: 16];
+            CHAR_TAO: O_row_bits = GLYPH_TAO[I_row*16 +: 16];
+            CHAR_JU: O_row_bits = GLYPH_JU[I_row*16 +: 16];
+            CHAR_ZI: O_row_bits = GLYPH_ZI[I_row*16 +: 16];
+            CHAR_CAO: O_row_bits = GLYPH_CAO[I_row*16 +: 16];
+            CHAR_MEI: O_row_bits = GLYPH_MEI[I_row*16 +: 16];
             default: O_row_bits = 16'h0000;
         endcase
     end
@@ -873,7 +906,7 @@ endmodule
 
 // Same glyphs as osd_char_lib, read synchronously from one 1024x16 ROM.
 // Uppercase ASCII keeps its low six bits; digits/colon keep 48..58.
-// The two Chinese glyphs use otherwise empty entries 32 and 33.
+// The Chinese glyphs use otherwise empty entries 32 through 43.
 module osd_char_rom_sync (
     input wire I_clk,
     input wire [7:0] I_char,
@@ -881,12 +914,23 @@ module osd_char_rom_sync (
     output reg [15:0] O_row_bits
 );
     wire [5:0] font_index =
-        I_char[7:1]==7'h40 ? {5'b10000,I_char[0]} :
+        I_char[7:4]==4'h8 && I_char[3:0]<=4'hb ? {2'b10,I_char[3:0]} :
+        I_char==8'h2e ? 6'd44 :
         I_char[7:5]==3'b010 ? {1'b0,I_char[4:0]} :
         I_char[7:4]==4'h3 ? {2'b11,I_char[3:0]} : 6'd63;
     (* rom_style = "bram" *) reg [15:0] font_rom [0:1023];
     localparam [255:0] GLYPH_AN = 256'h0000000000000000000070200cc003001c80104008407ff0040044107ff00200;
     localparam [255:0] GLYPH_LU = 256'h0000000000000000000062205be0522052205be01630114078804d404a2079e0;
+    localparam [255:0] GLYPH_PING = 256'h0000000000000080008000803ffe00800490088800801ffc000004103ffe0410;
+    localparam [255:0] GLYPH_GUO = 256'h000000000000008030860888049002a03ffe00800ff8088808880ff808880888;
+    localparam [255:0] GLYPH_XIANG = 256'h0000000000000ff8080808080ff8080808080ff830860c9802a03ffe00800fc0;
+    localparam [255:0] GLYPH_JIAO = 256'h000000000000211212240ffe08400ffc08402ffc18400ffe0440008004103ffe;
+    localparam [255:0] GLYPH_PU = 256'h000000000000096c09240fe409240fe409240fe401042ff411240ffc0a203ffe;
+    localparam [255:0] GLYPH_TAO = 256'h000000000000003000080fe4092401043ff41104090427e414040ffc0a203ffe;
+    localparam [255:0] GLYPH_JU = 256'h0000000000000906097a094a097a0986294a1bfe1c30089408523dfe08100828;
+    localparam [255:0] GLYPH_ZI = 256'h00000000000003800080008000800080008000803ffe00800040002000100008;
+    localparam [255:0] GLYPH_CAO = 256'h0000000000000080008000803ffe00800ff808080ff808080ff8000002203ffe;
+    localparam [255:0] GLYPH_MEI = 256'h000000000000003000080ffe088805083ffe044827f810000ffc080004103ffe;
     localparam [255:0] GLYPH_A = 256'h000000000000000000000000220022003e0036001400140014001c0000000000;
     localparam [255:0] GLYPH_B = 256'h0000000000000000000000003e003300330033003e00330033003e0000000000;
     localparam [255:0] GLYPH_C = 256'h00000000000003f00c0c18003000300030003000300018000c0c03f000000000;
@@ -931,6 +975,17 @@ module osd_char_rom_sync (
         for(init_row=0;init_row<16;init_row=init_row+1) begin
             font_rom[32*16+init_row]=GLYPH_AN[16*init_row+:16];
             font_rom[33*16+init_row]=GLYPH_LU[16*init_row+:16];
+            font_rom[34*16+init_row]=GLYPH_PING[16*init_row+:16];
+            font_rom[35*16+init_row]=GLYPH_GUO[16*init_row+:16];
+            font_rom[36*16+init_row]=GLYPH_XIANG[16*init_row+:16];
+            font_rom[37*16+init_row]=GLYPH_JIAO[16*init_row+:16];
+            font_rom[38*16+init_row]=GLYPH_PU[16*init_row+:16];
+            font_rom[39*16+init_row]=GLYPH_TAO[16*init_row+:16];
+            font_rom[40*16+init_row]=GLYPH_JU[16*init_row+:16];
+            font_rom[41*16+init_row]=GLYPH_ZI[16*init_row+:16];
+            font_rom[42*16+init_row]=GLYPH_CAO[16*init_row+:16];
+            font_rom[43*16+init_row]=GLYPH_MEI[16*init_row+:16];
+            font_rom[44*16+init_row]=(init_row==12 || init_row==13) ? 16'h0180 : 16'h0000;
             font_rom[1*16+init_row]=GLYPH_A[16*init_row+:16];
             font_rom[2*16+init_row]=GLYPH_B[16*init_row+:16];
             font_rom[3*16+init_row]=GLYPH_C[16*init_row+:16];

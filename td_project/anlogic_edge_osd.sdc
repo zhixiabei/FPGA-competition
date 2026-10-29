@@ -1,4 +1,7 @@
 create_clock -name {sys_clk_50m} -period 20.000 -waveform {0.000 10.000} [get_ports {I_sys_clk}]
+# U30 return data is synchronized before sampling at SPI's divided clock.
+# The second stage and SPI state machine retain normal timing checks.
+set_false_path -from [get_ports I_model_flash_miso] -to [get_regs {handcnn_recognition$u_handcnn/flash_model$boot/reader/bus/miso_meta}]
 # K1-K3 and SW1 are asynchronous; only their synchronizers sample these ports.
 # The following synchronizer stage and debounce logic remain normally timed.
 set_false_path -from [get_ports {I_mode_key_n}]

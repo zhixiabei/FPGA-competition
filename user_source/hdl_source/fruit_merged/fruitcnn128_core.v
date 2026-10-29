@@ -95,7 +95,7 @@ module fruitcnn128_core(
         .raddr(term[5:0]),.rclk(clk),.rrst(!rst_n),.rce(1'b1),.rdo(),.rdoq(weight_tail_q));
     reg weight_select_tail;
     wire [191:0] weight_q=weight_select_tail ? weight_tail_q : weight_main_q;
-    reg [4:0] lane,store_lane;
+    reg [4:0] lane,store_lane,coefficient_lane;
     wire [45:0] coefficient_q;
     // Bias and shift coefficients are loaded once per output group. Keeping
     // the 24 entries in embedded RAM releases 1104 slice registers while
@@ -114,7 +114,7 @@ module fruitcnn128_core(
         .wea(state==COEFF && mem_rsp_valid),.web(state==COEFF && mem_rsp_valid),
         .rsta(1'b0),.rstb(1'b0),.bea(1'b0),.beb(1'b0),
         .addra({received[3:0],1'b0}),
-        .addrb(state==COEFF ? {received[3:0],1'b1} : {1'b0,lane}),
+        .addrb(state==COEFF ? {received[3:0],1'b1} : coefficient_lane),
         .dia({mem_rsp_data[45:40],mem_rsp_data[39:0]}),
         .dib({mem_rsp_data[109:104],mem_rsp_data[103:64]}),
         .doa(),.dob(coefficient_q),.ecc_sbiterr(),.ecc_dbiterr(),
@@ -242,12 +242,19 @@ module fruitcnn128_core(
     wire [4:0] divide_trial={divide_rem,divide_n[18]};
     wire [18:0] divide_next_q={divide_q[17:0],divide_trial>=9};
     wire [15:0] divide_answer=divide_negative ? -divide_next_q[15:0] : divide_next_q[15:0];
-    reg signed [53:0] selected_sum,biased,scaled;
+    // Signed A12/W8 and at most 576 terms fit in a 32-bit sum.
+    // Adding a signed 40-bit bias requires 41 bits.
+    reg signed [31:0] selected_sum;
+    reg signed [40:0] biased,scaled;
     reg signed [39:0] selected_bias;
-    reg [5:0] selected_shift;
+    reg [5:0] selected_shift,biased_shift;
+    reg post_issue_done;
+    reg post_s0_valid,post_s1_valid,post_s2_valid;
+    reg [4:0] post_s0_lane,post_s1_lane,post_s2_lane;
     wire [15:0] saturated=relu && scaled<0 ? 16'd0 : relu && scaled>2047 ? 16'd2047 : scaled>32767 ? 16'h7fff : scaled< -32768 ? 16'h8000 : scaled[15:0];
     wire [9:0] output_channel={group,4'd0}+{group,3'd0}+store_lane;
     wire [9:0] lane_channel={group,4'd0}+{group,3'd0}+lane;
+    wire [9:0] post_s2_channel={group,4'd0}+{group,3'd0}+post_s2_lane;
     function [95:0] pack_activations;
         input [127:0] word;
         begin
@@ -264,7 +271,7 @@ module fruitcnn128_core(
         weight_main_q<=weight_cache[term[8:0]];
         weight_select_tail<=term[9];
         if(state==RUN && kernel==3) row_cache_q<=row_cache[row_cache_address];
-        if(state==SCALE) output_cache[{lane,pos[2:0]}]<=lane_channel<cout ? saturated : 16'd0;
+        if(post_s2_valid) output_cache[{post_s2_lane,pos[2:0]}]<=saturated;
         output_q<=output_cache[{store_lane,pack_index}];
     end
     always @(posedge clk or negedge rst_n) begin
@@ -272,12 +279,14 @@ module fruitcnn128_core(
             state<=IDLE;active_group<=0;done<=0;fault<=0;issued<=0;received<=0;total<=0;
             kernel<=0;padding<=0;stride_two<=0;iw<=0;ih<=0;src_plane<=0;
             first_weight_word<=0;term<=0;terms<=0;ic<=0;kx<=0;ky<=0;
-            channel_offset<=0;cache_channel_offset<=0;ox<=0;oy<=0;pos<=0;tile_start<=0;area<=0;lane<=0;
+            channel_offset<=0;cache_channel_offset<=0;ox<=0;oy<=0;pos<=0;tile_start<=0;area<=0;lane<=0;coefficient_lane<=0;
             store_lane<=0;pack_index<=0;store_addr<=0;store_word<=0;write_address<=0;
             pipe_valid<=0;pipe_first<=0;pipe_padding<=0;pipe_offset<=0;
             pool_channel<=0;pool_offset<=0;pool_sum<=0;pool_byte<=0;
             divide_n<=0;divide_q<=0;divide_rem<=0;divide_step<=0;divide_negative<=0;
-            selected_sum<=0;selected_bias<=0;selected_shift<=0;biased<=0;scaled<=0;
+            selected_sum<=0;selected_bias<=0;selected_shift<=0;biased<=0;scaled<=0;biased_shift<=0;
+            post_issue_done<=0;post_s0_valid<=0;post_s1_valid<=0;post_s2_valid<=0;
+            post_s0_lane<=0;post_s1_lane<=0;post_s2_lane<=0;
             activation_read_address<=0;activation_cache<=0;activation_cache_word<=0;activation_request_word<=0;
             activation_cache_1<=0;activation_cache_2<=0;activation_cache_3<=0;
             activation_cache_word_1<=0;activation_cache_word_2<=0;activation_cache_word_3<=0;
@@ -336,7 +345,8 @@ module fruitcnn128_core(
                     active_group<=0;issued<=0;received<=0;terms<=program_terms;area<=program_area;
                     activation_cache_valid<=0;activation_cache_valid_1<=0;
                     activation_cache_valid_2<=0;activation_cache_valid_3<=0;activation_replace<=0;
-                    if(input_words>6144 || input_words==0 || (!kind && program_terms>576) || cin==0 || cout==0) begin
+                    if(input_words>6144 || input_words==0 ||
+                       (!kind && (program_terms==0 || program_terms>576)) || cin==0 || cout==0) begin
                         fault<=1;done<=1;state<=IDLE;
                     end else if(kind) begin
                         pool_channel<=0;pool_offset<=0;kx<=0;ky<=0;pool_sum<=0;
@@ -399,12 +409,36 @@ module fruitcnn128_core(
                     else state<=RUN;
                 end
                 DRAIN:begin pipe_valid<=0;state<=SUM_WAIT;end
-                SUM_WAIT:begin lane<=0;state<=COEFF_READ;end
-                COEFF_READ:state<=SELECT_SUM;
-                SELECT_SUM:begin selected_sum<=sums[lane*54+:54];selected_bias<=coefficient_q[39:0];selected_shift<=coefficient_q[45:40];state<=ADD_BIAS;end
-                ADD_BIAS:begin biased<=selected_sum+{{14{selected_bias[39]}},selected_bias};state<=SHIFT_SUM;end
-                SHIFT_SUM:begin scaled<=biased>>>selected_shift;state<=SCALE;end
-                SCALE:if(lane==23) state<=NEXT_POS;else begin lane<=lane+1'b1;state<=COEFF_READ;end
+                SUM_WAIT:begin
+                    lane<=0;coefficient_lane<=0;post_issue_done<=0;
+                    post_s0_valid<=0;post_s1_valid<=0;post_s2_valid<=0;
+                    state<=COEFF_READ;
+                end
+                COEFF_READ:begin coefficient_lane<=1;state<=SELECT_SUM;end
+                SELECT_SUM:begin
+                    // A shared pipeline accepts one lane per clock.
+                    post_s0_valid<=0;
+                    post_s1_valid<=post_s0_valid;
+                    post_s2_valid<=post_s1_valid;
+                    if(post_s0_valid) begin
+                        biased<={{9{selected_sum[31]}},selected_sum}+
+                                {selected_bias[39],selected_bias};
+                        biased_shift<=selected_shift;post_s1_lane<=post_s0_lane;
+                    end
+                    if(post_s1_valid) begin
+                        scaled<=biased>>>biased_shift;post_s2_lane<=post_s1_lane;
+                    end
+                    if(!post_issue_done) begin
+                        selected_sum<=sums[lane*54+:32];
+                        selected_bias<=coefficient_q[39:0];
+                        selected_shift<=coefficient_q[45:40];
+                        post_s0_lane<=lane;post_s0_valid<=1;
+                        if(lane==23 || lane_channel==cout-1) post_issue_done<=1;
+                        else begin lane<=lane+1'b1;coefficient_lane<=coefficient_lane+1'b1;end
+                    end
+                    if(post_s2_valid && (post_s2_lane==23 || post_s2_channel==cout-1))
+                        state<=NEXT_POS;
+                end
                 NEXT_POS:begin
                     if(ox==ow-1) begin ox<=0;oy<=oy+1'b1;end else ox<=ox+1'b1;
                     if(pos[2:0]==7 || pos==area-1) begin

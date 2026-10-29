@@ -5,12 +5,15 @@ module fruitfixed_system #(
     parameter integer KEY4_CONTROL=0,
     parameter integer BACKGROUND_CONTROL=0,
     parameter integer SWITCH_CONTROL=0,
+    parameter integer FLASH_MODEL_ENABLE=0,
     parameter integer KEY_DEBOUNCE_CYCLES=1333334
 )(
     input wire clk,rst_n,calibrated,uart_rx,memory_error,
     input wire key4_n,
     input wire run_switch,
     output wire uart_tx,
+    output wire flash_cs_n,flash_sck,flash_mosi,
+    input wire flash_miso,
     input wire frame_start,
     input wire [1:0] frame_slot,
     input wire video_write,
@@ -53,18 +56,34 @@ module fruitfixed_system #(
         .roi_x(fixed_x),.roi_y(fixed_y),.roi_side(fixed_side));
     wire rx_valid,rx_error,tx_valid,tx_ready;
     wire [7:0] rx_byte,tx_byte;
-    resnet18_uart uart(.clk(clk),.rst_n(rst_n),.rx(uart_rx),.tx(uart_tx),
-        .rx_valid(rx_valid),.rx_error(rx_error),.rx_data(rx_byte),
-        .tx_valid(tx_valid),.tx_ready(tx_ready),.tx_data(tx_byte));
-    wire load_valid;
+    wire load_valid,load_write;
     wire [31:0] load_addr;
     wire [127:0] load_data;
     wire [255:0] status_packet;
-    resnet18_weight_loader loader(.clk(clk),.rst_n(rst_n),.rx_valid(rx_valid),.rx_error(rx_error),
+    generate if(FLASH_MODEL_ENABLE!=0) begin: flash_model
+        wire [255:0] flash_diagnostics;
+        fruit_flash_boot boot(.clk(clk),.rst_n(rst_n),.calibrated(calibrated),.memory_error(memory_error),
+            .model_base(model_base),.model_bytes(model_bytes),.model_crc32(model_crc32),.model_ready(model_ready),
+            .mem_valid(load_valid),.mem_write(load_write),.mem_addr(load_addr),.mem_data(load_data),
+            .mem_ready(mem_ready),.mem_rsp_valid(mem_rsp_valid),.mem_rsp_data(mem_rsp_data),
+            .flash_cs_n(flash_cs_n),.flash_sck(flash_sck),.flash_mosi(flash_mosi),.flash_miso(flash_miso),
+            .diagnostics(flash_diagnostics));
+        flash_status_uart status_uart(.clk(clk),.rst_n(rst_n),.rx(uart_rx),.tx(uart_tx),
+            .runtime_status(status_packet),.flash_status(flash_diagnostics));
+    end else begin: uart_model
+        assign flash_cs_n=1'b1;
+        assign flash_sck=1'b0;
+        assign flash_mosi=1'b0;
+        assign load_write=1'b1;
+        resnet18_uart uart(.clk(clk),.rst_n(rst_n),.rx(uart_rx),.tx(uart_tx),
+            .rx_valid(rx_valid),.rx_error(rx_error),.rx_data(rx_byte),
+            .tx_valid(tx_valid),.tx_ready(tx_ready),.tx_data(tx_byte));
+        resnet18_weight_loader loader(.clk(clk),.rst_n(rst_n),.rx_valid(rx_valid),.rx_error(rx_error),
         .rx_data(rx_byte),.tx_valid(tx_valid),.tx_data(tx_byte),.tx_ready(tx_ready),
         .allow_load(calibrated),.runtime_status(status_packet),.MODEL_BASE(model_base),
         .MODEL_BYTES(model_bytes),.MODEL_CRC32(model_crc32),.model_ready(model_ready),
         .accepted_packets(),.mem_valid(load_valid),.mem_addr(load_addr),.mem_data(load_data),.mem_ready(mem_ready));
+    end endgenerate
     wire snap_valid,snap_done,snap_busy,snap_failed;
     wire [31:0] snap_addr;
     wire [127:0] snap_data;
@@ -131,7 +150,7 @@ module fruitfixed_system #(
     wire decoding=state==DECISION;
     wire compute_valid=prep ? pp_valid : decoding ? dec_valid : core_valid;
     assign mem_valid=load_valid || snap_valid || compute_valid;
-    assign mem_write=load_valid || snap_valid || (prep ? pp_write : decoding ? 1'b0 : core_write);
+    assign mem_write=load_valid ? load_write : snap_valid || (prep ? pp_write : decoding ? 1'b0 : core_write);
     assign mem_addr=load_valid ? load_addr : snap_valid ? snap_addr : prep ? pp_addr : decoding ? dec_addr : core_addr;
     assign mem_data=load_valid ? load_data : snap_valid ? snap_data : prep ? pp_data : core_data;
     wire [2:0] confirmed_class;

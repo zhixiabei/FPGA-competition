@@ -1,7 +1,9 @@
 // Command buffer with independent DDR write-address/data handshakes. Read
-// responses retain their owner in strict controller order. Video has priority;
-// the network uses idle command slots and has only one read outstanding.
-module resnet18_memory_bridge(
+// responses retain their owner in strict controller order. A small video
+// grant quota prevents network starvation under continuous contention.
+module resnet18_memory_bridge #(
+    parameter integer MAX_VIDEO_GRANTS=16
+)(
     input wire clk,rst_n,calibrated,
     input wire v_valid,v_read,
     input wire [24:0] v_addr,
@@ -29,14 +31,18 @@ module resnet18_memory_bridge(
     reg owners[0:511];
     reg [8:0] wr_ptr,rd_ptr;
     reg [9:0] count;
+    localparam integer GRANT_BITS=MAX_VIDEO_GRANTS>1 ? $clog2(MAX_VIDEO_GRANTS) : 1;
+    reg [GRANT_BITS-1:0] video_grants;
     wire addr_accept,data_accept;
     // Retire and replace the buffer at the same edge. A forced empty cycle
     // halves video bandwidth even when the DDR accepts a command every clock.
     wire complete=pending && (addr_done || addr_accept) &&
                   (p_read || data_done || data_accept);
     wire slot=calibrated && (!pending || complete) && count<510 && !protocol_error;
-    assign v_ready=slot;
-    assign n_ready=slot && !v_valid;
+    wire force_network=n_valid && v_valid &&
+        (MAX_VIDEO_GRANTS<=1 || video_grants==MAX_VIDEO_GRANTS-1);
+    assign v_ready=slot && !force_network;
+    assign n_ready=slot && (!v_valid || force_network);
     assign d_addr=p_addr;
     assign d_data=p_data;
     assign d_read=p_read;
@@ -54,8 +60,10 @@ module resnet18_memory_bridge(
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             pending<=0;p_read<=0;p_owner<=0;addr_done<=0;data_done<=0;
-            p_addr<=0;p_data<=0;wr_ptr<=0;rd_ptr<=0;count<=0;protocol_error<=0;
+            p_addr<=0;p_data<=0;wr_ptr<=0;rd_ptr<=0;count<=0;video_grants<=0;protocol_error<=0;
         end else begin
+            if(!n_valid || (n_valid && n_ready)) video_grants<=0;
+            else if(v_valid && v_ready) video_grants<=video_grants+1'b1;
             if(addr_accept) addr_done<=1;
             if(data_accept) data_done<=1;
             if(complete) pending<=0;

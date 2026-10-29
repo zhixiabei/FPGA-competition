@@ -8,6 +8,7 @@ module design_top_wrapper #(
     parameter integer SHOW_RAW_STATS = 0, // RAW diagnostics.
     parameter integer ENABLE_HANDCNN = 1, // Enabled by the model project generator.
     parameter integer FRUIT_SWITCH_CONTROL = 1, // SW2 level controls the fruit candidate.
+    parameter integer FRUIT_FLASH_MODEL = 1, // Independent U30 Flash auto-loads the model.
     parameter integer ENABLE_LATENCY_DIAGNOSTICS = 1,
     parameter integer IQ_DIAGNOSTIC_ENABLE = 0 // Optional CSI-clock ChipWatcher probes.
 ) (
@@ -15,6 +16,9 @@ module design_top_wrapper #(
     input wire        I_rst_n,
     input wire        I_resnet_uart_rx,
     output wire       O_resnet_uart_tx,
+    output wire       O_model_flash_cs_n,O_model_flash_sck,O_model_flash_mosi,
+    output wire       O_model_flash_wp_n,O_model_flash_hold_n,
+    input wire        I_model_flash_miso,
     input wire        I_hx711_dout,
     output wire       O_hx711_sck,
     output wire [7:0] O_seg_n,
@@ -125,6 +129,9 @@ module design_top_wrapper #(
     wire S_cnn_result_valid_hdmi;
     wire [2:0] S_cnn_class_hdmi;
     wire [31:0] S_resnet_probe_status_hdmi;
+    wire [15:0] S_checkout_weight_bcd,S_checkout_price_bcd;
+    wire S_checkout_weight_valid,S_checkout_price_valid;
+    wire [33:0] S_checkout_payload_hdmi;
 	wire 			S_ISP_O_tlast ;
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
@@ -1222,13 +1229,20 @@ generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
         .tare_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_detect_key_n : 1'b1),
         .cal_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_effect_key_n : 1'b1),
         .hx711_sck(O_hx711_sck),.fruit_valid(result_valid),.fruit_class(result_class),
-        .weight_g(),.weight_valid(),.status(),.raw_adc(),.sample_count(),
+        .weight_g(),.total_fen(),.weight_valid(),.price_valid(),
+        .weight_bcd(S_checkout_weight_bcd),.price_bcd(S_checkout_price_bcd),
+        .weight_bcd_valid(S_checkout_weight_valid),.price_bcd_valid(S_checkout_price_valid),
+        .status(),.raw_adc(),.sample_count(),
         .seg_n(O_seg_n),.sel_n(O_seg_sel_n));
-    fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),
+    assign O_model_flash_wp_n=1'b1;
+    assign O_model_flash_hold_n=1'b1;
+    fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),.FLASH_MODEL_ENABLE(FRUIT_FLASH_MODEL),
         .SWITCH_CONTROL(FRUIT_SWITCH_CONTROL)) u_handcnn(
         .key4_n(I_param_key_n),.run_switch(I_fruit_switch),
         .clk(S_ddr_clk),.rst_n(S_rst_n),.calibrated(S_init_calib_complete),.memory_error(S_rnet_memory_error),
         .uart_rx(I_resnet_uart_rx),.uart_tx(O_resnet_uart_tx),
+        .flash_cs_n(O_model_flash_cs_n),.flash_sck(O_model_flash_sck),
+        .flash_mosi(O_model_flash_mosi),.flash_miso(I_model_flash_miso),
         .frame_start(raw_sof),.frame_slot(raw_slot),.video_write(raw_write),.video_addr(raw_addr),.video_data(raw_data),
         .mem_valid(S_rnet_mem_valid),.mem_write(S_rnet_mem_write),.mem_addr(S_rnet_mem_addr),.mem_data(S_rnet_mem_data),
         .mem_ready(S_rnet_mem_ready),.mem_rsp_valid(S_rnet_rsp_valid),.mem_rsp_data(S_rnet_rsp_data),
@@ -1261,18 +1275,32 @@ end else begin: recognition_disabled
         .tare_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_detect_key_n : 1'b1),
         .cal_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_effect_key_n : 1'b1),
         .hx711_sck(O_hx711_sck),.fruit_valid(1'b0),.fruit_class(3'd1),
-        .weight_g(),.weight_valid(),.status(),.raw_adc(),.sample_count(),
+        .weight_g(),.total_fen(),.weight_valid(),.price_valid(),
+        .weight_bcd(S_checkout_weight_bcd),.price_bcd(S_checkout_price_bcd),
+        .weight_bcd_valid(S_checkout_weight_valid),.price_bcd_valid(S_checkout_price_valid),
+        .status(),.raw_adc(),.sample_count(),
         .seg_n(O_seg_n),.sel_n(O_seg_sel_n));
     assign S_cnn_result_valid_hdmi=0;
     assign S_cnn_class_hdmi=3'd1;
     assign S_hand_box_hdmi=0;
     assign S_resnet_probe_status_hdmi=0;
     assign O_resnet_uart_tx=1;
+    assign O_model_flash_cs_n=1;
+    assign O_model_flash_sck=0;
+    assign O_model_flash_mosi=0;
+    assign O_model_flash_wp_n=1;
+    assign O_model_flash_hold_n=1;
     assign S_rnet_mem_valid=0;
     assign S_rnet_mem_write=0;
     assign S_rnet_mem_addr=0;
     assign S_rnet_mem_data=0;
 end endgenerate
+
+    camera_diag_cdc #(.WIDTH(34)) u_checkout_cdc(
+        .I_src_clk(S_ddr_clk),.I_dst_clk(S_hdmi_pixel_clk),.I_rst_n(S_rst_n),
+        .I_src_data({S_checkout_price_valid,S_checkout_weight_valid,
+                     S_checkout_price_bcd,S_checkout_weight_bcd}),
+        .O_dst_data(S_checkout_payload_hdmi));
 
 
     video_in #(.FRAME_STRIDE_NATIVE(ENABLE_HANDCNN != 0 ? 1572864 : 7000000)) u_video_in(
@@ -1513,6 +1541,10 @@ end endgenerate
         .I_cnn_enable(FRUIT_SWITCH_CONTROL != 0 ? I_fruit_switch : 1'b1),
         .I_cnn_result_valid(S_cnn_result_valid_hdmi),
         .I_cnn_class(S_cnn_class_hdmi),
+        .I_checkout_weight_bcd(S_checkout_payload_hdmi[15:0]),
+        .I_checkout_price_bcd(S_checkout_payload_hdmi[31:16]),
+        .I_checkout_weight_valid(S_checkout_payload_hdmi[32]),
+        .I_checkout_price_valid(S_checkout_payload_hdmi[33]),
         .I_hand_box_valid(S_hand_box_hdmi[48]),
         .I_hand_box(S_hand_box_hdmi[47:0]),
         .I_resnet_probe_status(S_resnet_probe_status_hdmi),
