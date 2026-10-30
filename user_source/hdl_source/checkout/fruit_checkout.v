@@ -20,6 +20,7 @@ module fruit_checkout #(
     output reg [13:0] weight_g,
     output reg [13:0] total_fen,
     output reg weight_valid,price_valid,overload,
+    output reg weight_updated,
     output reg tared,calibrated,
     output wire calibration_pending
 );
@@ -97,11 +98,12 @@ module fruit_checkout #(
         if(!rst_n) begin
             sum<=0;sample_count<=0;zero_raw<=0;average<=0;average_valid<=0;average_ready<=0;
             span<=1;reverse_load<=0;command<=0;tared<=0;calibrated<=0;
-            weight_g<=0;total_fen<=0;weight_valid<=0;price_valid<=0;overload<=0;
+            weight_g<=0;total_fen<=0;weight_valid<=0;price_valid<=0;overload<=0;weight_updated<=0;
             state<=IDLE;div_start<=0;div_numerator<=0;div_denominator<=1;
             price_weight<=0;price_unit<=0;priced_class<=1;price_signature_valid<=0;sample_bad<=1;
             price_product<=0;price_bit<=0;
         end else begin
+            weight_updated<=0;
             average_valid<=0;div_start<=0;
             if(average_valid) average_ready<=1;
             if(sample_valid) begin
@@ -127,7 +129,9 @@ module fruit_checkout #(
                     command<=0;weight_valid<=0;price_signature_valid<=0;
                 end else if(tared && calibrated && !sample_bad && !sensor_fault) begin
                     price_valid<=0;price_signature_valid<=0;weight_valid<=0;
-                    if(load_delta<=0) begin weight_g<=0;weight_valid<=1;overload<=0;end
+                    if(load_delta<=0) begin
+                        weight_g<=0;weight_valid<=1;overload<=0;weight_updated<=1;
+                    end
                     else begin
                         div_numerator<=weight_numerator+{10'd0,(span>>1)};
                         div_denominator<=span;div_start<=1;state<=WEIGH;
@@ -136,6 +140,7 @@ module fruit_checkout #(
             end
             case(state)
                 WEIGH:if(div_done) begin
+                    weight_updated<=1;
                     overload<=quotient>9999;weight_valid<=quotient<=9999;
                     weight_g<=quotient>9999 ? 14'd9999 : quotient<=2 ? 14'd0 : quotient[13:0];
                     state<=IDLE;

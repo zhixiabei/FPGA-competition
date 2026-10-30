@@ -729,6 +729,46 @@
                     <Attr Name="CompileOrder" Val="93"/>
                 </FileInfo>
             </File>
+            <File Path="../user_source/hdl_source/voice/cx_sp5t_uart.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="104"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/voice/scale_voice_stable.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="105"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/voice/scale_voice_phrase.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="106"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/voice/scale_voice_auto.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="107"/>
+                </FileInfo>
+            </File>
+            <File Path="../user_source/hdl_source/voice/checkout_voice_bridge.v">
+                <FileInfo>
+                    <Attr Name="UsedInSyn" Val="true"/>
+                    <Attr Name="UsedInP&R" Val="true"/>
+                    <Attr Name="BelongTo" Val="design_1"/>
+                    <Attr Name="CompileOrder" Val="108"/>
+                </FileInfo>
+            </File>
         </Verilog>
         <System_Verilog>
             <File Path="../user_source/hdl_source/mipi_dphy_rx/mipi_dphy_rx_ph1p_mipiio_wrapper.sv">
