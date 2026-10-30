@@ -1,6 +1,6 @@
 # Appended to candidate SDC by prepare_handfixed_project.py only when CNN is
 # enabled. Base video projects must not constrain nonexistent CNN endpoints.
-set_false_path -from [get_ports {I_resnet_uart_rx}] -to [get_regs -nowarn {*u_handcnn/uart/rx_meta}]
+set_false_path -from [get_ports {I_resnet_uart_rx}] -to [get_regs -nowarn {*u_handcnn/uart/rx_meta *u_handcnn/flash_model$status_uart/uart/rx_meta}]
 # Exclude only the first asynchronous stages. The always-present key endpoint
 # keeps this collection valid when constant display enable removes enable_meta.
 set_false_path -from [get_ports {I_param_key_n I_fruit_switch}] -to [get_regs -nowarn {*u_handcnn/key_control/key_meta u_hdmi_mixer/cnn_visibility$enable_meta}]

@@ -1,6 +1,6 @@
 param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute,
       [switch] $GenerateBit, [string] $OutputDirectory='',
-      [hashtable] $ResourceLimits=@{}, [int] $PlaceSeed=-1)
+      [hashtable] $ResourceLimits=@{}, [int] $PlaceSeed=1)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($GenerateBit -and $SkipRoute) {throw 'Bit generation requires final routed timing checks'}
