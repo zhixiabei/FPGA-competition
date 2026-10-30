@@ -30,7 +30,7 @@ module design_top_wrapper #(
     output wire       O_cam_24m,
     output wire       O_cam_rst,
       
-    inout wire [1:0]  I_button,
+    inout wire [1:0]  I_button, // Expansion UART: [0] N2 TX, [1] J14 RX (CX-SP5T).
     input wire        I_mode_key_n, // Board K1 (D5), cycle display algorithms.
     input wire        I_detect_key_n, // Board K2 (A9), active low.
     input wire        I_effect_key_n, // Board K3 (B9), effect select or scale calibration.
@@ -1224,16 +1224,28 @@ generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
     wire [11:0] x1,y1,x2,y2;
     wire [15:0] result_frame;
     wire [31:0] probe_status;
+    wire [13:0] checkout_weight_g,checkout_total_fen;
+    wire checkout_weight_valid,checkout_price_valid,checkout_weight_updated;
+    wire [3:0] checkout_status;
     checkout_scale_core #(.CLK_HZ(66666667),.CALIBRATION_GRAMS(227)) u_checkout(
         .clk(S_ddr_clk),.rst_n(S_rst_n),.hx711_dout(I_hx711_dout),
         .tare_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_detect_key_n : 1'b1),
         .cal_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_effect_key_n : 1'b1),
         .hx711_sck(O_hx711_sck),.fruit_valid(result_valid),.fruit_class(result_class),
-        .weight_g(),.total_fen(),.weight_valid(),.price_valid(),
+        .weight_g(checkout_weight_g),.total_fen(checkout_total_fen),
+        .weight_valid(checkout_weight_valid),.price_valid(checkout_price_valid),
+        .weight_updated(checkout_weight_updated),
         .weight_bcd(S_checkout_weight_bcd),.price_bcd(S_checkout_price_bcd),
         .weight_bcd_valid(S_checkout_weight_valid),.price_bcd_valid(S_checkout_price_valid),
-        .status(),.raw_adc(),.sample_count(),
+        .status(checkout_status),.raw_adc(),.sample_count(),
         .seg_n(O_seg_n),.sel_n(O_seg_sel_n));
+    checkout_voice_bridge #(.CLOCK_HZ(66666667),.VOLUME(30)) u_checkout_voice(
+        .clk(S_ddr_clk),.rst_n(S_rst_n),
+        .run_switch(FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch),
+        .weight_g(checkout_weight_g),.total_fen(checkout_total_fen),
+        .weight_valid(checkout_weight_valid),.price_valid(checkout_price_valid),
+        .weight_updated(checkout_weight_updated),
+        .status(checkout_status),.rx(I_button[1]),.tx(I_button[0]));
     assign O_model_flash_wp_n=1'b1;
     assign O_model_flash_hold_n=1'b1;
     fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),.FLASH_MODEL_ENABLE(FRUIT_FLASH_MODEL),
@@ -1270,6 +1282,7 @@ generate if (ENABLE_HANDCNN != 0) begin: handcnn_recognition
     assign S_cnn_class_hdmi=result_hdmi[51:49];
     assign S_cnn_result_valid_hdmi=result_hdmi!=result_seen;
 end else begin: recognition_disabled
+    assign I_button[0]=1'b1; // UART idle in the video-only configuration.
     checkout_scale_core #(.CLK_HZ(66666667),.CALIBRATION_GRAMS(227)) u_checkout(
         .clk(S_ddr_clk),.rst_n(S_rst_n),.hx711_dout(I_hx711_dout),
         .tare_key_n((FRUIT_SWITCH_CONTROL == 0 || I_fruit_switch) ? I_detect_key_n : 1'b1),

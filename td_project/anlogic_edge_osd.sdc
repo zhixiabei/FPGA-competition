@@ -98,4 +98,6 @@ set_max_delay -datapath_only -from [get_regs -nowarn {*u_status_cdc/payload_hold
 
 # HX711 DOUT is asynchronous; only its first synchronizer stage is excluded.
 set_false_path -from [get_ports {I_hx711_dout}] -to [get_regs -nowarn {*u_checkout/u_adc/dout_meta}]
+set_false_path -from [get_ports {I_button[1]}] -to [get_regs {handcnn_recognition$u_checkout_voice/u_voice/u_transport/u_uart/rx_meta}]
+set_false_path -from [get_ports {I_fruit_switch}] -to [get_regs {handcnn_recognition$u_checkout_voice/enable_meta}]
 set_false_path -from [get_ports {I_fruit_switch}] -to [get_regs -nowarn {*u_checkout/u_tare/key_meta *u_checkout/u_cal/key_meta *u_detection_mode_control/key_meta}]

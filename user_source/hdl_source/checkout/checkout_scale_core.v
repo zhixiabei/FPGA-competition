@@ -12,6 +12,7 @@ module checkout_scale_core #(
     output wire hx711_sck,
     output wire [13:0] weight_g,total_fen,
     output wire weight_valid,price_valid,
+    output wire weight_updated,
     output wire [15:0] weight_bcd,price_bcd,
     output wire weight_bcd_valid,price_bcd_valid,
     output reg [3:0] status,
@@ -36,7 +37,7 @@ module checkout_scale_core #(
     assign tare=manual_tare || auto_tare;
     wire signed [23:0] sample;
     wire scale_price_valid;
-    wire measured_valid,overload,tared,calibrated,pending;
+    wire measured_valid,measured_update,overload,tared,calibrated,pending;
     reg have_sample,saturated,pending_d,cal_command,cal_failed;
     hx711_reader #(.CLK_HZ(CLK_HZ),.TIMEOUT_CYCLES(TIMEOUT_CYCLES)) u_adc(
         .clk(clk),.rst_n(rst_n),.dout(hx711_dout),.sck(hx711_sck),
@@ -49,9 +50,11 @@ module checkout_scale_core #(
         .clk(clk),.rst_n(rst_n),.sample_valid(sample_valid),.sensor_fault(sensor_fault),
         .sample(sample),.tare(tare),.calibrate(calibrate),.fruit_valid(fruit_valid),.fruit_class(fruit_class),
         .weight_g(weight_g),.total_fen(total_fen),.weight_valid(measured_valid),.price_valid(scale_price_valid),
+        .weight_updated(measured_update),
         .overload(overload),.tared(tared),.calibrated(calibrated),.calibration_pending(pending));
     assign weight_valid=measured_valid && !sensor_fault && !saturated && !pending;
     assign price_valid=scale_price_valid && weight_valid;
+    assign weight_updated=measured_update && weight_valid;
     // Keep the board's active-low digit pins inactive; there is no scanner.
     assign seg_n=8'hff;
     assign sel_n=8'hff;
