@@ -1,4 +1,4 @@
-// HX711 weighing, five-class pricing and eight-digit display integration.
+// HX711 weighing, five-class pricing and HDMI decimal snapshot integration.
 module checkout_scale_core #(
     parameter integer CLK_HZ=66666667,
     parameter integer KEY_CYCLES=(CLK_HZ+49)/50,
@@ -52,12 +52,14 @@ module checkout_scale_core #(
         .overload(overload),.tared(tared),.calibrated(calibrated),.calibration_pending(pending));
     assign weight_valid=measured_valid && !sensor_fault && !saturated && !pending;
     assign price_valid=scale_price_valid && weight_valid;
-    checkout_display #(.SLOT_CYCLES(CLK_HZ/2000)) u_digits(
+    // Keep the board's active-low digit pins inactive; there is no scanner.
+    assign seg_n=8'hff;
+    assign sel_n=8'hff;
+    checkout_display #(.UPDATE_CYCLES((CLK_HZ/2000)*8)) u_panel_digits(
         .clk(clk),.rst_n(rst_n),.weight_g(weight_g),.total_fen(total_fen),
         .weight_valid(weight_valid),.price_valid(price_valid),
         .weight_bcd(weight_bcd),.price_bcd(price_bcd),
-        .weight_bcd_valid(weight_bcd_valid),.price_bcd_valid(price_bcd_valid),
-        .seg_n(seg_n),.sel_n(sel_n));
+        .weight_bcd_valid(weight_bcd_valid),.price_bcd_valid(price_bcd_valid));
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             raw_adc<=0;sample_count<=0;have_sample<=0;saturated<=0;

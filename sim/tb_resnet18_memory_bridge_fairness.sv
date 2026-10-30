@@ -17,10 +17,14 @@ module tb_resnet18_memory_bridge_fairness;
     wire d_read,d_addr_valid,d_data_valid;
     wire [127:0] d_data;
     wire protocol_error;
+    reg ready_gated_video=0;
+    // The production command FIFO emits its request only on a ready cycle.
+    // Exercise this connection as well as a conventional held-valid source.
+    wire bridge_v_valid=v_valid && (!ready_gated_video || v_ready);
 
     resnet18_memory_bridge #(.MAX_VIDEO_GRANTS(16)) dut(
         .clk(clk),.rst_n(rst_n),.calibrated(1'b1),
-        .v_valid(v_valid),.v_read(v_read),.v_addr(VIDEO_ADDR),.v_data(128'h1111),
+        .v_valid(bridge_v_valid),.v_read(v_read),.v_addr(VIDEO_ADDR),.v_data(128'h1111),
         .v_ready(v_ready),.v_rsp_valid(v_rsp_valid),.v_rsp_data(v_rsp_data),
         .n_valid(n_valid),.n_write(n_write),.n_addr(NETWORK_ADDR),.n_data(128'h2222),
         .n_ready(n_ready),.n_rsp_valid(n_rsp_valid),.n_rsp_data(n_rsp_data),
@@ -66,6 +70,8 @@ module tb_resnet18_memory_bridge_fairness;
     initial begin
         repeat(4) @(negedge clk);
         rst_n=1;v_valid=1;n_valid=1;
+        while(accepted<34) @(negedge clk);
+        ready_gated_video=1;
         while(accepted<68) @(negedge clk);
         v_valid=0;n_valid=0;
         repeat(3) @(negedge clk);

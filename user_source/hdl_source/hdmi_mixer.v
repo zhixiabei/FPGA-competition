@@ -1692,11 +1692,16 @@ module hdmi_mixer #(
 
     assign O_video_rd_en = I_video_de;
 
+    // The logo is 160 pixels wide: y*160 = y*128 + y*32. Express
+    // the constant stride with wiring/addition so it needs no multiplier DSP.
+    wire [14:0] S_logo_relative_x=S_logo_input_x-LOGO_X;
+    wire [14:0] S_logo_relative_y=S_logo_input_y-LOGO_Y;
+    wire [14:0] S_logo_row_offset=(S_logo_relative_y<<7)+(S_logo_relative_y<<5);
     assign S_logo_addr =
         (I_video_de &&
          (S_logo_input_x >= LOGO_X) && (S_logo_input_x < LOGO_X + LOGO_W) &&
          (S_logo_input_y >= LOGO_Y) && (S_logo_input_y < LOGO_Y + LOGO_H)) ?
-        (S_logo_input_y - LOGO_Y) * LOGO_W + (S_logo_input_x - LOGO_X) :
+        S_logo_row_offset+S_logo_relative_x :
         15'd0;
 
     // Exact 24-to-16 glyph scaling: floor(16*x/24), for x in 0..23.

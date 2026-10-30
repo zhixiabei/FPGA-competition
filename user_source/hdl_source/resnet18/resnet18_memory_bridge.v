@@ -39,7 +39,11 @@ module resnet18_memory_bridge #(
     wire complete=pending && (addr_done || addr_accept) &&
                   (p_read || data_done || data_accept);
     wire slot=calibrated && (!pending || complete) && count<510 && !protocol_error;
-    wire force_network=n_valid && v_valid &&
+    // mc_to_user_interface asserts v_valid only when v_ready is high.
+    // Do not feed that accepted-request pulse back into v_ready: at the
+    // quota boundary it would create v_ready = !v_ready under contention.
+    // Reserve the network turn from its independent request and the counter.
+    wire force_network=n_valid &&
         (MAX_VIDEO_GRANTS<=1 || video_grants==MAX_VIDEO_GRANTS-1);
     assign v_ready=slot && !force_network;
     assign n_ready=slot && (!v_valid || force_network);

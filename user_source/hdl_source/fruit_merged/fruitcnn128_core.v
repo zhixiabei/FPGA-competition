@@ -35,7 +35,7 @@ module fruitcnn128_core(
     // cannot feed through address generation and cache hit into term advance.
     // Group-dependent weight/coefficient/output addresses remain live.
     reg [3:0] kernel,padding;
-    reg stride_two;
+    reg stride_two,pooling_active;
     wire [9:0] cin=descriptor[57:48],cout=descriptor[73:64];
     reg [7:0] iw,ih;
     wire [7:0] ow=descriptor[103:96],oh=descriptor[111:104];
@@ -148,6 +148,15 @@ module fruitcnn128_core(
             .weight(weight_q[n*8+:8]),.opctrl(pipe_first ? 11'h404 : 11'h40c),
             .muxctrl(pipe_first ? 7'h02 : 7'h22),.result(sums[n*54+:54]));
     end endgenerate
+    // Fixed lane slices avoid a variable shift across the 1296-bit DSP bus.
+    // Only the proven 32-bit accumulator range enters the post-processing path.
+    reg [31:0] lane_sum;
+    integer sum_lane;
+    always @* begin
+        lane_sum=0;
+        for(sum_lane=0;sum_lane<24;sum_lane=sum_lane+1)
+            lane_sum=lane_sum | (sums[sum_lane*54+:32] & {32{lane==sum_lane}});
+    end
     function [15:0] row_offset;
         input [7:0] y,width;
         reg [15:0] v;
@@ -206,32 +215,26 @@ module fruitcnn128_core(
     assign row_read_address=src+
         {15'd0,(prefetch_channel_offset+row_offset(prefetch_source_y,iw)+
         {prefetch_word,3'd0}),1'b0};
-    wire conv_cache_hit_0=activation_cache_valid && activation_cache_word==conv_address[15:3];
-    wire conv_cache_hit_1=activation_cache_valid_1 && activation_cache_word_1==conv_address[15:3];
-    wire conv_cache_hit_2=activation_cache_valid_2 && activation_cache_word_2==conv_address[15:3];
-    wire conv_cache_hit_3=activation_cache_valid_3 && activation_cache_word_3==conv_address[15:3];
-    wire [95:0] conv_cache_data=conv_cache_hit_0 ? activation_cache :
-        conv_cache_hit_1 ? activation_cache_1 :
-        conv_cache_hit_2 ? activation_cache_2 : activation_cache_3;
-    wire cached_term=outside ||
-        conv_cache_hit_0 || conv_cache_hit_1 || conv_cache_hit_2 || conv_cache_hit_3;
-    // Both a cache hit and a completed DDR fetch consume exactly one term.
-    // Keep one counter-update path; ACT_RUN must return to RUN afterwards.
-    wire consume_term=(state==RUN && (kernel==3 || cached_term)) || state==ACT_RUN;
     reg [9:0] pool_channel;
     reg [15:0] pool_offset;
     reg signed [23:0] pool_sum;
     wire [7:0] pool_y={5'd0,pool_channel[1],2'd0}+ky;
     wire [7:0] pool_x={5'd0,pool_channel[0],2'd0}+kx;
     wire [15:0] pool_address=pool_offset+row_offset(pool_y,8'd8)+pool_x;
-    wire pool_cache_hit_0=activation_cache_valid && activation_cache_word==pool_address[15:3];
-    wire pool_cache_hit_1=activation_cache_valid_1 && activation_cache_word_1==pool_address[15:3];
-    wire pool_cache_hit_2=activation_cache_valid_2 && activation_cache_word_2==pool_address[15:3];
-    wire pool_cache_hit_3=activation_cache_valid_3 && activation_cache_word_3==pool_address[15:3];
-    wire pool_cached=pool_cache_hit_0 || pool_cache_hit_1 || pool_cache_hit_2 || pool_cache_hit_3;
-    wire [95:0] pool_cache_data=pool_cache_hit_0 ? activation_cache :
-        pool_cache_hit_1 ? activation_cache_1 :
-        pool_cache_hit_2 ? activation_cache_2 : activation_cache_3;
+    // Convolution and pooling never run together. Select the address before
+    // one shared tag lookup and 96-bit read mux, rather than duplicate both.
+    wire [12:0] cache_lookup_word=pooling_active ? pool_address[15:3] : conv_address[15:3];
+    wire cache_hit_0=activation_cache_valid && activation_cache_word==cache_lookup_word;
+    wire cache_hit_1=activation_cache_valid_1 && activation_cache_word_1==cache_lookup_word;
+    wire cache_hit_2=activation_cache_valid_2 && activation_cache_word_2==cache_lookup_word;
+    wire cache_hit_3=activation_cache_valid_3 && activation_cache_word_3==cache_lookup_word;
+    wire cache_hit=cache_hit_0 || cache_hit_1 || cache_hit_2 || cache_hit_3;
+    wire [95:0] cache_data=cache_hit_0 ? activation_cache :
+        cache_hit_1 ? activation_cache_1 : cache_hit_2 ? activation_cache_2 : activation_cache_3;
+    wire cached_term=outside || cache_hit;
+    // Both a cache hit and a completed DDR fetch consume exactly one term.
+    // Keep one counter-update path; ACT_RUN must return to RUN afterwards.
+    wire consume_term=(state==RUN && (kernel==3 || cached_term)) || state==ACT_RUN;
     reg [2:0] pool_byte;
     wire signed [15:0] pool_value={{4{input_q[pool_byte*12+11]}},input_q[pool_byte*12+:12]};
     wire signed [23:0] pool_total=pool_sum+pool_value;
@@ -277,7 +280,7 @@ module fruitcnn128_core(
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             state<=IDLE;active_group<=0;done<=0;fault<=0;issued<=0;received<=0;total<=0;
-            kernel<=0;padding<=0;stride_two<=0;iw<=0;ih<=0;src_plane<=0;
+            kernel<=0;padding<=0;stride_two<=0;pooling_active<=0;iw<=0;ih<=0;src_plane<=0;
             first_weight_word<=0;term<=0;terms<=0;ic<=0;kx<=0;ky<=0;
             channel_offset<=0;cache_channel_offset<=0;ox<=0;oy<=0;pos<=0;tile_start<=0;area<=0;lane<=0;coefficient_lane<=0;
             store_lane<=0;pack_index<=0;store_addr<=0;store_word<=0;write_address<=0;
@@ -339,6 +342,7 @@ module fruitcnn128_core(
             end
             case(state)
                 IDLE:if(start) begin
+                    pooling_active<=kind;
                     kernel<=descriptor[19:16];padding<=descriptor[35:32];
                     stride_two<=descriptor[27:24]==4'd2;
                     iw<=descriptor[87:80];ih<=descriptor[95:88];src_plane<=descriptor[127:112];
@@ -379,7 +383,7 @@ module fruitcnn128_core(
                 end
                 RUN:begin
                     if(kernel==3 || cached_term) begin
-                        if(kernel!=3) input_q<=outside ? 96'd0 : conv_cache_data;
+                        if(kernel!=3) input_q<=outside ? 96'd0 : cache_data;
                         pipe_valid<=1;pipe_first<=term==0;pipe_padding<=outside;
                         pipe_offset<=outside ? 3'd0 :
                             kernel==3 ? sx[2:0] : conv_address[2:0];
@@ -429,7 +433,7 @@ module fruitcnn128_core(
                         scaled<=biased>>>biased_shift;post_s2_lane<=post_s1_lane;
                     end
                     if(!post_issue_done) begin
-                        selected_sum<=sums[lane*54+:32];
+                        selected_sum<=lane_sum;
                         selected_bias<=coefficient_q[39:0];
                         selected_shift<=coefficient_q[45:40];
                         post_s0_lane<=lane;post_s0_valid<=1;
@@ -480,8 +484,8 @@ module fruitcnn128_core(
                     else begin active_group<=active_group+1'b1;issued<=0;received<=0;total<=terms<<1;state<=WEIGHTS;end
                 POOL_ADDR:begin
                     pool_byte<=pool_address[2:0];
-                    if(pool_cached) begin
-                        input_q<=pool_cache_data;
+                    if(cache_hit) begin
+                        input_q<=cache_data;
                         state<=POOL_GET;
                     end else begin
                         activation_read_address<=src+{15'd0,pool_address[15:3],4'd0};

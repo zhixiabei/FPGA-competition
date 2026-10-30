@@ -61,7 +61,7 @@ module fruit_checkout #(
     assign calibration_pending=command!=0;
 
     reg [2:0] state;
-    localparam IDLE=0,WEIGH=1,PRICE_START=2,PRICE=3;
+    localparam IDLE=0,WEIGH=1,PRICE_START=2,PRICE=3,PRICE_MULTIPLY=4;
     reg div_start;
     reg [34:0] div_numerator;
     reg [24:0] div_denominator;
@@ -86,7 +86,12 @@ module fruit_checkout #(
     reg [11:0] price_unit;
     reg [2:0] priced_class;
     reg price_signature_valid;
-    wire [25:0] price_product=price_weight*price_unit;
+    // Twelve shift/add clocks replace the dedicated pricing multiplier.
+    // Add only the upper 14 bits; the lower 12 bits shift through unchanged.
+    reg [25:0] price_product;
+    reg [3:0] price_bit;
+    wire [14:0] price_partial={1'b0,price_product[25:12]}+
+        (price_unit[0] ? {1'b0,price_weight} : 15'd0);
     reg sample_bad;
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
@@ -95,6 +100,7 @@ module fruit_checkout #(
             weight_g<=0;total_fen<=0;weight_valid<=0;price_valid<=0;overload<=0;
             state<=IDLE;div_start<=0;div_numerator<=0;div_denominator<=1;
             price_weight<=0;price_unit<=0;priced_class<=1;price_signature_valid<=0;sample_bad<=1;
+            price_product<=0;price_bit<=0;
         end else begin
             average_valid<=0;div_start<=0;
             if(average_valid) average_ready<=1;
@@ -134,6 +140,12 @@ module fruit_checkout #(
                     weight_g<=quotient>9999 ? 14'd9999 : quotient<=2 ? 14'd0 : quotient[13:0];
                     state<=IDLE;
                 end
+                PRICE_MULTIPLY:begin
+                    price_product<={price_partial,price_product[11:1]};
+                    price_unit<=price_unit>>1;
+                    if(price_bit==11) state<=PRICE_START;
+                    else price_bit<=price_bit+1'b1;
+                end
                 PRICE_START:begin
                     // total_fen = round(weight_g * fen_per_kg / 1000).
                     div_numerator<={9'd0,price_product}+35'd500;
@@ -150,7 +162,8 @@ module fruit_checkout #(
             if(state==IDLE && !average_ready && !average_valid && !div_busy && !div_start &&
                weight_valid && fruit_fresh && !price_signature_valid) begin
                 price_weight<=weight_g;price_unit<=unit_price;priced_class<=current_class;
-                price_signature_valid<=1;state<=PRICE_START;
+                price_product<=0;price_bit<=0;
+                price_signature_valid<=1;state<=PRICE_MULTIPLY;
             end
             if(!fruit_fresh || (fruit_valid && (fruit_class!=current_class || fruit_class<2 || fruit_class>6)) || !weight_valid) begin
                 price_valid<=0;
