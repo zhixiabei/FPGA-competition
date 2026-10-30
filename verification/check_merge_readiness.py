@@ -98,13 +98,30 @@ def check_project(project):
     section = re.search(r'<Source_Files>.*?</Source_Files>', text, re.S)
     require(section is not None, f'Missing sources: {project}')
     xml = ET.fromstring(section.group().replace('P&R', 'P_R'))
-    files = []
+    files, enabled_files = [], set()
     for element in xml.iter('File'):
         path = Path(element.attrib['Path'])
         if not path.is_absolute():
             path = (project.parent/path).resolve()
         require(path.is_file(), f'Missing project source: {path}')
         files.append(path)
+        attributes = {attr.attrib['Name']: attr.attrib['Val'] for attr in element.iter('Attr')}
+        if attributes.get('UsedInSyn', 'true') == 'true' and attributes.get('AutoExcluded') != 'true':
+            enabled_files.add(path)
+    # Compiling every file in voice/ can conceal a missing entry in the actual
+    # TD project. Check its enabled source list before checking named interfaces.
+    if any(path.name == 'design_top_wrapper.v' and
+           re.search(r'\bcheckout_voice_bridge\s*#?\s*\(',
+                     uncomment(path.read_text(encoding='utf-8-sig', errors='replace')))
+           for path in files):
+        for name in ('cx_sp5t_uart', 'scale_voice_stable', 'scale_voice_phrase',
+                     'scale_voice_auto', 'checkout_voice_bridge'):
+            require(any(path.name == name + '.v' and
+                        re.search(r'\bmodule\s+' + name + r'\b',
+                                  uncomment(path.read_text(encoding='utf-8-sig', errors='replace')))
+                        for path in enabled_files),
+                    f'{project.name}: missing or disabled voice source {name}.v')
+        print(f'VOICE_PROJECT_SOURCES_PASS {project.name}: 5 enabled modules')
     count = rtl_interfaces(files)
     inventory = project.parent/'sources.json'
     if inventory.is_file():

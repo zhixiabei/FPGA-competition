@@ -1,5 +1,7 @@
 # 总工程 CX-SP5T 自动播报
 
+2026-10-30 本机修复：主工程五个语音源文件条目已恢复，语音 RTL 已压缩资源，功能与接线保持本页约定。若 TD 仍打开旧工程，关闭后重新打开 `td_project/anlogic_edge_osd.al` 再综合。最新同配置综合对比和回归见 [语音修复与资源优化](reports/CX_SP5T_RESOURCE_FIX.md)；本轮没有布局布线或生成新 bit。
+
 本次以 GitHub `main` 的 `dc9a2b1`（修复时序）为基线，在 `td_project/anlogic_edge_osd.al` 中加入语音。保留图像处理、HDMI、五类水果识别、HX711、计价、DDR 及 U30 Flash 模型启动；没有替换模型或重写原有计价算法。视频入口 `anlogic_sc520_capture.al` 不启用识别和语音，TX 保持高电平。
 
 2026-10-30 再次从 GitHub 拉取并确认 `origin/main` 为 `dc9a2b1`，随后将语音改动合入当前工作区主目录，分支为 `codex/voice-latest-main`。原本地 `main` 的 `a3385d6` 提交保留；它基于更早版本，不作为本次总工程的基线。本次只修改 17 个语音相关的源码、工程配置、测试和说明文件，保留远端 DDR、时序及图像处理修复。
@@ -71,8 +73,9 @@ TF 卡使用 FAT32、容量不超过 32GB，根目录建立大写 `ZH` 文件夹
 执行回归（需要 ModelSim）：
 
 ```powershell
-python -B verification/run_scale_voice_tests.py --modelsim E:/modelsim/modelsim_ase/win32aloem
+python -B verification/run_scale_voice_tests.py --modelsim C:/altera/14.1/modelsim_ase/win32aloem
 python -B verification/check_merge_readiness.py
+python -B verification/test_voice_project_sources.py
 ```
 
 回归覆盖五类价格、105 组十进制组合、串口原始波形/校验、音量 30、返回状态、播放超时、稳定/漂移/去重，并用实际计价 RTL 和生产用语音适配模块验证 SW2、故障、重新计算间隙、精确零空秤复位及陈旧 valid 信号。
@@ -85,4 +88,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File verification/run_image_quali
   -OutputDirectory build/voice-main-release
 ```
 
-只有最终布线 setup/hold 均通过，构建脚本才发布新的 bit。本次已通过仿真、静态检查和总工程综合；按用户要求停止构建，布局布线和烧录由用户进行。Slice 综合估算为 23599 / 21216，需在后续布局时确认资源。详细结果见 [验证记录](reports/CX_SP5T_MAIN_BUILD.md)。
+只有最终布线 setup/hold 均通过，构建脚本才发布新的 bit。本轮修复已通过仿真、静态检查和总工程综合；布局布线和烧录由用户进行。优化后 Slice 综合估算为 23374 / 21216，最终物理占用仍需布局确认。最新结果见 [资源优化记录](reports/CX_SP5T_RESOURCE_FIX.md)，首次集成历史见 [验证记录](reports/CX_SP5T_MAIN_BUILD.md)。

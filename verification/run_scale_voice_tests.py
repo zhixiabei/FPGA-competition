@@ -18,10 +18,12 @@ def main():
     # Compile the actual integrated top as well; its video/vendor instances
     # are not elaborated by these focused simulation tops.
     sources += [ROOT / 'user_source/hdl_source/design_top_wrapper.v']
-    sources += [ROOT / 'sim' / p for p in ('tb_scale_voice.sv', 'tb_five_class_checkout.sv', 'tb_checkout_voice_link.sv')]
+    tops = ('tb_five_class_checkout', 'tb_scale_voice', 'tb_checkout_voice_link',
+            'tb_voice_phrase_widths', 'tb_cx_sp5t_uart')
+    sources += [ROOT / 'sim' / (top + '.sv') for top in tops]
     commands = ['onerror {quit -code 1 -force}', 'onbreak {resume}',
                 'vlib work', 'vlog -sv -work work ' + ' '.join('{' + p.as_posix() + '}' for p in sources)]
-    for top in ('tb_five_class_checkout', 'tb_scale_voice', 'tb_checkout_voice_link'):
+    for top in tops:
         commands += [f'vsim -novopt -onfinish stop -t ps work.{top}', 'run -all', 'quit -sim']
     commands += ['quit -code 0 -force']
     (out / 'run.tcl').write_text('\n'.join(commands) + '\n', encoding='utf-8')
@@ -31,9 +33,10 @@ def main():
     text = (out / 'simulation.log').read_text(errors='replace')
     if result.returncode or '** Error:' in text or '** Fatal:' in text:
         raise RuntimeError(text[-6000:])
-    for marker in ('FIVE_CLASS_CHECKOUT_PASS', 'SCALE_VOICE_PASS', 'CHECKOUT_VOICE_LINK_PASS'):
+    for marker in ('FIVE_CLASS_CHECKOUT_PASS', 'SCALE_VOICE_PASS', 'CHECKOUT_VOICE_LINK_PASS',
+                   'VOICE_PHRASE_WIDTHS_PASS', 'CX_SP5T_UART_PASS'):
         assert marker in text, text[-6000:]
-    print('SCALE_VOICE_TESTS_PASS checkout five-prices 105-phrases stability serial-wire playback-timeout checkout-link')
+    print('SCALE_VOICE_TESTS_PASS checkout five-prices 105-phrases stability serial-wire playback-timeout checkout-link phrase-widths transport-boundaries')
     print(out / 'simulation.log')
 
 

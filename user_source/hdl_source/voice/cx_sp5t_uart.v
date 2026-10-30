@@ -3,7 +3,9 @@
 module cx_sp5t_uart #(
     parameter integer CLOCK_HZ = 50000000,
     parameter integer BAUD = 9600,
-    parameter [15:0] DEVICE_ADDRESS = 16'hffff
+    parameter [15:0] DEVICE_ADDRESS = 16'hffff,
+    parameter integer DATA_BITS = 8,       // Supported range: 1..8.
+    parameter integer MAX_DATA_BYTES = 25 // Supported range: 0..25.
 )(
     input wire clk, rst_n,
     input wire rx,
@@ -21,8 +23,9 @@ module cx_sp5t_uart #(
     reg [1:0] state;
     reg [7:0] opcode, checksum;
     reg [4:0] count;
-    reg [5:0] position;
+    reg [4:0] position;
     reg [199:0] payload;
+    integer byte_index;
     wire uart_ready, rx_valid, rx_error;
     wire [7:0] rx_byte;
     reg [7:0] tx_byte;
@@ -57,10 +60,19 @@ module cx_sp5t_uart #(
             done<=0;invalid_command<=0;
             case(state)
                 IDLE: if(start) begin
-                    if(data_count>25 || (command==8'h1b && data_count==0))
+                    if(data_count>25 || data_count>MAX_DATA_BYTES ||
+                       (command==8'h1b && data_count==0))
                         invalid_command<=1;
                     else begin
-                        opcode<=command;count<=data_count;payload<=data_bytes;
+                        opcode<=command;count<=data_count;
+                        // Quote clips and volume need fewer than eight bits.
+                        // Keep byte alignment so the UART mux stays unchanged.
+                        for(byte_index=0;byte_index<25;byte_index=byte_index+1) begin
+                            if(byte_index<MAX_DATA_BYTES)
+                                payload[byte_index*8+:8]<=data_bytes[byte_index*8+:DATA_BITS];
+                            else
+                                payload[byte_index*8+:8]<=0;
+                        end
                         position<=0;checksum<=0;state<=SEND;
                     end
                 end
@@ -77,8 +89,9 @@ module cx_sp5t_uart #(
 
     // Only the fixed eight-byte 0x01 status response is needed here.
     // Check the returned device address when using a unicast command address.
-    reg [3:0] rx_position;
-    reg [7:0] rx_sum, returned_status;
+    reg [2:0] rx_position;
+    reg [7:0] rx_sum;
+    reg [1:0] returned_status;
     reg rx_good;
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
@@ -101,7 +114,7 @@ module cx_sp5t_uart #(
                         2: if(DEVICE_ADDRESS!=16'hffff && rx_byte!=DEVICE_ADDRESS[15:8]) rx_good<=0;
                         3: if(DEVICE_ADDRESS!=16'hffff && rx_byte!=DEVICE_ADDRESS[7:0]) rx_good<=0;
                         4: if(rx_byte!=8'h01) rx_good<=0;
-                        5: begin returned_status<=rx_byte;if(rx_byte>2) rx_good<=0;end
+                        5: begin returned_status<=rx_byte[1:0];if(rx_byte>2) rx_good<=0;end
                         6: if(rx_byte!=rx_sum) rx_good<=0;
                         7: begin
                             rx_position<=0;

@@ -1,5 +1,7 @@
 # 总工程语音集成验证
 
+2026-10-30 本机后续已修复主工程语音文件漏项并完成资源优化。最新对比为语音层 541 LUT / 457 寄存器、全工程估算 23374 Slice，见 [语音修复与资源优化](CX_SP5T_RESOURCE_FIX.md)。下文保留首次集成时的历史数据。
+
 日期：2026-10-30。基线：`Laurel1233/FPGA-competition` 的 `main`，提交 `dc9a2b1`。首次在独立目录集成；再次拉取确认基线后，已将相同功能代码合入当前主目录的 `codex/voice-latest-main` 分支。总工程入口为 `td_project/anlogic_edge_osd.al`。
 
 ## 已通过
