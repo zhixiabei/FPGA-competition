@@ -121,7 +121,7 @@ quit -code 0 -force
     $casePattern='(?m)^\s*(?:#\s*)?CNN_TIMING_CASE_PASS\b.*$'
     $caseLines=@([regex]::Matches($console,$casePattern) | ForEach-Object {$_.Value.Trim() -replace '^#\s*',''})
     $passed=$process.ExitCode -eq 0 -and
-        [regex]::Matches($console,$passPattern).Count -eq 1 -and $caseLines.Count -eq 27 -and
+        [regex]::Matches($console,$passPattern).Count -eq 1 -and $caseLines.Count -eq 29 -and
         $console -match 'CNN_ROW_OFFSET_EXHAUSTIVE_PASS pairs=65536\b' -and
         $console -notmatch '(?im)^\s*(?:#\s*)?\*\*\s+(?:Fatal|Error)\b'
     $entry=@{
@@ -156,4 +156,4 @@ $manifest.FinishedAt=(Get-Date).ToString('o')
 $manifest.OutputsBitExact=$true
 $manifest.CaseStatisticsEqual=$true
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-Write-Output "CNN_TIMING_REFERENCE_CANDIDATE_PASS golden_cases=27 lanes=24 outputs_bit_exact=1 case_statistics_equal=1 row_offset_pairs=65536 manifest=$manifestPath"
+Write-Output "CNN_TIMING_REFERENCE_CANDIDATE_PASS golden_cases=29 lanes=24 outputs_bit_exact=1 case_statistics_equal=1 row_offset_pairs=65536 manifest=$manifestPath"

@@ -144,12 +144,33 @@ module tb_fruitcnn128_timing_equivalence;
            numeric.dut.pipe_valid || numeric.qcount!=0)
             $fatal(1,"Reset retained outstanding 3x3 prefetch state");
         numeric.begin_operation(); numeric.finish_operation();
-        if(completed_cases!=27 || numeric.cases_passed!=27 ||
+
+        // Reload all 576 terms for two output groups, including every W8
+        // lane in the tail. Cancel partway through loading the tail first;
+        // embedded RAM contents survive reset and must never leak through.
+        numeric.configure(900,2,2,3,1,1,64,25,0,0,2,1);
+        numeric.reset_core(); numeric.begin_operation();
+        wait(numeric.dut.state==5'd2 && numeric.dut.received>=16'd1056);
+        numeric.reset_core();
+        if(numeric.busy || numeric.mem_valid || numeric.dut.pipe_valid || numeric.qcount!=0)
+            $fatal(1,"Reset retained a partially loaded weight tail transaction");
+        numeric.begin_operation(); numeric.finish_operation();
+
+        // Interrupt active tail MACs, then restart with a different tensor.
+        // This also checks that no extra RAM output cycle shifts term 512.
+        numeric.configure(901,2,2,3,1,1,64,24,0,1,0,0);
+        numeric.reset_core(); numeric.begin_operation();
+        wait(numeric.dut.mac_enable && numeric.dut.term>=10'd520);
+        numeric.reset_core();
+        numeric.configure(902,2,2,3,1,1,64,24,0,1,0,0);
+        numeric.begin_operation(); numeric.finish_operation();
+
+        if(completed_cases!=29 || numeric.cases_passed!=29 ||
            throughput_checks<1000 || last_done_cycle<0)
             $fatal(1,"CNN timing verification coverage incomplete cases=%0d numeric=%0d throughput=%0d",
                 completed_cases,numeric.cases_passed,throughput_checks);
         $fclose(trace_fd);
-        $display("CNN_TIMING_EQUIVALENCE_PASS cases=%0d throughput_checks=%0d lanes=24 conv3_one_term_per_clock=1 immediate_stalled_ddr=1 reset_activation=1 reset_prefetch=1",
+        $display("CNN_TIMING_EQUIVALENCE_PASS cases=%0d throughput_checks=%0d lanes=24 conv3_one_term_per_clock=1 immediate_stalled_ddr=1 reset_activation=1 reset_prefetch=1 reset_tail_load=1 reset_tail_mac=1",
             completed_cases,throughput_checks);
         numeric.timing_extensions_complete=1;
     end

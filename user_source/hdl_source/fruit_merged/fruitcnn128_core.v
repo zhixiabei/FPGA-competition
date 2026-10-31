@@ -63,12 +63,14 @@ module fruitcnn128_core(
                     state==ACT_REQUEST ? activation_read_address :
                     read_base+{12'd0,issued,4'd0};
     assign mem_data=store_word;
-    // A 576-deep wide ERAM rounds up to 1024 rows. Keep the final 64
-    // terms in distributed RAM instead of wasting another five ERAMs.
+    // Keep the 512 main terms separate from the 64-term tail so both
+    // banks retain the same one-clock read and 24-lane weight ordering.
     (* ram_style="bram" *) reg [191:0] weight_cache[0:511];
     reg [9:0] term,terms,ic;
     reg [127:0] first_weight_word;
-    reg [95:0] input_q;
+    // Cache/DDR consumers use one A12 value per cycle. Select it before
+    // the existing register instead of carrying an entire eight-value word.
+    reg [11:0] input_sample;
     // Maximum footprint: 3 rows * 12 channels * 8 words at the 64-wide
     // layer. Other layers trade row width for channel count and also fit.
     (* ram_style="bram" *) reg [95:0] row_cache[0:287];
@@ -85,14 +87,36 @@ module fruitcnn128_core(
     reg [4:0] activation_return_state;
     reg [191:0] weight_main_q;
     wire [191:0] weight_tail_q;
-    // Explicit vendor DRAM prevents the mapper re-promoting the small tail
-    // to five mostly empty ERAMs when its read is independently registered.
-    PH1P_LOGIC_DRAM #(.DATA_WIDTH_W(192),.DATA_WIDTH_R(192),
-        .ADDR_WIDTH_W(6),.ADDR_WIDTH_R(6),.DATA_DEPTH_W(64),.DATA_DEPTH_R(64),
-        .READREG("ENABLE"),.RESETMODE("ASYNC"),.INIT_FILE("NONE"),.FILL_ALL("NONE")) weight_tail(
-        .di({mem_rsp_data[63:0],first_weight_word}),.waddr(received[6:1]),
-        .we(state==WEIGHTS && mem_rsp_valid && received[0] && received[10]),.wclk(clk),
-        .raddr(term[5:0]),.rclk(clk),.rrst(!rst_n),.rce(1'b1),.rdo(),.rdoq(weight_tail_q));
+    // Five 40-bit pseudo-dual-port ERAM banks replace the distributed
+    // tail RAM and its slice read registers. Each bank feeds five adjacent
+    // W8 lanes (four in the final bank), without serializing the 24 MACs.
+    // NOREG still reads synchronously in one clock; OUTREG would add a
+    // cycle. As with weight_cache, storage need not reset: pipe_valid is
+    // cleared on reset and every operation reloads weights before use.
+    wire weight_tail_write=state==WEIGHTS && mem_rsp_valid && received[0] && received[10];
+    wire [199:0] weight_tail_input={8'd0,mem_rsp_data[63:0],first_weight_word};
+    wire [199:0] weight_tail_output;
+    assign weight_tail_q=weight_tail_output[191:0];
+    genvar weight_bank;
+    generate for(weight_bank=0;weight_bank<5;weight_bank=weight_bank+1) begin: weight_tail_banks
+        PH1P_LOGIC_ERAM #(
+            .DATA_WIDTH_A(40),.DATA_WIDTH_B(40),.ADDR_WIDTH_A(6),.ADDR_WIDTH_B(6),
+            .DATA_DEPTH_A(64),.DATA_DEPTH_B(64),.MODE("PDPW"),
+            .REGMODE_A("NOREG"),.REGMODE_B("NOREG"),
+            .WRITEMODE_A("NORMAL"),.WRITEMODE_B("NORMAL"),
+            .IMPLEMENT("20K(FAST)"),.CLKMODE("SYNC"),
+            .ECC_ENCODE("DISABLE"),.ECC_DECODE("DISABLE"),
+            .INIT_FILE("NONE"),.FILL_ALL("NONE")
+        ) u_ram (
+            .clka(clk),.clkb(clk),.cea(weight_tail_write),.ceb(1'b1),
+            .ocea(1'b0),.oceb(1'b0),.wea(weight_tail_write),.web(1'b0),
+            .rsta(1'b0),.rstb(1'b0),.bea(1'b0),.beb(1'b0),
+            .addra(received[6:1]),.addrb(term[5:0]),
+            .dia(weight_tail_input[weight_bank*40+:40]),.dib(40'd0),
+            .doa(),.dob(weight_tail_output[weight_bank*40+:40]),
+            .ecc_sbiterr(),.ecc_dbiterr(),.ecc_sbiterrinj(1'b0),.ecc_dbiterrinj(1'b0)
+        );
+    end endgenerate
     reg weight_select_tail;
     wire [191:0] weight_q=weight_select_tail ? weight_tail_q : weight_main_q;
     reg [4:0] lane,store_lane,coefficient_lane;
@@ -136,9 +160,10 @@ module fruitcnn128_core(
     reg [15:0] output_q;
     reg pipe_valid,pipe_first,pipe_padding;
     reg [2:0] pipe_offset;
-    wire [95:0] convolution_input=kernel==3 ? row_cache_q : input_q;
+    wire [11:0] convolution_input=kernel==3 ?
+        row_cache_q[pipe_offset*12+:12] : input_sample;
     wire signed [15:0] activation=pipe_padding ? 16'sd0 :
-        {{4{convolution_input[pipe_offset*12+11]}},convolution_input[pipe_offset*12+:12]};
+        {{4{convolution_input[11]}},convolution_input};
     wire [24*54-1:0] sums;
     wire mac_enable=pipe_valid && (state==RUN || state==DRAIN);
     genvar n;
@@ -221,22 +246,24 @@ module fruitcnn128_core(
     wire [7:0] pool_y={5'd0,pool_channel[1],2'd0}+ky;
     wire [7:0] pool_x={5'd0,pool_channel[0],2'd0}+kx;
     wire [15:0] pool_address=pool_offset+row_offset(pool_y,8'd8)+pool_x;
-    // Convolution and pooling never run together. Select the address before
-    // one shared tag lookup and 96-bit read mux, rather than duplicate both.
+    // Convolution and pooling share the tag lookup. Each cache line selects
+    // its requested A12 value locally, so the hit mux only carries 12 bits.
     wire [12:0] cache_lookup_word=pooling_active ? pool_address[15:3] : conv_address[15:3];
+    wire [2:0] cache_lookup_offset=pooling_active ? pool_address[2:0] : conv_address[2:0];
     wire cache_hit_0=activation_cache_valid && activation_cache_word==cache_lookup_word;
     wire cache_hit_1=activation_cache_valid_1 && activation_cache_word_1==cache_lookup_word;
     wire cache_hit_2=activation_cache_valid_2 && activation_cache_word_2==cache_lookup_word;
     wire cache_hit_3=activation_cache_valid_3 && activation_cache_word_3==cache_lookup_word;
     wire cache_hit=cache_hit_0 || cache_hit_1 || cache_hit_2 || cache_hit_3;
-    wire [95:0] cache_data=cache_hit_0 ? activation_cache :
-        cache_hit_1 ? activation_cache_1 : cache_hit_2 ? activation_cache_2 : activation_cache_3;
+    wire [11:0] cache_sample=cache_hit_0 ? activation_cache[cache_lookup_offset*12+:12] :
+        cache_hit_1 ? activation_cache_1[cache_lookup_offset*12+:12] :
+        cache_hit_2 ? activation_cache_2[cache_lookup_offset*12+:12] :
+                      activation_cache_3[cache_lookup_offset*12+:12];
     wire cached_term=outside || cache_hit;
     // Both a cache hit and a completed DDR fetch consume exactly one term.
     // Keep one counter-update path; ACT_RUN must return to RUN afterwards.
     wire consume_term=(state==RUN && (kernel==3 || cached_term)) || state==ACT_RUN;
-    reg [2:0] pool_byte;
-    wire signed [15:0] pool_value={{4{input_q[pool_byte*12+11]}},input_q[pool_byte*12+:12]};
+    wire signed [15:0] pool_value={{4{input_sample[11]}},input_sample};
     wire signed [23:0] pool_total=pool_sum+pool_value;
     reg [18:0] divide_n,divide_q;
     reg [3:0] divide_rem;
@@ -285,7 +312,7 @@ module fruitcnn128_core(
             channel_offset<=0;cache_channel_offset<=0;ox<=0;oy<=0;pos<=0;tile_start<=0;area<=0;lane<=0;coefficient_lane<=0;
             store_lane<=0;pack_index<=0;store_addr<=0;store_word<=0;write_address<=0;
             pipe_valid<=0;pipe_first<=0;pipe_padding<=0;pipe_offset<=0;
-            pool_channel<=0;pool_offset<=0;pool_sum<=0;pool_byte<=0;
+            pool_channel<=0;pool_offset<=0;pool_sum<=0;
             divide_n<=0;divide_q<=0;divide_rem<=0;divide_step<=0;divide_negative<=0;
             selected_sum<=0;selected_bias<=0;selected_shift<=0;biased<=0;scaled<=0;biased_shift<=0;
             post_issue_done<=0;post_s0_valid<=0;post_s1_valid<=0;post_s2_valid<=0;
@@ -383,7 +410,7 @@ module fruitcnn128_core(
                 end
                 RUN:begin
                     if(kernel==3 || cached_term) begin
-                        if(kernel!=3) input_q<=outside ? 96'd0 : cache_data;
+                        if(kernel!=3) input_sample<=outside ? 12'd0 : cache_sample;
                         pipe_valid<=1;pipe_first<=term==0;pipe_padding<=outside;
                         pipe_offset<=outside ? 3'd0 :
                             kernel==3 ? sx[2:0] : conv_address[2:0];
@@ -399,12 +426,12 @@ module fruitcnn128_core(
                 end
                 ACT_REQUEST:if(mem_ready) begin
                     if(mem_rsp_valid) begin
-                        input_q<=pack_activations(mem_rsp_data);
+                        input_sample<=mem_rsp_data[activation_offset*16+:12];
                         state<=activation_return_state;
                     end else state<=ACT_WAIT;
                 end
                 ACT_WAIT:if(mem_rsp_valid) begin
-                    input_q<=pack_activations(mem_rsp_data);
+                    input_sample<=mem_rsp_data[activation_offset*16+:12];
                     state<=activation_return_state;
                 end
                 ACT_RUN:begin
@@ -483,13 +510,13 @@ module fruitcnn128_core(
                 NEXT_GROUP:if(({group,4'd0}+{group,3'd0}+24)>=cout) begin done<=1;active_group<=0;state<=IDLE;end
                     else begin active_group<=active_group+1'b1;issued<=0;received<=0;total<=terms<<1;state<=WEIGHTS;end
                 POOL_ADDR:begin
-                    pool_byte<=pool_address[2:0];
                     if(cache_hit) begin
-                        input_q<=cache_data;
+                        input_sample<=cache_sample;
                         state<=POOL_GET;
                     end else begin
                         activation_read_address<=src+{15'd0,pool_address[15:3],4'd0};
                         activation_request_word<=pool_address[15:3];
+                        activation_offset<=pool_address[2:0];
                         activation_return_state<=POOL_GET;
                         state<=ACT_REQUEST;
                     end
