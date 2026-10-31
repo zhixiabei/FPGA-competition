@@ -1,7 +1,9 @@
-// Compact latency readout with shared decimal conversion for three values.
+// Latency readout with shared decimal conversion for three values.
 module video_latency_osd #(
     parameter integer PANEL_X = 984,
-    parameter integer PANEL_Y = 16
+    parameter integer PANEL_Y = 16,
+    parameter integer LARGE_TEXT = 0,
+    parameter integer NARROW_TEXT = 0
 ) (
     input wire I_clk, I_rst_n,
     input wire I_sample_strobe, I_sample_valid,
@@ -75,13 +77,63 @@ module video_latency_osd #(
 
     wire [11:0] px = I_x-PANEL_X;
     wire [11:0] py = I_y-PANEL_Y;
-    wire panel = I_de && I_x>=PANEL_X && I_x<PANEL_X+280 &&
-        I_y>=PANEL_Y && I_y<PANEL_Y+64;
-    wire text_area = panel && px>=8 && px<264 && py>=4 && py<52;
-    wire [11:0] text_x = px-12'd8;
-    wire [11:0] text_y = py-12'd4;
-    wire [4:0] text_col = text_x[8:4];
-    wire [1:0] text_row = text_y[5:4];
+    localparam integer NARROW_LAYOUT = LARGE_TEXT != 0 && NARROW_TEXT != 0;
+    localparam integer PANEL_WIDTH = LARGE_TEXT != 0 ?
+        (NARROW_LAYOUT ? 320 : 400) : 280;
+    localparam integer PANEL_HEIGHT = LARGE_TEXT != 0 ? 112 : 64;
+    localparam integer TEXT_LEFT = NARROW_LAYOUT ? 4 : 8;
+    localparam integer TEXT_TOP = LARGE_TEXT != 0 ? 8 : 4;
+    localparam integer TEXT_WIDTH = LARGE_TEXT != 0 ?
+        (NARROW_LAYOUT ? 312 : 384) : 256;
+    localparam integer TEXT_HEIGHT = LARGE_TEXT != 0 ? 96 : 48;
+    localparam integer NUMERIC_LEFT = NARROW_LAYOUT ? 4 : 6;
+    localparam integer MS_COLUMN = NARROW_LAYOUT ? 11 : 14;
+    wire panel = I_de && I_x>=PANEL_X && I_x<PANEL_X+PANEL_WIDTH &&
+        I_y>=PANEL_Y && I_y<PANEL_Y+PANEL_HEIGHT;
+    wire text_area = panel && px>=TEXT_LEFT && px<TEXT_LEFT+TEXT_WIDTH &&
+        py>=TEXT_TOP && py<TEXT_TOP+TEXT_HEIGHT;
+    wire [11:0] text_x = px-TEXT_LEFT;
+    wire [11:0] text_y = py-TEXT_TOP;
+    wire [4:0] text_col;
+    wire [1:0] text_row;
+    wire [3:0] font_row, font_col;
+    generate if (LARGE_TEXT != 0) begin: large_font
+        reg [7:0] cell_remainder;
+        reg [3:0] cell_index;
+        // All ASCII ink lies in source columns 2..13. Remove only the
+        // empty side bearings, then double both axes: 24x32-pixel cells.
+        // Divide the half-size x coordinate by twelve using four fixed
+        // compare/subtract steps so the new pitch needs no DSP arithmetic.
+        always @(*) begin
+            cell_remainder=text_x[8:1];
+            cell_index=4'd0;
+            if (cell_remainder>=8'd96) begin
+                cell_remainder=cell_remainder-8'd96;
+                cell_index[3]=1'b1;
+            end
+            if (cell_remainder>=8'd48) begin
+                cell_remainder=cell_remainder-8'd48;
+                cell_index[2]=1'b1;
+            end
+            if (cell_remainder>=8'd24) begin
+                cell_remainder=cell_remainder-8'd24;
+                cell_index[1]=1'b1;
+            end
+            if (cell_remainder>=8'd12) begin
+                cell_remainder=cell_remainder-8'd12;
+                cell_index[0]=1'b1;
+            end
+        end
+        assign text_col={1'b0,cell_index};
+        assign text_row=text_y[6:5];
+        assign font_row=text_y[4:1];
+        assign font_col=4'd2+cell_remainder[3:0];
+    end else begin: compact_font
+        assign text_col=text_x[8:4];
+        assign text_row=text_y[5:4];
+        assign font_row=text_y[3:0];
+        assign font_col=text_x[3:0];
+    end endgenerate
     reg [7:0] character;
     reg numeric, numeric_valid;
     reg [2:0] numeric_col;
@@ -94,11 +146,19 @@ module video_latency_osd #(
         case (text_row)
             0: begin
                 numeric_bcd=bcd_total;
-                case (text_col)
-                    0: character="T"; 1: character="O"; 2: character="T";
-                    3: character="A"; 4: character="L"; 5: character=":";
-                    default: character=" ";
-                endcase
+                if (NARROW_LAYOUT) begin
+                    case (text_col)
+                        0: character="T"; 1: character="O";
+                        2: character="T"; 3: character=":";
+                        default: character=" ";
+                    endcase
+                end else begin
+                    case (text_col)
+                        0: character="T"; 1: character="O"; 2: character="T";
+                        3: character="A"; 4: character="L"; 5: character=":";
+                        default: character=" ";
+                    endcase
+                end
             end
             1: begin
                 numeric_bcd=bcd_isp;
@@ -117,11 +177,11 @@ module video_latency_osd #(
                 endcase
             end
         endcase
-        if (text_col>=6 && text_col<=12) begin
-            numeric=1; numeric_col=text_col-6;
+        if (text_col>=NUMERIC_LEFT && text_col<=NUMERIC_LEFT+6) begin
+            numeric=1; numeric_col=text_col-NUMERIC_LEFT;
         end
-        if (text_col==14) character="M";
-        if (text_col==15) character="S";
+        if (text_col==MS_COLUMN) character="M";
+        if (text_col==MS_COLUMN+1) character="S";
         decimal_digit=0;
         case (numeric_col)
             0: decimal_digit=numeric_bcd[23:20];
@@ -143,12 +203,8 @@ module video_latency_osd #(
     end
 
     wire [15:0] glyph;
-    osd_char_lib u_font (.I_char(character), .I_row(text_y[3:0]), .O_row_bits(glyph));
-    wire glyph_on = character=="." ?
-        ((text_y[3:0]==11 || text_y[3:0]==12) && (text_x[3:0]==6 || text_x[3:0]==7)) :
-        character=="/" ?
-        (text_y[3:0]>=2 && text_y[3:0]<=11 && text_x[3:0]==13-text_y[3:0]) :
-        glyph[15-text_x[3:0]];
+    osd_char_lib u_font (.I_char(character), .I_row(font_row), .O_row_bits(glyph));
+    wire glyph_on = glyph[15-font_col];
 
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin

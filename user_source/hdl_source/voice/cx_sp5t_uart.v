@@ -4,10 +4,8 @@ module cx_sp5t_uart #(
     parameter integer CLOCK_HZ = 50000000,
     parameter integer BAUD = 9600,
     parameter [15:0] DEVICE_ADDRESS = 16'hffff,
-    parameter integer MAX_DATA_BYTES = 25,
-    // Private automatic-quote mode: clip IDs 1..13, other commands <=1 byte.
-    // Default mode retains the full generic byte-snapshot interface.
-    parameter integer COMPACT_PLAY = 0
+    parameter integer DATA_BITS = 8,       // Supported range: 1..8.
+    parameter integer MAX_DATA_BYTES = 25 // Supported range: 0..25.
 )(
     input wire clk, rst_n,
     input wire rx,
@@ -24,21 +22,10 @@ module cx_sp5t_uart #(
     localparam IDLE=0, SEND=1, DRAIN=2;
     reg [1:0] state;
     reg [7:0] opcode, checksum;
-    localparam integer COUNT_BITS=$clog2(MAX_DATA_BYTES+1)>0 ? $clog2(MAX_DATA_BYTES+1):1;
-    localparam integer POSITION_BITS=$clog2(MAX_DATA_BYTES+7)>0 ? $clog2(MAX_DATA_BYTES+7):1;
-    localparam integer PAYLOAD_BITS=COMPACT_PLAY ? 4:8;
-    reg [COUNT_BITS-1:0] count;
-    reg [POSITION_BITS-1:0] position;
-    reg [MAX_DATA_BYTES*PAYLOAD_BITS-1:0] payload;
-    reg [7:0] control_byte;
-    wire [7:0] payload_byte=COMPACT_PLAY && opcode!=8'h1b ? control_byte:
-        payload[(position-5)*PAYLOAD_BITS+:PAYLOAD_BITS];
-    wire [MAX_DATA_BYTES*PAYLOAD_BITS-1:0] packed_data;
-    genvar byte_index;
-    generate for(byte_index=0;byte_index<MAX_DATA_BYTES;byte_index=byte_index+1) begin: pack_data
-        assign packed_data[byte_index*PAYLOAD_BITS+:PAYLOAD_BITS]=
-            data_bytes[byte_index*8+:PAYLOAD_BITS];
-    end endgenerate
+    reg [4:0] count;
+    reg [4:0] position;
+    reg [199:0] payload;
+    integer byte_index;
     wire uart_ready, rx_valid, rx_error;
     wire [7:0] rx_byte;
     reg [7:0] tx_byte;
@@ -60,7 +47,7 @@ module cx_sp5t_uart #(
             default: begin
                 if(position==5+count) tx_byte=checksum;
                 else if(position==6+count) tx_byte=8'hbe;
-                else tx_byte=payload_byte;
+                else tx_byte=payload[(position-5)*8+:8];
             end
         endcase
     end
@@ -68,17 +55,24 @@ module cx_sp5t_uart #(
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             state<=IDLE;opcode<=0;checksum<=0;count<=0;
-            position<=0;payload<=0;control_byte<=0;done<=0;invalid_command<=0;
+            position<=0;payload<=0;done<=0;invalid_command<=0;
         end else begin
             done<=0;invalid_command<=0;
             case(state)
                 IDLE: if(start) begin
-                    if(data_count>MAX_DATA_BYTES || (command==8'h1b && data_count==0) ||
-                       (COMPACT_PLAY && command!=8'h1b && data_count>1))
+                    if(data_count>25 || data_count>MAX_DATA_BYTES ||
+                       (command==8'h1b && data_count==0))
                         invalid_command<=1;
                     else begin
-                        opcode<=command;count<=data_count;payload<=packed_data;
-                        control_byte<=data_bytes[7:0];
+                        opcode<=command;count<=data_count;
+                        // Quote clips and volume need fewer than eight bits.
+                        // Keep byte alignment so the UART mux stays unchanged.
+                        for(byte_index=0;byte_index<25;byte_index=byte_index+1) begin
+                            if(byte_index<MAX_DATA_BYTES)
+                                payload[byte_index*8+:8]<=data_bytes[byte_index*8+:DATA_BITS];
+                            else
+                                payload[byte_index*8+:8]<=0;
+                        end
                         position<=0;checksum<=0;state<=SEND;
                     end
                 end
@@ -95,8 +89,9 @@ module cx_sp5t_uart #(
 
     // Only the fixed eight-byte 0x01 status response is needed here.
     // Check the returned device address when using a unicast command address.
-    reg [3:0] rx_position;
-    reg [7:0] rx_sum, returned_status;
+    reg [2:0] rx_position;
+    reg [7:0] rx_sum;
+    reg [1:0] returned_status;
     reg rx_good;
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
@@ -119,7 +114,7 @@ module cx_sp5t_uart #(
                         2: if(DEVICE_ADDRESS!=16'hffff && rx_byte!=DEVICE_ADDRESS[15:8]) rx_good<=0;
                         3: if(DEVICE_ADDRESS!=16'hffff && rx_byte!=DEVICE_ADDRESS[7:0]) rx_good<=0;
                         4: if(rx_byte!=8'h01) rx_good<=0;
-                        5: begin returned_status<=rx_byte;if(rx_byte>2) rx_good<=0;end
+                        5: begin returned_status<=rx_byte[1:0];if(rx_byte>2) rx_good<=0;end
                         6: if(rx_byte!=rx_sum) rx_good<=0;
                         7: begin
                             rx_position<=0;

@@ -14,6 +14,9 @@ module handfixed_preprocess(
     // Unnormalized green stream for the optional background comparison.
     output wire green_valid,green_row_end,
     output wire [7:0] green_pixel,
+    // Background-only RGB sideband, before normalization.
+    output wire rgb_valid,rgb_row_end,
+    output wire [23:0] rgb_pixel,
     output wire busy,
     output reg done,
     output wire mem_valid,mem_write,
@@ -40,6 +43,10 @@ module handfixed_preprocess(
     assign green_valid=state==NORM && channel==1 && mode;
     assign green_row_end=ox==127;
     assign green_pixel=pixel;
+    reg [7:0] background_red,background_green;
+    assign rgb_valid=state==NORM && channel==2 && mode;
+    assign rgb_row_end=ox==127;
+    assign rgb_pixel={background_red,background_green,pixel};
     wire [7:0] green_delta=pixel>=previous_green ? pixel-previous_green : previous_green-pixel;
     reg [7:0] horizontal0,horizontal1;
     reg signed [8:0] interp_delta;
@@ -129,6 +136,7 @@ module handfixed_preprocess(
     wire signed [31:0] cy=yq<low_y ? low_y : yq>high_y ? high_y : yq;
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
+            background_red<=0;background_green<=0;
             green_min<=255;green_max<=0;previous_green<=0;edge_count<=0;
             state<=IDLE;mode<=0;ox<=0;oy<=0;channel<=0;sample_index<=0;pixel<=0;
             xq<=0;yq<=0;xstart<=0;ystart<=0;step<=0;side<=0;origin_x<=0;origin_y<=0;
@@ -220,6 +228,8 @@ module handfixed_preprocess(
                     state <= NORM;
                 end
                 NORM:begin
+                    if(channel==0) background_red<=pixel;
+                    if(channel==1) background_green<=pixel;
                     if(channel==1) begin
                         if(pixel<green_min) green_min<=pixel;
                         if(pixel>green_max) green_max<=pixel;

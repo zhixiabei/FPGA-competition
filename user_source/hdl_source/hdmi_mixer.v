@@ -386,8 +386,57 @@ module hdmi_mixer #(
     wire [3:0] S_follow_row;
     wire [3:0] S_follow_col;
     wire [1:0] S_target_primary_shape;
-    localparam TARGET_TEXT_X = 16;
-    localparam TARGET_TEXT_Y = IMG_HEIGHT-32;
+    // Detection and algorithm occupy two rows at the lower left. Latency
+    // independently occupies the free area below the right fruit sidebar.
+    // Large viewports double strokes and remove only empty ASCII cell sides.
+    localparam integer HUD_VIEW_WIDTH =
+        (SHOW_CNN != 0 && FRUIT_CNN != 0 &&
+         SHOW_RESNET_PROBE == 0 && SHOW_RESNET_RUNTIME == 0) ?
+        (IMG_WIDTH >= 320 ? IMG_WIDTH-320 : 0) : IMG_WIDTH;
+    localparam integer HUD_LARGE_TEXT = HUD_VIEW_WIDTH >= 800 && IMG_HEIGHT >= 240;
+    localparam integer HUD_MODERN_LAYOUT = SHOW_EFFECT_LABEL != 0 || SHOW_LATENCY != 0;
+    localparam integer LATENCY_PANEL_WIDTH = HUD_LARGE_TEXT ? 320 : 280;
+    localparam integer LATENCY_PANEL_X =
+        IMG_WIDTH >= LATENCY_PANEL_WIDTH ? IMG_WIDTH-LATENCY_PANEL_WIDTH : 0;
+    localparam integer LATENCY_PANEL_HEIGHT = HUD_LARGE_TEXT ? 112 : 64;
+    localparam integer LATENCY_PANEL_Y =
+        IMG_HEIGHT >= LATENCY_PANEL_HEIGHT+16 ? IMG_HEIGHT-LATENCY_PANEL_HEIGHT-16 : 0;
+    localparam integer EFFECT_TEXT_X = 16;
+    localparam integer EFFECT_TEXT_WIDTH = HUD_LARGE_TEXT ? 360 : 240;
+    localparam integer EFFECT_TEXT_HEIGHT = HUD_LARGE_TEXT ? 32 : 16;
+    localparam integer EFFECT_TEXT_Y = IMG_HEIGHT >= EFFECT_TEXT_HEIGHT+16 ?
+        IMG_HEIGHT-EFFECT_TEXT_HEIGHT-16 : 0;
+    localparam integer TARGET_LARGE_TEXT = HUD_MODERN_LAYOUT && HUD_LARGE_TEXT;
+    localparam integer TARGET_TEXT_WIDTH = TARGET_LARGE_TEXT ?
+        ((MULTI_TARGET_ENABLE != 0) ? 360 : 552) :
+        ((MULTI_TARGET_ENABLE != 0) ? 240 : 368);
+    localparam integer TARGET_TEXT_HEIGHT = TARGET_LARGE_TEXT ? 32 : 16;
+    localparam integer TARGET_TEXT_PREFERRED_Y = HUD_MODERN_LAYOUT ?
+        (EFFECT_TEXT_Y >= TARGET_TEXT_HEIGHT+8 ? EFFECT_TEXT_Y-TARGET_TEXT_HEIGHT-8 : 0) :
+        (IMG_HEIGHT >= 32 ? IMG_HEIGHT-32 : 0);
+    // Short test formats use the free bottom margin beside the Logo.
+    localparam integer TARGET_TEXT_SHORT_FRAME =
+        (SHOW_LATENCY != 0 || SHOW_EFFECT_LABEL != 0) && TARGET_TEXT_PREFERRED_Y < 160;
+    localparam integer TARGET_TEXT_X = TARGET_TEXT_SHORT_FRAME &&
+        IMG_WIDTH >= 176+TARGET_TEXT_WIDTH ? 176 : 16;
+    localparam integer TARGET_TEXT_Y = TARGET_TEXT_SHORT_FRAME ?
+        (IMG_HEIGHT >= 16 ? IMG_HEIGHT-16 : 0) : TARGET_TEXT_PREFERRED_Y;
+
+    // Divide the bounded half-pixel offset into twelve-column cells using
+    // constant comparisons/subtractions. Shared by both lower-left rows.
+    function [7:0] F_effect_compact_cell;
+        input [7:0] half_x;
+        reg [7:0] remainder;
+        reg [3:0] position;
+        begin
+            remainder=half_x;position=0;
+            if(remainder>=8'd96) begin remainder=remainder-8'd96;position[3]=1'b1;end
+            if(remainder>=8'd48) begin remainder=remainder-8'd48;position[2]=1'b1;end
+            if(remainder>=8'd24) begin remainder=remainder-8'd24;position[1]=1'b1;end
+            if(remainder>=8'd12) begin remainder=remainder-8'd12;position[0]=1'b1;end
+            F_effect_compact_cell={position,remainder[3:0]+4'd2};
+        end
+    endfunction
 
     function F_bounds_overlap;
         input [12:0] ax, ay, aright, abottom, bx, by, bright, bbottom;
@@ -602,7 +651,8 @@ module hdmi_mixer #(
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
                     13'd375,13'd120,13'd575,13'd144) ||
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
-                    13'd16,TARGET_TEXT_Y,13'd256,TARGET_TEXT_Y+13'd16))
+                    TARGET_TEXT_X,TARGET_TEXT_Y,
+                    TARGET_TEXT_X+TARGET_TEXT_WIDTH,TARGET_TEXT_Y+TARGET_TEXT_HEIGHT))
                 candidate_valid = 1'b0;
             if ((SHOW_CAMERA_STATUS != 0) &&
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
@@ -610,11 +660,13 @@ module hdmi_mixer #(
                 candidate_valid = 1'b0;
             if ((SHOW_EFFECT_LABEL != 0) &&
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
-                    13'd192,13'd80,13'd432,13'd96))
+                    EFFECT_TEXT_X,EFFECT_TEXT_Y,
+                    EFFECT_TEXT_X+EFFECT_TEXT_WIDTH,EFFECT_TEXT_Y+EFFECT_TEXT_HEIGHT))
                 candidate_valid = 1'b0;
             if ((SHOW_LATENCY != 0) && S_latency_visible &&
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
-                    13'd864,13'd16,13'd1264,13'd232))
+                    LATENCY_PANEL_X,LATENCY_PANEL_Y,
+                    LATENCY_PANEL_X+LATENCY_PANEL_WIDTH,LATENCY_PANEL_Y+LATENCY_PANEL_HEIGHT))
                 candidate_valid = 1'b0;
             if ((SHOW_RAW_STATS != 0) &&
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
@@ -822,13 +874,24 @@ module hdmi_mixer #(
 
     // Bottom-left panel: RED/GRN/BLU/MOV plus target status.
     // Uses the existing character ROM; coordinates are zero-based decimals.
-    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) && !S_cnn_visible && S_video_de_2d &&
+    wire S_target_panel_on = (SHOW_COLOR_TARGET != 0) &&
+        (!S_cnn_visible || HUD_MODERN_LAYOUT) && S_video_de_2d &&
         (S_x_2d >= TARGET_TEXT_X) &&
-        (S_x_2d < TARGET_TEXT_X+((MULTI_TARGET_ENABLE != 0) ? 240 : 368)) &&
-        (S_y_2d >= TARGET_TEXT_Y) && (S_y_2d < TARGET_TEXT_Y+16);
+        (S_x_2d < TARGET_TEXT_X+TARGET_TEXT_WIDTH) &&
+        (S_y_2d >= TARGET_TEXT_Y) && (S_y_2d < TARGET_TEXT_Y+TARGET_TEXT_HEIGHT);
     wire [11:0] S_target_text_x = S_x_2d - TARGET_TEXT_X;
-    wire [3:0] S_target_text_y = S_y_2d - TARGET_TEXT_Y;
-    wire [4:0] S_target_char_index = S_target_text_x[8:4];
+    wire [11:0] S_target_local_y = S_y_2d - TARGET_TEXT_Y;
+    wire [8:0] S_target_half_x = S_target_text_x[9:1];
+    wire S_target_second_cells = S_target_half_x >= 9'd192;
+    wire [8:0] S_target_half_remainder = S_target_second_cells ?
+        S_target_half_x-9'd192 : S_target_half_x;
+    wire [7:0] S_target_compact_cell = F_effect_compact_cell(S_target_half_remainder[7:0]);
+    wire [3:0] S_target_text_y = TARGET_LARGE_TEXT ?
+        S_target_local_y[4:1] : S_target_local_y[3:0];
+    wire [3:0] S_target_font_col = TARGET_LARGE_TEXT ?
+        S_target_compact_cell[3:0] : S_target_text_x[3:0];
+    wire [4:0] S_target_char_index = TARGET_LARGE_TEXT ?
+        {S_target_second_cells,S_target_compact_cell[7:4]} : S_target_text_x[8:4];
     reg [7:0] S_target_char;
     wire [15:0] S_target_char_bits;
     always @(*) begin
@@ -894,14 +957,18 @@ module hdmi_mixer #(
             default: S_target_char = 8'h20;
         endcase
     end
-    localparam EFFECT_TEXT_X = 192;
-    localparam EFFECT_TEXT_Y = 80;
     wire S_effect_panel_on = (SHOW_EFFECT_LABEL != 0) && S_video_de_2d &&
-        (S_x_2d >= EFFECT_TEXT_X) && (S_x_2d < EFFECT_TEXT_X+240) &&
-        (S_y_2d >= EFFECT_TEXT_Y) && (S_y_2d < EFFECT_TEXT_Y+16);
+        (S_x_2d >= EFFECT_TEXT_X) && (S_x_2d < EFFECT_TEXT_X+EFFECT_TEXT_WIDTH) &&
+        (S_y_2d >= EFFECT_TEXT_Y) && (S_y_2d < EFFECT_TEXT_Y+EFFECT_TEXT_HEIGHT);
     wire [11:0] S_effect_text_x = S_x_2d - EFFECT_TEXT_X;
-    wire [3:0] S_effect_text_y = S_y_2d - EFFECT_TEXT_Y;
-    wire [4:0] S_effect_char_index = S_effect_text_x[8:4];
+    wire [11:0] S_effect_local_y = S_y_2d - EFFECT_TEXT_Y;
+    wire [7:0] S_effect_compact_cell = F_effect_compact_cell(S_effect_text_x[8:1]);
+    wire [3:0] S_effect_text_y = HUD_LARGE_TEXT ?
+        S_effect_local_y[4:1] : S_effect_local_y[3:0];
+    wire [3:0] S_effect_font_col = HUD_LARGE_TEXT ?
+        S_effect_compact_cell[3:0] : S_effect_text_x[3:0];
+    wire [4:0] S_effect_char_index = HUD_LARGE_TEXT ?
+        {1'b0,S_effect_compact_cell[7:4]} : S_effect_text_x[8:4];
     reg [95:0] S_effect_name;
     reg [7:0] S_effect_char;
     always @(*) begin
@@ -945,20 +1012,17 @@ module hdmi_mixer #(
     wire S_fruit_header_on = S_fruit_panel_bg_on &&
         S_x_2d >= FRUIT_PANEL_X+24 && S_x_2d < FRUIT_PANEL_X+296 &&
         S_y_2d >= 64 && S_y_2d < 80;
-    wire S_fruit_status_on = S_fruit_panel_bg_on &&
-        S_x_2d >= FRUIT_PANEL_X+80 && S_x_2d < FRUIT_PANEL_X+240 &&
-        S_y_2d >= 136 && S_y_2d < 152;
-    wire S_fruit_chinese_on = S_fruit_panel_bg_on && S_cnn_class != 3'd1 &&
+    wire S_fruit_chinese_on = S_fruit_panel_bg_on &&
         S_x_2d >= FRUIT_PANEL_X+96 && S_x_2d < FRUIT_PANEL_X+224 &&
         S_y_2d >= 216 && S_y_2d < 280;
     wire S_fruit_english_on = S_fruit_panel_bg_on &&
-        S_x_2d >= FRUIT_PANEL_X && S_x_2d < FRUIT_PANEL_X+320 &&
+        S_x_2d < FRUIT_PANEL_X+320 &&
         S_y_2d >= 328 && S_y_2d < 360;
     wire S_fruit_weight_label_on = S_fruit_panel_bg_on &&
         S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+160 &&
         S_y_2d >= 392 && S_y_2d < 408;
     wire S_fruit_weight_value_on = S_fruit_panel_bg_on &&
-        S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+256 &&
+        S_x_2d >= FRUIT_PANEL_X+32 && S_x_2d < FRUIT_PANEL_X+288 &&
         S_y_2d >= 424 && S_y_2d < 456;
     wire S_fruit_total_label_on = S_fruit_panel_bg_on &&
         S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+144 &&
@@ -966,13 +1030,9 @@ module hdmi_mixer #(
     wire S_fruit_total_value_on = S_fruit_panel_bg_on &&
         S_x_2d >= FRUIT_PANEL_X+16 && S_x_2d < FRUIT_PANEL_X+304 &&
         S_y_2d >= 520 && S_y_2d < 552;
-    wire S_fruit_footer_on = S_fruit_panel_bg_on &&
-        S_x_2d >= FRUIT_PANEL_X+64 && S_x_2d < FRUIT_PANEL_X+256 &&
-        S_y_2d >= 656 && S_y_2d < 672;
-    wire S_fruit_text_on = S_fruit_header_on || S_fruit_status_on ||
-        S_fruit_chinese_on || S_fruit_english_on ||
+    wire S_fruit_text_on = S_fruit_header_on || S_fruit_chinese_on || S_fruit_english_on ||
         S_fruit_weight_label_on || S_fruit_weight_value_on ||
-        S_fruit_total_label_on || S_fruit_total_value_on || S_fruit_footer_on;
+        S_fruit_total_label_on || S_fruit_total_value_on;
     wire S_legacy_cnn_panel_on = S_cnn_visible && S_video_de_2d &&
         (S_x_2d >= CNN_TEXT_X) &&
         (S_x_2d < CNN_TEXT_X+(SHOW_RESNET_PROBE != 0 ? 320 : SHOW_RESNET_RUNTIME != 0 ? 256 : FRUIT_CNN != 0 ? 208 : 192)) &&
@@ -995,12 +1055,6 @@ module hdmi_mixer #(
             S_cnn_char_index=S_cnn_text_x[8:4];
             S_cnn_font_col=S_cnn_text_x[3:0];
             S_cnn_text_y=S_cnn_local_y[3:0];
-        end else if(S_fruit_status_on) begin
-            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+80);
-            S_cnn_local_y=S_y_2d-136;
-            S_cnn_char_index=S_cnn_text_x[8:4];
-            S_cnn_font_col=S_cnn_text_x[3:0];
-            S_cnn_text_y=S_cnn_local_y[3:0];
         end else if(S_fruit_chinese_on) begin
             S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+96);
             S_cnn_local_y=S_y_2d-216;
@@ -1020,7 +1074,7 @@ module hdmi_mixer #(
             S_cnn_font_col=S_cnn_text_x[3:0];
             S_cnn_text_y=S_cnn_local_y[3:0];
         end else if(S_fruit_weight_value_on) begin
-            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+64);
+            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+32);
             S_cnn_local_y=S_y_2d-424;
             S_cnn_char_index=S_cnn_text_x[8:5];
             S_cnn_font_col=S_cnn_text_x[4:1];
@@ -1037,45 +1091,39 @@ module hdmi_mixer #(
             S_cnn_char_index=S_cnn_text_x[8:5];
             S_cnn_font_col=S_cnn_text_x[4:1];
             S_cnn_text_y=S_cnn_local_y[4:1];
-        end else if(S_fruit_footer_on) begin
-            S_cnn_text_x=S_x_2d-(FRUIT_PANEL_X+64);
-            S_cnn_local_y=S_y_2d-656;
-            S_cnn_char_index=S_cnn_text_x[8:4];
-            S_cnn_font_col=S_cnn_text_x[3:0];
-            S_cnn_text_y=S_cnn_local_y[3:0];
         end
     end
     reg [7:0] S_cnn_char;
     reg S_cnn_runtime_row_2d;
     reg [127:0] S_runtime_text;
     reg [135:0] S_fruit_header_text;
-    reg [79:0] S_fruit_status_text;
-    reg [79:0] S_fruit_english_text;
     reg [15:0] S_fruit_chinese_text;
+    reg [79:0] S_fruit_english_text;
     reg [47:0] S_fruit_weight_label_text;
     reg [39:0] S_fruit_total_label_text;
-    reg [95:0] S_fruit_footer_text;
     reg [23:0] S_fruit_color;
     always @(*) begin
         S_fruit_header_text="FRUIT RECOGNITION";
         S_fruit_weight_label_text="WEIGHT";
         S_fruit_total_label_text="TOTAL";
-        S_fruit_footer_text="ANLOGIC FPGA";
         case(S_cnn_class)
-            3'd2: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  APPLE   "; S_fruit_chinese_text=16'h8283; S_fruit_color=24'hff4058; end
-            3'd3: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  BANANA  "; S_fruit_chinese_text=16'h8485; S_fruit_color=24'hffd43b; end
-            3'd4: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  GRAPE   "; S_fruit_chinese_text=16'h8687; S_fruit_color=24'hb080ff; end
-            3'd5: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="  ORANGE  "; S_fruit_chinese_text=16'h8889; S_fruit_color=24'hff8a30; end
-            3'd6: begin S_fruit_status_text="IDENTIFIED"; S_fruit_english_text="STRAWBERRY"; S_fruit_chinese_text=16'h8a8b; S_fruit_color=24'hff4068; end
-            default: begin S_fruit_status_text="NO RESULT "; S_fruit_english_text=" UNKNOWN  "; S_fruit_chinese_text=16'h2020; S_fruit_color=24'hffc040; end
+            3'd2: begin S_fruit_chinese_text=16'h8283; S_fruit_english_text="  APPLE   "; S_fruit_color=24'hff4058; end
+            3'd3: begin S_fruit_chinese_text=16'h8485; S_fruit_english_text="  BANANA  "; S_fruit_color=24'hffd43b; end
+            3'd4: begin S_fruit_chinese_text=16'h8687; S_fruit_english_text="  GRAPE   "; S_fruit_color=24'hb080ff; end
+            3'd5: begin S_fruit_chinese_text=16'h8889; S_fruit_english_text="  ORANGE  "; S_fruit_color=24'hff8a30; end
+            3'd6: begin S_fruit_chinese_text=16'h8a8b; S_fruit_english_text="STRAWBERRY"; S_fruit_color=24'hff4068; end
+            default: begin S_fruit_chinese_text=16'h2d2d; S_fruit_english_text=" UNKNOWN  "; S_fruit_color=24'hffc040; end
         endcase
     end
-    wire S_fruit_accent_on = S_fruit_panel_bg_on &&
-        ((S_x_2d < FRUIT_PANEL_X+8) ||
+    // Frame only the four populated sections: title, result, weight and price.
+    // The removed status row shares the result section; the empty tail is open.
+    wire S_fruit_frame_on = S_fruit_panel_bg_on && S_y_2d < 576 &&
+        (S_x_2d < FRUIT_PANEL_X+4 || S_x_2d >= IMG_WIDTH-4 ||
+         S_y_2d < 4 ||
          (S_y_2d >= 104 && S_y_2d < 108) ||
-         (S_y_2d >= 184 && S_y_2d < 192) ||
          (S_y_2d >= 376 && S_y_2d < 380) ||
-         (S_y_2d >= 472 && S_y_2d < 476));
+         (S_y_2d >= 472 && S_y_2d < 476) ||
+         (S_y_2d >= 572 && S_y_2d < 576));
     wire S_fruit_name_text_on = S_fruit_chinese_on || S_fruit_english_on;
     wire S_fruit_value_text_on = S_fruit_weight_value_on || S_fruit_total_value_on;
     always @(*) begin
@@ -1124,9 +1172,9 @@ module hdmi_mixer #(
                S_target_panel_on ? S_target_text_y : S_follow_row),
         .O_row_bits(S_target_char_bits)
     );
-    wire [3:0] S_font_col = S_effect_panel_on ? S_effect_text_x[3:0] :
+    wire [3:0] S_font_col = S_effect_panel_on ? S_effect_font_col :
                            S_cnn_panel_on ? S_cnn_font_col :
-                           S_target_panel_on ? S_target_text_x[3:0] : S_follow_col;
+                           S_target_panel_on ? S_target_font_col : S_follow_col;
 
     always @(*) begin
         S_cnn_char = 8'h20;
@@ -1226,8 +1274,6 @@ module hdmi_mixer #(
         if(S_fruit_showcase) begin
             if(S_fruit_header_on)
                 S_cnn_char=S_fruit_header_text[135-S_cnn_char_index*8 -: 8];
-            else if(S_fruit_status_on)
-                S_cnn_char=S_fruit_status_text[79-S_cnn_char_index*8 -: 8];
             else if(S_fruit_chinese_on)
                 S_cnn_char=S_fruit_chinese_text[15-S_cnn_char_index*8 -: 8];
             else if(S_fruit_english_on)
@@ -1235,16 +1281,18 @@ module hdmi_mixer #(
             else if(S_fruit_weight_label_on)
                 S_cnn_char=S_fruit_weight_label_text[47-S_cnn_char_index*8 -: 8];
             else if(S_fruit_weight_value_on) begin
+                // The checkout BCD stores whole grams. Insert the decimal
+                // point after the thousands digit for exact d.ddd kilograms.
                 case(S_cnn_char_index)
-                    0: S_cnn_char=!I_checkout_weight_valid ? "-" :
-                        (I_checkout_weight_bcd[15:12]==0 ? " " : F_decimal_digit(I_checkout_weight_bcd[15:12]));
-                    1: S_cnn_char=!I_checkout_weight_valid ? "-" :
-                        (I_checkout_weight_bcd[15:8]==0 ? " " : F_decimal_digit(I_checkout_weight_bcd[11:8]));
+                    0: S_cnn_char=!I_checkout_weight_valid ? "-" : F_decimal_digit(I_checkout_weight_bcd[15:12]);
+                    1: S_cnn_char=".";
                     2: S_cnn_char=!I_checkout_weight_valid ? "-" :
-                        (I_checkout_weight_bcd[15:4]==0 ? " " : F_decimal_digit(I_checkout_weight_bcd[7:4]));
-                    3: S_cnn_char=!I_checkout_weight_valid ? "-" : F_decimal_digit(I_checkout_weight_bcd[3:0]);
-                    4: S_cnn_char=" ";
-                    5: S_cnn_char="G";
+                        F_decimal_digit(I_checkout_weight_bcd[11:8]);
+                    3: S_cnn_char=!I_checkout_weight_valid ? "-" : F_decimal_digit(I_checkout_weight_bcd[7:4]);
+                    4: S_cnn_char=!I_checkout_weight_valid ? "-" : F_decimal_digit(I_checkout_weight_bcd[3:0]);
+                    5: S_cnn_char=" ";
+                    6: S_cnn_char="k";
+                    7: S_cnn_char="g";
                     default: S_cnn_char=" ";
                 endcase
             end else if(S_fruit_total_label_on)
@@ -1264,8 +1312,6 @@ module hdmi_mixer #(
                     default: S_cnn_char=" ";
                 endcase
             end
-            else if(S_fruit_footer_on)
-                S_cnn_char=S_fruit_footer_text[95-S_cnn_char_index*8 -: 8];
             else
                 S_cnn_char=" ";
         end
@@ -1307,7 +1353,10 @@ module hdmi_mixer #(
 
     wire S_latency_panel, S_latency_text, S_latency_alert;
     generate if (SHOW_LATENCY != 0) begin: latency_readout
-        video_latency_osd u_osd (
+        video_latency_osd #(
+            .PANEL_X(LATENCY_PANEL_X), .PANEL_Y(LATENCY_PANEL_Y),
+            .LARGE_TEXT(HUD_LARGE_TEXT), .NARROW_TEXT(HUD_LARGE_TEXT)
+        ) u_osd (
             .I_clk(I_clk), .I_rst_n(I_rst_n),
             .I_sample_strobe(I_latency_sample_strobe),
             .I_sample_valid(I_latency_sample_valid),
@@ -2071,9 +2120,11 @@ module hdmi_mixer #(
                 S_rgb_next = 24'h101010;
                 S_font_valid_next = 1'b1;
                 S_font_color_next = 24'h00e6ff;
-            end else if(S_fruit_panel_bg_on) begin
-                S_rgb_next = S_fruit_accent_on ? S_fruit_color :
-                    (S_y_2d >= 608 ? 24'h181e24 : 24'h101418);
+            end else if(S_latency_panel)
+                S_rgb_next = S_latency_text ?
+                    (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
+            else if(S_fruit_panel_bg_on) begin
+                S_rgb_next = S_fruit_frame_on ? S_fruit_color : 24'h101418;
                 if(S_cnn_panel_on) begin
                     S_font_valid_next = 1'b1;
                     S_font_color_next = S_fruit_name_text_on ? S_fruit_color :
@@ -2083,10 +2134,7 @@ module hdmi_mixer #(
                 S_rgb_next = 24'h101010;
                 S_font_valid_next = 1'b1;
                 S_font_color_next = 24'h40ff80;
-            end else if(S_latency_panel)
-                S_rgb_next = S_latency_text ?
-                    (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
-            else if(S_raw_panel)
+            end else if(S_raw_panel)
                 S_rgb_next = S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
             else if(S_osd_hit)
                 S_rgb_next = S_osd_color;

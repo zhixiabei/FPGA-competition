@@ -29,24 +29,26 @@ module gamma_lut_rgb888 #(
         128'h16141311100e0d0c0a09070604030100
     };
 
-    // TD's "none" ROM style implements these three read ports in logic,
-    // rather than allocating three ERAM blocks to the small constant table.
-    (* rom_style = "none" *) reg [7:0] tone_rom [0:255];
-    integer table_index;
-    initial begin
-        for (table_index = 0; table_index < 256; table_index = table_index+1)
-            tone_rom[table_index] = TONE_LUT[table_index*8 +: 8];
-    end
-
-    // Both modes retain the original first pixel register. Pixels need no
-    // reset because the mixer's DE pipeline suppresses them during reset.
-    always @(posedge I_clk) begin
-        if (ENABLE != 0) begin
-            O_rgb[23:16] <= tone_rom[I_rgb[23:16]];
-            O_rgb[15:8]  <= tone_rom[I_rgb[15:8]];
-            O_rgb[7:0]   <= tone_rom[I_rgb[7:0]];
-        end else begin
-            O_rgb <= I_rgb;
+    generate if (ENABLE != 0) begin: corrected
+        // Two identical ERAM tables keep all three byte lookups parallel.
+        // Red and green share the two synchronous read ports of one table;
+        // blue uses a second table. No time multiplexing or extra pixel stage.
+        (* rom_style = "bram" *) reg [7:0] tone_rg_rom [0:255];
+        (* rom_style = "bram" *) reg [7:0] tone_b_rom [0:255];
+        integer table_index;
+        initial begin
+            for (table_index = 0; table_index < 256; table_index = table_index+1) begin
+                tone_rg_rom[table_index] = TONE_LUT[table_index*8 +: 8];
+                tone_b_rom[table_index] = TONE_LUT[table_index*8 +: 8];
+            end
         end
-    end
+
+        // Reset-free synchronous reads match the TD ROM inference template.
+        always @(posedge I_clk) O_rgb[23:16] <= tone_rg_rom[I_rgb[23:16]];
+        always @(posedge I_clk) O_rgb[15:8] <= tone_rg_rom[I_rgb[15:8]];
+        always @(posedge I_clk) O_rgb[7:0] <= tone_b_rom[I_rgb[7:0]];
+    end else begin: bypass
+        // Retain the original first pixel register when correction is off.
+        always @(posedge I_clk) O_rgb <= I_rgb;
+    end endgenerate
 endmodule
