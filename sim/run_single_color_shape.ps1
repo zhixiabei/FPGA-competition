@@ -50,7 +50,7 @@ $manifest=[ordered]@{
     Width=$Width
     Height=$Height
     RtlSource=(Resolve-Path -LiteralPath $selectedRtl).Path
-    Contract='MULTI_ENABLE=0; SINGLE_SHAPE_ENABLE=1; one global selected-color contour; slot0 only; two-frame confirm; two-miss hold'
+    Contract='MULTI_ENABLE=0; SINGLE_SHAPE_ENABLE=1; one connected selected-color contour; first complete eligible contour at acquisition; slot0 only; two-frame confirm; two-miss hold'
     SourceHashes=$sourceHashes
     Variants=@()
 }

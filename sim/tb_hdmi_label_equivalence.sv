@@ -1,4 +1,8 @@
 `timescale 1ns/1ps
+// Preserve the historical core candidate/peer/layout, frame-cancel and
+// pixel/control equivalence proof with both redesigned HUD features disabled.
+// Their intentional new pixels/reservations use tb_latency_display_toggle
+// and independent display oracles instead of the frozen UI snapshot.
 module hdmi_label_equivalence_case #(
     parameter integer W=1280, H=720, CASES=128
 )(output reg done=0);
@@ -35,13 +39,13 @@ module hdmi_label_equivalence_case #(
         .O_video_rd_en(RD),.O_display_frame_start(SOF), \
         .O_hdmi_hsync(HS),.O_hdmi_vsync(VS)
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_LATENCY(1),.LATENCY_SWITCH_ENABLE(1)) dut(
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_LATENCY(0),.LATENCY_SWITCH_ENABLE(1)) dut(
         `MIXER_PORTS(got,gde,grd,gsof,ghs,gvs)
     );
     hdmi_mixer_reference #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_LATENCY(1),.LATENCY_SWITCH_ENABLE(1)) reference(
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_LATENCY(0),.LATENCY_SWITCH_ENABLE(1)) reference(
         `MIXER_PORTS(want,wde,wrd,wsof,whs,wvs)
     );
 `undef MIXER_PORTS

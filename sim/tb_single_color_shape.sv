@@ -194,8 +194,8 @@ module tb_single_color_shape #(
                 end
                 10: begin
                     // Deliberately disconnected same-color components.
-                    // The new mode combines their geometry into ONE contour,
-                    // not a largest-component detector or two result lanes.
+                    // The resource-limited detector keeps the first complete
+                    // contour without unioning the later same-row object.
                     square(61,96,21,1024,0);
                     square(135,96,21,1024,0);
                 end
@@ -355,13 +355,15 @@ module tb_single_color_shape #(
         pair_case(16,0,24'hf02020,SH_UNKNOWN,96,0);
         if(bxmax(next_id-1)!=W-4 || bymax(next_id-1)!=H-4)
             $fatal(1,"Final interior row/column lost in single collector");
-        pair_case(10,0,24'hf02020,SH_UNKNOWN,96,0);
-        if(bxmin(next_id-1)>44 || bxmax(next_id-1)<152)
-            $fatal(1,"Single contour failed to include BOTH same-row objects");
-        pair_case(15,0,24'hf02020,SH_UNKNOWN,96,0);
-        if(bymin(next_id-1)>33 || bymax(next_id-1)<147)
-            $fatal(1,"Single contour failed to include BOTH separated objects");
-        $display("SINGLE_COLOR_SHAPE_MULTIOBJECT_PASS lanes=1 union_box=1 shape=UNKNOWN");
+        pair_case(10,0,24'hf02020,SH_SQUARE,96,0);
+        if(abs_i(bxmin(next_id-1)-40)>2 || abs_i(bxmax(next_id-1)-82)>2 ||
+           abs_i(bymin(next_id-1)-75)>2 || abs_i(bymax(next_id-1)-117)>2)
+            $fatal(1,"Single contour merged later disconnected same-row object");
+        pair_case(15,0,24'hf02020,SH_SQUARE,96,0);
+        if(abs_i(bxmin(next_id-1)-75)>2 || abs_i(bxmax(next_id-1)-117)>2 ||
+           abs_i(bymin(next_id-1)-29)>2 || abs_i(bymax(next_id-1)-71)>2)
+            $fatal(1,"Single contour merged later disconnected lower object");
+        $display("SINGLE_COLOR_SHAPE_MULTIOBJECT_PASS lanes=1 first_component=1 no_union=1 shape=SQUARE");
         if(W>=1280 && H>=720) begin
             // A passing low-coordinate shape cannot expose truncated first
             // moments or diagonal projections at production coordinates.

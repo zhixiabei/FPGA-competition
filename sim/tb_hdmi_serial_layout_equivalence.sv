@@ -2,6 +2,10 @@
 // Compare placement and complete pixel/control output with a frozen mixer.
 // The video source scans real lines without blanking, giving placement the
 // shortest possible time before the first permitted label scan line.
+// Disable the intentionally redesigned HUD on both sides: this historical
+// proof retains strict core candidate/peer/layout, deadline, frame-cancel and
+// pixel/control cycle equivalence. New HUD pixels and its reserved rectangles
+// are checked by tb_latency_display_toggle and independent display oracles.
 module tb_hdmi_serial_layout_equivalence #(
     parameter integer W=1280, H=720, CASES=192, SWEEP=0, PIXEL_PROBES=0
 );
@@ -40,13 +44,13 @@ module tb_hdmi_serial_layout_equivalence #(
         .O_video_rd_en(RD),.O_display_frame_start(SOF), \
         .O_hdmi_hsync(HS),.O_hdmi_vsync(VS)
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_RAW_STATS(1),.SHOW_LATENCY(1),.LATENCY_SWITCH_ENABLE(1)) dut(
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_RAW_STATS(1),.SHOW_LATENCY(0),.LATENCY_SWITCH_ENABLE(1)) dut(
         `MIXER_PORTS(got,gde,grd,gsof,ghs,gvs)
     );
     hdmi_mixer_reference #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_RAW_STATS(1),.SHOW_LATENCY(1),.LATENCY_SWITCH_ENABLE(1)) reference(
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_RAW_STATS(1),.SHOW_LATENCY(0),.LATENCY_SWITCH_ENABLE(1)) reference(
         `MIXER_PORTS(want,wde,wrd,wsof,whs,wvs)
     );
 `undef MIXER_PORTS

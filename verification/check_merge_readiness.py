@@ -28,6 +28,66 @@ def uncomment(text):
     return re.sub(r'//[^\n]*|/\*.*?\*/', '', text, flags=re.S)
 
 
+def check_scharr_center_scope(expected, actual):
+    """Allow the reviewed centre-only substitution, preserve all other effects.
+
+    This checks edit scope, not functional equivalence. The centre-delay and
+    complete Scharr differential simulations remain separate required checks.
+    """
+    compact = lambda text: re.sub(r'\s+', '', uncomment(text))
+    original = compact(expected)
+    candidate = compact(actual)
+    if original == candidate:
+        return False
+    modules = list(re.finditer(
+        r'\bmodule\s+scharr_center_delay_4\b.*?\bendmodule\b',
+        uncomment(actual), re.S,
+    ))
+    require(len(modules) == 1, 'Expected one centre-only delay module')
+    body = uncomment(actual)
+    candidate = compact(body[:modules[0].start()] + body[modules[0].end():])
+    replacements = []
+    for position in ('center', 'final'):
+        old_signal = f'cartoon_{position}_window'
+        new_signal = f'cartoon_{position}_pixels'
+        valid, user, last, word = (
+            ('pv', 'pu', 'pl', 'cartoon_quantized') if position == 'center'
+            else ('vp[2]', 'up[2]', 'lp[2]', 'cartoon_delay[2]')
+        )
+        replacements.append((
+            f"""wire [323:0] {old_signal};
+            scharr_window_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH),
+                .IMG_HEIGHT(IMG_HEIGHT),.TRACK_POSITION(0))
+            u_cartoon_{position}_window(
+                .clk(I_clk),.rst_n(I_rst_n),.valid({valid}),.user({user}),.last({last}),
+                .word({word}),.out_valid(),.out_user(),.out_last(),.ok(),
+                .windows({old_signal}),.out_x(),.out_y());""",
+            f"""wire [35:0] {new_signal};
+            scharr_center_delay_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH))
+            u_cartoon_{position}_window(
+                .clk(I_clk),.rst_n(I_rst_n),.valid({valid}),.user({user}),.last({last}),
+                .word({word}),.out_valid(),.out_user(),.out_last(),
+                .centers({new_signal}));""",
+        ))
+    replacements.extend([
+        ("""for(cartoon_lane=0;cartoon_lane<4;cartoon_lane=cartoon_lane+1)
+                cartoon_delay[0][35-cartoon_lane*9 -:9]<=
+                    cartoon_center_window[287-cartoon_lane*81 -:9];""",
+         "cartoon_delay[0]<=cartoon_center_pixels;"),
+        ("cartoon_expand(cartoon_final_window[287-lane*81 -:9])",
+         "cartoon_expand(cartoon_final_pixels[35-lane*9 -:9])"),
+    ])
+    for before, after in replacements:
+        before, after = compact(before), compact(after)
+        require(original.count(before) == 1,
+                'Scharr reference no longer matches the reviewed substitution')
+        original = original.replace(before, after)
+    require(candidate == original,
+            'Scharr changed outside the reviewed centre-only substitution')
+    print('SCHARR_CENTER_ONLY_CHANGE_SCOPE_PASS (run differential simulations separately)')
+    return True
+
+
 def parentheses(text, start):
     require(text[start] == '(', 'Expected opening parenthesis')
     depth = 0
@@ -50,6 +110,80 @@ def interface_names(header):
         if found:
             names.add(found.group(1))
     return names
+
+
+def check_red_single_scope(expected, actual):
+    """Check the authorized detector edit scope, not algorithm equivalence.
+
+    RGB/single-target scene regressions and descriptor arithmetic differential
+    tests remain required. Multitarget, RAM, cleanup and legacy logic stay
+    protected against the selected main reference.
+    """
+    compact = lambda text: re.sub(r'\s+', '', uncomment(text))
+    if compact(expected) == compact(actual):
+        return False
+
+    def modules(text):
+        entries = {}
+        for match in re.finditer(
+                r'\bmodule\s+(\w+)\b.*?\bendmodule\b', uncomment(text), re.S):
+            name = match.group(1)
+            require(name not in entries, f'Duplicate detector module: {name}')
+            entries[name] = match.group()
+        return entries
+
+    def header(text):
+        match = re.match(r'\s*module\s+\w+\s*(#\s*)?\(', text)
+        require(match is not None, 'Missing detector ANSI interface')
+        parameters, end = parentheses(text, match.end()-1)
+        if match.group(1):
+            ports, end = parentheses(text, text.index('(', end))
+        else:
+            ports, parameters = parameters, ''
+        return parameters, ports
+
+    original, candidate = modules(expected), modules(actual)
+    require(original.keys() == candidate.keys(),
+            'Detector module inventory changed outside the reviewed scope')
+    editable = {'red_target_detect_96', 'red_single_shape_engine',
+                'color_shape_descriptor'}
+    require(editable <= original.keys(), 'Missing reviewed detector modules')
+    for name in original.keys() - editable:
+        require(compact(candidate[name]) == compact(original[name]),
+                f'Preserved detector module changed: {name}')
+    for name in sorted(editable):
+        require(tuple(map(compact, header(candidate[name]))) ==
+                tuple(map(compact, header(original[name]))),
+                f'Detector external interface changed: {name}')
+
+    # Compare the entire top after masking only the color predicate, the
+    # single-target beat metadata and its instance connections.
+    def mask_region(text, first, last, label):
+        require(text.count(first) == 1 and text.count(last) == 1,
+                f'Detector {label} scope anchors changed')
+        begin = text.index(first) + len(first)
+        end = text.index(last, begin)
+        return text[:begin] + '<' + label + '>' + text[end:]
+
+    scopes = [
+        ('localparam[8:0]RED_DELTA_9=RED_DELTA;',
+         'reg[GROUP_BITS-1:0]x_grp;', 'color_predicate'),
+        ('wire[X_BITS-1:0]last_x=hits_f[3]?lane_x3:'
+         'hits_f[2]?lane_x2:hits_f[1]?lane_x1:lane_x0;',
+         'reg[COUNT_BITS-1:0]count;', 'single_beat_metadata'),
+        ('endelseif(SINGLE_SHAPE_ENABLE)begin:gen_single_shape',
+         'endelsebegin:gen_single_only', 'single_instance'),
+    ]
+    reference_top = compact(original['red_target_detect_96'])
+    actual_top = compact(candidate['red_target_detect_96'])
+    for first, last, label in scopes:
+        reference_top = mask_region(reference_top, first, last, label)
+        actual_top = mask_region(actual_top, first, last, label)
+    require(actual_top == reference_top,
+            'Detector changed outside color/single-target scope')
+    print('RED_SINGLE_TARGET_CHANGE_SCOPE_PASS '
+          '(run scene and descriptor differential simulations separately)')
+    return True
 
 
 def rtl_interfaces(files):
@@ -98,13 +232,34 @@ def check_project(project):
     section = re.search(r'<Source_Files>.*?</Source_Files>', text, re.S)
     require(section is not None, f'Missing sources: {project}')
     xml = ET.fromstring(section.group().replace('P&R', 'P_R'))
-    files = []
+    files, enabled_files = [], set()
     for element in xml.iter('File'):
         path = Path(element.attrib['Path'])
         if not path.is_absolute():
             path = (project.parent/path).resolve()
         require(path.is_file(), f'Missing project source: {path}')
         files.append(path)
+        attributes = {attr.attrib['Name'].replace('P_R', 'P&R'): attr.attrib['Val']
+                      for attr in element.iter('Attr')}
+        # TD refreshes AutoExcluded during hierarchy analysis. Check the
+        # explicit flow selectors here; synthesis checks the actual hierarchy.
+        if (attributes.get('UsedInSyn', 'true') == 'true' and
+                attributes.get('UsedInP&R', 'true') == 'true'):
+            enabled_files.add(path)
+    # Compiling every file in voice/ can conceal a missing entry in the actual
+    # TD project. Check its enabled source list before checking named interfaces.
+    if any(path.name == 'design_top_wrapper.v' and
+           re.search(r'\bcheckout_voice_bridge\s*#?\s*\(',
+                     uncomment(path.read_text(encoding='utf-8-sig', errors='replace')))
+           for path in files):
+        for name in ('cx_sp5t_uart', 'scale_voice_stable', 'scale_voice_phrase',
+                     'scale_voice_auto', 'checkout_voice_bridge'):
+            require(any(path.name == name + '.v' and
+                        re.search(r'\bmodule\s+' + name + r'\b',
+                                  uncomment(path.read_text(encoding='utf-8-sig', errors='replace')))
+                        for path in enabled_files),
+                    f'{project.name}: missing or disabled voice source {name}.v')
+        print(f'VOICE_PROJECT_SOURCES_PASS {project.name}: 5 enabled modules')
     count = rtl_interfaces(files)
     inventory = project.parent/'sources.json'
     if inventory.is_file():
@@ -127,11 +282,22 @@ def main():
     preserved += ['isp/'+p for p in ['ae_frame_stats_raw10_4x.v', 'iq_diagnostic_stats.v',
                   'lsc_raw10_4x.v', 'red_target_detect_96.v', 'rgb_edge_switch_96.v',
                   'scharr_edge_detect_96.v', 'target_detect_switch_96.v']]
+    optimized = 0
+    detector_optimized = 0
     for relative in preserved:
         path = 'user_source/hdl_source/'+relative
         expected = git('show', f'{args.main_ref}:{path}').decode('utf-8')
-        require((ROOT/path).read_text(encoding='utf-8') == expected, f'Main logic changed: {path}')
-    print(f'MAIN_FILES_PRESERVED_PASS {len(main_files)} files; {len(preserved)} core modules match main')
+        actual = (ROOT/path).read_text(encoding='utf-8')
+        if relative == 'isp/scharr_edge_detect_96.v':
+            optimized += check_scharr_center_scope(expected, actual)
+        elif relative == 'isp/red_target_detect_96.v':
+            detector_optimized += check_red_single_scope(expected, actual)
+        else:
+            require(actual == expected, f'Main logic changed: {path}')
+    print(f'MAIN_FILES_PRESERVED_PASS {len(main_files)} files; '
+          f'{len(preserved)-optimized-detector_optimized} core modules match main; '
+          f'{optimized} reviewed centre-only substitution; '
+          f'{detector_optimized} reviewed single-target detector change')
     for path in (ROOT/'verification').glob('*.py'):
         ast.parse(path.read_text(encoding='utf-8-sig'), filename=str(path))
     print('PYTHON_SOURCE_PARSE_PASS')

@@ -1,6 +1,12 @@
 `timescale 1ns/1ps
 module tb_latency_display_toggle;
     localparam integer W=1280, H=280, FRAMES=8;
+    localparam integer LATENCY_X=W-320, LATENCY_Y=H-128;
+    localparam integer LATENCY_W=320, LATENCY_H=112;
+    localparam integer EFFECT_X=16, EFFECT_Y=H-48;
+    localparam integer EFFECT_W=360, EFFECT_H=32;
+    localparam integer TARGET_X=16, TARGET_Y=H-88;
+    localparam integer TARGET_W=360, TARGET_H=32;
     reg sys_clk=0, hdmi_clk=0;
     always #10 sys_clk=~sys_clk;
     always #6.5 hdmi_clk=~hdmi_clk;
@@ -14,11 +20,17 @@ module tb_latency_display_toggle;
     wire toggle_de, toggle_hs, toggle_vs, toggle_rd;
     wire shown_de, shown_hs, shown_vs, shown_rd;
     wire hidden_de, hidden_hs, hidden_vs, hidden_rd;
-    wire [191:0] boxes={144'd0,12'd150,12'd110,12'd950,12'd900};
+    // The first four label candidates cross the right-side latency panel.
+    // Hiding it releases (900,152); showing it requires the independent
+    // left-side candidate (706,152).
+    wire [191:0] boxes={144'd0,12'd210,12'd170,12'd950,12'd900};
     integer frame_index=0, input_frame=0;
     integer pixels=0, frames=0, panel_pixels=0, hidden_panel_pixels=0;
     integer label_frames=0, conversion_checks=0, sample_count=0;
     integer assertions=0, transitions=0, request_id=0, hold_checks=0;
+    integer effect_pixels=0, effect_ink=0, follow_pixels=0, follow_ink=0;
+    integer target_pixels=0, target_ink=0;
+    integer relocated_frames=0, released_frames=0;
     integer output_x=0, output_y=0;
     reg previous_request=0;
     event switch_request;
@@ -26,7 +38,7 @@ module tb_latency_display_toggle;
     integer pipe_frame[0:2], pipe_x[0:2], pipe_y[0:2];
     reg [3:0] active_effect=0;
 
-`define MIXER(NAME,LATENCY,TOGGLE,DATA,DE,HS,VS,RD) \
+`define MIXER(NAME,LATENCY,TOGGLE,SWITCH,DATA,DE,HS,VS,RD) \
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SHOW_LATENCY(LATENCY), \
         .LATENCY_SWITCH_ENABLE(TOGGLE),.MULTI_TARGET_ENABLE(1), \
         .SHOW_CAMERA_STATUS(1),.SHOW_COLOR_TARGET(1), \
@@ -37,22 +49,24 @@ module tb_latency_display_toggle;
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0), \
         .I_raw_stats_valid(1'b0),.I_raw_stats_data(45'd0), \
         .I_ae_readout_valid(1'b0),.I_ae_readout_data(28'd0), \
-        .I_latency_show(switch_high),.I_latency_sample_strobe(sample_strobe), \
+        .I_latency_show(SWITCH),.I_latency_sample_strobe(sample_strobe), \
         .I_latency_sample_valid(sample_valid),.I_latency_total_us(total_us), \
         .I_latency_isp_us(isp_us),.I_latency_buffer_us(buffer_us), \
         .I_target_result_ready(1'b1),.I_target_found(1'b1), \
         .I_target_motion_mode(1'b0),.I_target_color_mode(2'd0),.I_target_xmin(12'd900), \
-        .I_target_xmax(12'd950),.I_target_ymin(12'd110), \
-        .I_target_ymax(12'd150),.I_target_center_x(12'd925), \
-        .I_target_center_y(12'd130),.I_target_multi_valid(4'b0001), \
+        .I_target_xmax(12'd950),.I_target_ymin(12'd170), \
+        .I_target_ymax(12'd210),.I_target_center_x(12'd925), \
+        .I_target_center_y(12'd190),.I_target_multi_valid(4'b0001), \
         .I_target_multi_hold(4'd0),.I_target_multi_boxes(boxes), \
         .I_target_multi_shapes(8'd0), \
         .I_target_multi_overflow(1'b0),.I_video_rd_data(rgb), \
         .O_video_rd_en(RD),.O_display_frame_start(),.O_hdmi_de(DE), \
         .O_hdmi_hsync(HS),.O_hdmi_vsync(VS),.O_hdmi_data(DATA))
-    `MIXER(dut,1,1,toggle_rgb,toggle_de,toggle_hs,toggle_vs,toggle_rd);
-    `MIXER(always_shown,1,0,shown_rgb,shown_de,shown_hs,shown_vs,shown_rd);
-    `MIXER(always_hidden,0,0,hidden_rgb,hidden_de,hidden_hs,hidden_vs,hidden_rd);
+    `MIXER(dut,1,1,switch_high,toggle_rgb,toggle_de,toggle_hs,toggle_vs,toggle_rd);
+    `MIXER(always_shown,1,0,1'b1,shown_rgb,shown_de,shown_hs,shown_vs,shown_rd);
+    // Keep the same configured HUD geometry while holding visibility low:
+    // the algorithm and target-status text must not jump when SW1 changes.
+    `MIXER(always_hidden,1,1,1'b0,hidden_rgb,hidden_de,hidden_hs,hidden_vs,hidden_rd);
 `undef MIXER
 
     task automatic check(input bit condition,input string message_text);
@@ -84,6 +98,74 @@ module tb_latency_display_toggle;
              4'((value/1000)%10),4'((value/100)%10),
              4'((value/10)%10),4'(value%10)};
     endfunction
+    function automatic [7:0] label_char(input [3:0] mode,
+                                        input integer column);
+        reg [95:0] name;
+        begin
+            case (mode)
+                0: name="COLOR GAMMA ";
+                1: name="GRAYSCALE   ";
+                2: name="SCHARR EDGE ";
+                3: name="NEGATIVE    ";
+                4: name="EMBOSS      ";
+                5: name="COLOR KEEP  ";
+                6: name="CARTOON     ";
+                7: name="SCHARR INV  ";
+                8: name="MORPH EDGE  ";
+                9: name="BINARY      ";
+                10: name="EROSION     ";
+                11: name="DILATION    ";
+                12: name="CLOSE MASK  ";
+                default: name="COLOR GAMMA ";
+            endcase
+            label_char=" ";
+            if (column==0) label_char="0"+mode/10;
+            else if (column==1) label_char="0"+mode%10;
+            else if (column>=3 && column<=14)
+                label_char=name[95-8*(column-3) -:8];
+        end
+    endfunction
+    function automatic [7:0] follow_char(input integer column);
+        reg [95:0] text;
+        begin
+            text="1 RED UNK OK";
+            follow_char=column>=0 && column<12 ? text[95-8*column -:8] : " ";
+        end
+    endfunction
+    function automatic [7:0] target_char(input integer column);
+        reg [119:0] text;
+        begin
+            text="RED COUNT:1    ";
+            target_char=column>=0 && column<15 ? text[119-8*column -:8] : " ";
+        end
+    endfunction
+    // Two-times scaling keeps the source pixels square. Only two empty
+    // columns per side are cropped, making a 24x32 rather than 32x32 cell.
+    wire [7:0] reference_effect_char=
+        label_char(active_effect,(dut.S_x_2d-EFFECT_X)/24);
+    wire [3:0] reference_effect_row=(dut.S_y_2d-EFFECT_Y)/2;
+    wire [15:0] reference_effect_bits;
+    osd_char_lib effect_font (
+        .I_char(reference_effect_char),.I_row(reference_effect_row),
+        .O_row_bits(reference_effect_bits)
+    );
+    wire [7:0] reference_target_char=
+        target_char((dut.S_x_2d-TARGET_X)/24);
+    wire [3:0] reference_target_row=(dut.S_y_2d-TARGET_Y)/2;
+    wire [15:0] reference_target_bits;
+    osd_char_lib target_font (
+        .I_char(reference_target_char),.I_row(reference_target_row),
+        .O_row_bits(reference_target_bits)
+    );
+    wire [11:0] reference_follow_x=expected_show(input_frame) ? 706 : 900;
+    wire [7:0] reference_follow_char=
+        follow_char((dut.S_x_2d-reference_follow_x)/16);
+    wire [3:0] reference_follow_row=dut.S_y_2d-LATENCY_Y;
+    wire [15:0] reference_follow_bits;
+    osd_char_lib follow_font (
+        .I_char(reference_follow_char),.I_row(reference_follow_row),
+        .O_row_bits(reference_follow_bits)
+    );
     always @(posedge sys_clk) begin
         #1;
         if (!rst_n) previous_request=0;
@@ -114,7 +196,11 @@ module tb_latency_display_toggle;
     // every output pixel, including moving labels and existing overlays.
     always @(posedge hdmi_clk) begin: verify
         integer xx, yy, ff;
-        bit visible, sample_panel, reset_at_edge;
+        bit visible, sample_panel, sample_effect_panel, sample_follow_panel;
+        bit sample_target_panel, effect_on, effect_text, follow_on, follow_text;
+        bit target_on, target_text;
+        bit reset_at_edge;
+        integer follow_x;
         reg [23:0] expected_rgb;
         // I_rst_n is asynchronous to hdmi_clk. Capture reset before shifting
         // the reference pipe so an assertion during the #1 settle delay is
@@ -128,7 +214,13 @@ module tb_latency_display_toggle;
             active_effect=0;
         end else begin
             sample_panel=dut.S_latency_panel;
+            sample_effect_panel=dut.S_effect_panel_on;
+            sample_follow_panel=dut.S_follow_panel_on;
+            sample_target_panel=dut.S_target_panel_on;
             xx=dut.S_x_2d; yy=dut.S_y_2d;
+            effect_text=reference_effect_bits[15-(2+((xx-EFFECT_X)/2)%12)];
+            target_text=reference_target_bits[15-(2+((xx-TARGET_X)/2)%12)];
+            follow_text=reference_follow_bits[15-((xx-reference_follow_x)%16)];
             for (integer p=2;p>0;p=p-1) begin
                 pipe_de[p]=pipe_de[p-1]; pipe_hs[p]=pipe_hs[p-1];
                 pipe_vs[p]=pipe_vs[p-1]; pipe_frame[p]=pipe_frame[p-1];
@@ -172,12 +264,48 @@ module tb_latency_display_toggle;
                 if (toggle_rgb!==expected_rgb)
                     $fatal(1,"Panel or label mismatch f=%0d x=%0d y=%0d visible=%0b got=%h expected=%h",
                         ff,xx,yy,visible,toggle_rgb,expected_rgb);
-                if (sample_panel!==(visible && xx>=984 && xx<1264 &&
-                                      yy>=16 && yy<80))
+                if (sample_panel!==(visible && xx>=LATENCY_X &&
+                    xx<LATENCY_X+LATENCY_W && yy>=LATENCY_Y && yy<LATENCY_Y+LATENCY_H))
                     $fatal(1,"Latency panel visibility changed within frame %0d at %0d,%0d",ff,xx,yy);
                 if (sample_panel) panel_pixels=panel_pixels+1;
-                if (!visible && xx>=984 && xx<1264 && yy>=16 && yy<80)
+                if (!visible && xx>=LATENCY_X && xx<LATENCY_X+LATENCY_W &&
+                    yy>=LATENCY_Y && yy<LATENCY_Y+LATENCY_H)
                     hidden_panel_pixels=hidden_panel_pixels+1;
+                effect_on=xx>=EFFECT_X && xx<EFFECT_X+EFFECT_W &&
+                    yy>=EFFECT_Y && yy<EFFECT_Y+EFFECT_H;
+                if (sample_effect_panel!==effect_on)
+                    $fatal(1,"Algorithm panel moved or changed bounds f=%0d x=%0d y=%0d",ff,xx,yy);
+                if (effect_on) begin
+                    if (toggle_rgb!==(effect_text ? 24'h00e6ff : 24'h101010))
+                        $fatal(1,"Scaled algorithm glyph mismatch f=%0d x=%0d y=%0d got=%h",
+                            ff,xx,yy,toggle_rgb);
+                    effect_pixels=effect_pixels+1;
+                    if (effect_text) effect_ink=effect_ink+1;
+                end
+                target_on=xx>=TARGET_X && xx<TARGET_X+TARGET_W &&
+                    yy>=TARGET_Y && yy<TARGET_Y+TARGET_H;
+                if (sample_target_panel!==target_on)
+                    $fatal(1,"Target status overlaps or moved with the switch f=%0d x=%0d y=%0d",
+                        ff,xx,yy);
+                if (target_on) begin
+                    if (toggle_rgb!==(target_text ? 24'hfff200 : 24'h101010))
+                        $fatal(1,"Scaled target-status glyph mismatch f=%0d x=%0d y=%0d got=%h",
+                            ff,xx,yy,toggle_rgb);
+                    target_pixels=target_pixels+1;
+                    if (target_text) target_ink=target_ink+1;
+                end
+                follow_x=visible ? 706 : 900;
+                follow_on=xx>=follow_x && xx<follow_x+192 &&
+                    yy>=LATENCY_Y && yy<LATENCY_Y+16;
+                if (sample_follow_panel!==follow_on)
+                    $fatal(1,"Target label bounds mismatch f=%0d x=%0d y=%0d",ff,xx,yy);
+                if (follow_on) begin
+                    if (toggle_rgb!==(follow_text ? 24'hff3030 : 24'h101010))
+                        $fatal(1,"Relocated/released target label pixel mismatch f=%0d x=%0d y=%0d",
+                            ff,xx,yy);
+                    follow_pixels=follow_pixels+1;
+                    if (follow_text) follow_ink=follow_ink+1;
+                end
                 if (xx==1200 && yy==260) begin
                     if (visible) begin
                         check(dut.multi_target.label_valid==always_shown.multi_target.label_valid,
@@ -186,11 +314,17 @@ module tb_latency_display_toggle;
                             check(dut.multi_target.label_x[0]==always_shown.multi_target.label_x[0] &&
                                 dut.multi_target.label_y[0]==always_shown.multi_target.label_y[0],
                                 "Visible label placement differs from static latency mode");
+                        check(dut.multi_target.label_valid[0] &&
+                            dut.multi_target.label_x[0]==706 &&
+                            dut.multi_target.label_y[0]==LATENCY_Y,
+                            "Visible latency panel failed to move the label outside its true bounds");
+                        relocated_frames=relocated_frames+1;
                     end else begin
                         check(dut.multi_target.label_valid[0] &&
                             dut.multi_target.label_x[0]==900 &&
-                            dut.multi_target.label_y[0]==92,
+                            dut.multi_target.label_y[0]==LATENCY_Y,
                             "Hidden latency panel still prevents a label in its former area");
+                        released_frames=released_frames+1;
                     end
                     label_frames=label_frames+1;
                 end
@@ -258,14 +392,22 @@ module tb_latency_display_toggle;
         blank(12);
         check(frames==FRAMES && pixels==FRAMES*W*H,
             "Switch simulation did not complete all video frames");
-        check(panel_pixels==4*280*64 && hidden_panel_pixels==4*280*64,
+        check(panel_pixels==4*LATENCY_W*LATENCY_H &&
+            hidden_panel_pixels==4*LATENCY_W*LATENCY_H,
             "Full-frame visible or hidden panel coverage is incomplete");
         check(label_frames==FRAMES && conversion_checks==FRAMES && sample_count==FRAMES,
             "Missing label placement, hidden conversion, or sample checks");
         check(transitions==6 && hold_checks==5,
             "Maintained switch changes or long-hold coverage is incomplete");
-        $display("LATENCY_DISPLAY_TOGGLE_PASS frames=%0d pixels=%0d shown_pixels=%0d hidden_pixels=%0d holds=%0d hidden_conversion=%0d labels=%0d checks=%0d",
-            frames,pixels,panel_pixels,hidden_panel_pixels,hold_checks,conversion_checks,label_frames,assertions);
+        check(effect_pixels==FRAMES*EFFECT_W*EFFECT_H && effect_ink>1000 &&
+            target_pixels==FRAMES*TARGET_W*TARGET_H && target_ink>1000 &&
+            follow_pixels==FRAMES*192*16 && follow_ink>1000 &&
+            relocated_frames==4 && released_frames==4,
+            "Large algorithm font, label pixels, or panel reservation/release lacks coverage");
+        $display("LATENCY_DISPLAY_TOGGLE_PASS frames=%0d pixels=%0d shown_pixels=%0d hidden_pixels=%0d holds=%0d hidden_conversion=%0d labels=%0d relocated=%0d released=%0d effect_pixels=%0d effect_ink=%0d target_pixels=%0d target_ink=%0d follow_pixels=%0d follow_ink=%0d checks=%0d",
+            frames,pixels,panel_pixels,hidden_panel_pixels,hold_checks,conversion_checks,label_frames,
+            relocated_frames,released_frames,effect_pixels,effect_ink,target_pixels,target_ink,
+            follow_pixels,follow_ink,assertions);
         $finish;
     end
     initial begin #100000000; $fatal(1,"Latency display toggle test timeout"); end

@@ -5,6 +5,10 @@
 // camera pixels; both real pixel pipelines and final output registers run.
 // A separate full-raster regression checks ordinary coordinate progression.
 // Legacy H=160 deliberately overlaps the bottom panel and counter.
+// Restrict the frozen-source proof to unchanged fonts, legacy overlays and
+// core label placement. Disable the relocated HUD on both sides; its new
+// pixels/priority are checked by tb_fruit_font_pixels and the independent
+// tb_latency_display_toggle oracle, rather than copying new UI into golden RTL.
 module tb_hdmi_shared_font_pixels #(
     parameter integer W=1280, H=192, FRAMES=13, MULTI=1
 );
@@ -48,14 +52,14 @@ module tb_hdmi_shared_font_pixels #(
         .O_hdmi_hsync(HS),.O_hdmi_vsync(VS),.O_video_rd_en(RD), \
         .O_display_frame_start(SOF)
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(MULTI),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_RAW_STATS(MULTI),.SHOW_LATENCY(1),.SHOW_CNN(MULTI),
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_RAW_STATS(MULTI),.SHOW_LATENCY(0),.SHOW_CNN(MULTI),
         .HANDCNN_DYNAMIC_ROI(1),.FRUIT_CNN(1),.SHOW_RESNET_RUNTIME(1)) dut(
         `MIXER_PORTS(got,gde,ghs,gvs,grd,gsof)
     );
     hdmi_mixer_reference #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.MULTI_TARGET_ENABLE(MULTI),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_RAW_STATS(MULTI),.SHOW_LATENCY(1),.SHOW_CNN(MULTI),
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_RAW_STATS(MULTI),.SHOW_LATENCY(0),.SHOW_CNN(MULTI),
         .HANDCNN_DYNAMIC_ROI(1),.FRUIT_CNN(1),.SHOW_RESNET_RUNTIME(1)) reference(
         `MIXER_PORTS(want,wde,whs,wvs,wrd,wsof)
     );
@@ -146,20 +150,20 @@ module tb_hdmi_shared_font_pixels #(
             injected_x=0;injected_y=0;de=1;user=1;last=0;
             latency_strobe=1;cnn_valid=1;rgb=0;
             blank(1100);
-            probe_rectangle(192,80,240,16); // All thirteen effect names.
+            probe_rectangle(192,80,240,16); // Original effect area restores background.
             probe_rectangle(16,16,256,32);  // Fruit classes and runtime states.
             probe_rectangle(375,120,200,24);// Chinese prefix and six digits.
             probe_rectangle(16,H-32,MULTI!=0 ? 240 : 368,16);
             if(f<3) begin
-                probe_rectangle(984,16,280,64); // Invalid/numeric/alert text.
+                probe_rectangle(984,16,280,64); // Original latency area restores background.
                 probe_rectangle(0,0,160,160);   // Logo and overlapping panels.
                 probe_rectangle(496,176,768,16);// Diagnostic header priority.
             end
             vs=1;blank(8);vs=0;
         end
         blank(8);
-        if(pixels<FRAMES*8000 || counter_pixels==0 || effect_pixels==0 ||
-            (MULTI!=0 && (cnn_pixels==0 || latency_pixels==0)) ||
+        if(pixels<FRAMES*8000 || counter_pixels==0 ||
+            (MULTI!=0 && cnn_pixels==0) ||
             (MULTI==0 && legacy_overlap==0))
             $fatal(1,"Incomplete font/priority coverage W=%0d H=%0d pixels=%0d overlap=%0d",
                 W,H,pixels,legacy_overlap);
