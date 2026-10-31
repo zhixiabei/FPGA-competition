@@ -63,9 +63,9 @@ module fruitcnn128_core(
                     state==ACT_REQUEST ? activation_read_address :
                     read_base+{12'd0,issued,4'd0};
     assign mem_data=store_word;
-    // A 576-deep wide ERAM rounds up to 1024 rows. Keep the final 64
-    // terms in distributed RAM instead of wasting another five ERAMs.
-    (* ram_style="bram" *) reg [191:0] weight_cache[0:511];
+    // Use the available ERAM budget for all 576 terms. The former distributed
+    // tail cost 192 memory LUTs plus a wide output selector. Keep one read beat.
+    (* ram_style="bram" *) reg [191:0] weight_cache[0:575];
     reg [9:0] term,terms,ic;
     reg [127:0] first_weight_word;
     reg [95:0] input_q;
@@ -83,18 +83,7 @@ module fruitcnn128_core(
     reg [1:0] activation_replace;
     reg [2:0] activation_offset;
     reg [4:0] activation_return_state;
-    reg [191:0] weight_main_q;
-    wire [191:0] weight_tail_q;
-    // Explicit vendor DRAM prevents the mapper re-promoting the small tail
-    // to five mostly empty ERAMs when its read is independently registered.
-    PH1P_LOGIC_DRAM #(.DATA_WIDTH_W(192),.DATA_WIDTH_R(192),
-        .ADDR_WIDTH_W(6),.ADDR_WIDTH_R(6),.DATA_DEPTH_W(64),.DATA_DEPTH_R(64),
-        .READREG("ENABLE"),.RESETMODE("ASYNC"),.INIT_FILE("NONE"),.FILL_ALL("NONE")) weight_tail(
-        .di({mem_rsp_data[63:0],first_weight_word}),.waddr(received[6:1]),
-        .we(state==WEIGHTS && mem_rsp_valid && received[0] && received[10]),.wclk(clk),
-        .raddr(term[5:0]),.rclk(clk),.rrst(!rst_n),.rce(1'b1),.rdo(),.rdoq(weight_tail_q));
-    reg weight_select_tail;
-    wire [191:0] weight_q=weight_select_tail ? weight_tail_q : weight_main_q;
+    reg [191:0] weight_q;
     reg [4:0] lane,store_lane,coefficient_lane;
     wire [45:0] coefficient_q;
     // Bias and shift coefficients are loaded once per output group. Keeping
@@ -269,10 +258,9 @@ module fruitcnn128_core(
         if(state==ROW_LOAD && mem_rsp_valid)
             row_cache[received[8:0]]<=pack_activations(mem_rsp_data);
         if(state==WEIGHTS && mem_rsp_valid && received[0]) begin
-            if(!received[10]) weight_cache[received[9:1]]<={mem_rsp_data[63:0],first_weight_word};
+            weight_cache[received[10:1]]<={mem_rsp_data[63:0],first_weight_word};
         end
-        weight_main_q<=weight_cache[term[8:0]];
-        weight_select_tail<=term[9];
+        weight_q<=weight_cache[term[9:0]];
         if(state==RUN && kernel==3) row_cache_q<=row_cache[row_cache_address];
         if(post_s2_valid) output_cache[{post_s2_lane,pos[2:0]}]<=saturated;
         output_q<=output_cache[{store_lane,pack_index}];

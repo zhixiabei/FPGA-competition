@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "architecture": "fruit_scharr_texture_rgb128_v1",
+  "original_checkpoint_unchanged": true,
+  "same_architecture_and_preprocessing": true,
+  "original_training_and_model_source_algorithms_match": true,
+  "same_class_order": true,
+  "same_parameter_names_and_shapes": true,
+  "same_fixed_scharr_and_laplacian_filters": true,
+  "same_training_settings": true,
+  "training_shape_and_texture_heads_present": true,
+  "inference_auxiliary_heads_removed": true,
+  "weights_retrained": true,
+  "source_snapshot_unchanged": true,
+  "no_group_file_or_input_hash_overlap": true,
+  "phone_photos_training_only": true,
+  "inference_parameters": 110393,
+  "epochs_completed": 105,
+  "best_epoch": 75,
+  "temperature": 0.9201876521110535,
+  "checkpoint_sha256": "77268f092b8e455496b477766a41c76e31c85da1bd5293c007b780f2f8342a86",
+  "cpu_inference_verified": true,
+  "sample_predictions": [
+    {
+      "truth": "apple",
+      "prediction": "strawberry",
+      "confidence": 0.4722359441601857
+    },
+    {
+      "truth": "banana",
+      "prediction": "banana",
+      "confidence": 0.8999416304897864
+    },
+    {
+      "truth": "grape",
+      "prediction": "grape",
+      "confidence": 0.9998678787798829
+    },
+    {
+      "truth": "orange",
+      "prediction": "orange",
+      "confidence": 0.9993587189336981
+    },
+    {
+      "truth": "strawberry",
+      "prediction": "strawberry",
+      "confidence": 0.7008963577530619
+    }
+  ]
+}

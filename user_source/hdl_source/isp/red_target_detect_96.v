@@ -1948,17 +1948,30 @@ module color_shape_descriptor #(
     reg [MATH_BITS-1:0] compare_right_base,compare_right_extra;
     reg [MATH_BITS-1:0] arithmetic_left,arithmetic_right;
     reg arithmetic_initial_carry;
+    // Constant slices avoid a barrel shifter for index*13. An out-of-range
+    // index still selects zero, matching the original unsigned right shift.
+    function [LIMB_BITS-1:0] select_limb;
+        input [MATH_BITS-1:0] value;
+        input [LIMB_INDEX_BITS-1:0] index;
+        integer part;
+        begin
+            select_limb=0;
+            for(part=0;part<LIMBS;part=part+1)
+                select_limb=select_limb |
+                    ((value>>(part*LIMB_BITS)) & {LIMB_BITS{index==part}});
+        end
+    endfunction
     wire [LIMB_BITS-1:0] arithmetic_left_limb=
-        arithmetic_left>>(limb_index*LIMB_BITS);
+        select_limb(arithmetic_left,limb_index);
     wire [LIMB_BITS-1:0] arithmetic_right_limb=
-        arithmetic_right>>(limb_index*LIMB_BITS);
+        select_limb(arithmetic_right,limb_index);
     wire [LIMB_BITS:0] arithmetic_sum=
         {1'b0,arithmetic_left_limb}+{1'b0,arithmetic_right_limb}+
         (limb_index==0 ? arithmetic_initial_carry : arithmetic_carry);
     wire [LIMB_BITS-1:0] compare_right_base_limb=
-        compare_right_base>>(limb_index*LIMB_BITS);
+        select_limb(compare_right_base,limb_index);
     wire [LIMB_BITS-1:0] compare_right_extra_limb=
-        compare_right_extra>>(limb_index*LIMB_BITS);
+        select_limb(compare_right_extra,limb_index);
     wire [LIMB_BITS:0] compare_right_sum=
         {1'b0,compare_right_base_limb}+{1'b0,compare_right_extra_limb}+
         (limb_index==0 ? 1'b0 : compare_right_carry);

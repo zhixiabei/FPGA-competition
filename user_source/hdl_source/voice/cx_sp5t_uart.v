@@ -3,7 +3,11 @@
 module cx_sp5t_uart #(
     parameter integer CLOCK_HZ = 50000000,
     parameter integer BAUD = 9600,
-    parameter [15:0] DEVICE_ADDRESS = 16'hffff
+    parameter [15:0] DEVICE_ADDRESS = 16'hffff,
+    parameter integer MAX_DATA_BYTES = 25,
+    // Private automatic-quote mode: clip IDs 1..13, other commands <=1 byte.
+    // Default mode retains the full generic byte-snapshot interface.
+    parameter integer COMPACT_PLAY = 0
 )(
     input wire clk, rst_n,
     input wire rx,
@@ -20,9 +24,21 @@ module cx_sp5t_uart #(
     localparam IDLE=0, SEND=1, DRAIN=2;
     reg [1:0] state;
     reg [7:0] opcode, checksum;
-    reg [4:0] count;
-    reg [5:0] position;
-    reg [199:0] payload;
+    localparam integer COUNT_BITS=$clog2(MAX_DATA_BYTES+1)>0 ? $clog2(MAX_DATA_BYTES+1):1;
+    localparam integer POSITION_BITS=$clog2(MAX_DATA_BYTES+7)>0 ? $clog2(MAX_DATA_BYTES+7):1;
+    localparam integer PAYLOAD_BITS=COMPACT_PLAY ? 4:8;
+    reg [COUNT_BITS-1:0] count;
+    reg [POSITION_BITS-1:0] position;
+    reg [MAX_DATA_BYTES*PAYLOAD_BITS-1:0] payload;
+    reg [7:0] control_byte;
+    wire [7:0] payload_byte=COMPACT_PLAY && opcode!=8'h1b ? control_byte:
+        payload[(position-5)*PAYLOAD_BITS+:PAYLOAD_BITS];
+    wire [MAX_DATA_BYTES*PAYLOAD_BITS-1:0] packed_data;
+    genvar byte_index;
+    generate for(byte_index=0;byte_index<MAX_DATA_BYTES;byte_index=byte_index+1) begin: pack_data
+        assign packed_data[byte_index*PAYLOAD_BITS+:PAYLOAD_BITS]=
+            data_bytes[byte_index*8+:PAYLOAD_BITS];
+    end endgenerate
     wire uart_ready, rx_valid, rx_error;
     wire [7:0] rx_byte;
     reg [7:0] tx_byte;
@@ -44,7 +60,7 @@ module cx_sp5t_uart #(
             default: begin
                 if(position==5+count) tx_byte=checksum;
                 else if(position==6+count) tx_byte=8'hbe;
-                else tx_byte=payload[(position-5)*8+:8];
+                else tx_byte=payload_byte;
             end
         endcase
     end
@@ -52,15 +68,17 @@ module cx_sp5t_uart #(
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             state<=IDLE;opcode<=0;checksum<=0;count<=0;
-            position<=0;payload<=0;done<=0;invalid_command<=0;
+            position<=0;payload<=0;control_byte<=0;done<=0;invalid_command<=0;
         end else begin
             done<=0;invalid_command<=0;
             case(state)
                 IDLE: if(start) begin
-                    if(data_count>25 || (command==8'h1b && data_count==0))
+                    if(data_count>MAX_DATA_BYTES || (command==8'h1b && data_count==0) ||
+                       (COMPACT_PLAY && command!=8'h1b && data_count>1))
                         invalid_command<=1;
                     else begin
-                        opcode<=command;count<=data_count;payload<=data_bytes;
+                        opcode<=command;count<=data_count;payload<=packed_data;
+                        control_byte<=data_bytes[7:0];
                         position<=0;checksum<=0;state<=SEND;
                     end
                 end

@@ -41,10 +41,11 @@ module checkout_voice_bridge #(
         .INIT_GAP_MS(INIT_GAP_MS),.STABLE_MS(STABLE_MS),
         .SAMPLE_TIMEOUT_MS(SAMPLE_TIMEOUT_MS),.POLL_MS(POLL_MS),
         .START_GRACE_MS(START_GRACE_MS),.PLAY_TIMEOUT_MS(PLAY_TIMEOUT_MS),
-        .VOLUME(VOLUME)) u_voice(
+        .VOLUME(VOLUME),.VALUE_WIDTH(14),.DECIMAL_DIGITS(5),
+        .COMPACT_TRANSPORT(1)) u_voice(
         .clk(clk),.rst_n(rst_n),.enable(enable_sync && scale_ready),
-        .sample_valid(new_pair),.weight_g({10'd0,weight_g}),
-        .amount_fen(empty_pan ? 24'd0 : {10'd0,total_fen}),.rx(rx),.tx(tx),
+        .sample_valid(new_pair),.weight_g(weight_g),
+        .amount_fen(empty_pan ? 14'd0 : total_fen),.rx(rx),.tx(tx),
         .initialized(),.busy(),.announcement_started(),.announcement_finished(),
         .playback_timeout(),.spoken_weight_g(),.spoken_amount_fen());
 endmodule

@@ -1,0 +1,12 @@
+{
+  "train_fruitcnn128.py": "27fd2eb2b80c067c264b3beea3461b5bded1b5968f78d8f8cd5b3516f371cd43",
+  "fruitcnn128.py": "e1056178767cf997ac7f8441077f9f70bea8a280af15b57690b73f514bb5d64d",
+  "fruitcnn.py": "b4c7fbfce84acbd709cebdfc239fc7b587dfec2b1512bfabcf78374ae41e8025",
+  "fruitcnn_training.py": "e5f89b7f1a4a2c363f076856dd4631e16033ab9294b3b816100f1a4f0054039b",
+  "handcnn_model.py": "753f18ca7189750fcbd7bf5a011073bb9f9a559faf5263483b9979965d938ccb",
+  "handcnn_training_utils.py": "6732786a701509c63889e8c99ad5f662a7f8eceae423abc2c63e41c441116835",
+  "handfixed_math.py": "2e023d73f2aefcbb108c067bdcb32f7dcd6a8ee9d275e6160287c7b511be8eeb",
+  "clean_fruit_datasets.py": "2fad057aa85ab5fda0f257bd2df53a6ec7ac0c7f048d6347fe0d42f08fd57db2",
+  "fruit_cleaning_review.json": "bd7199f52c731497c1d382da9d1e68ddcfd93886751ff4386dce66b14d07680a",
+  "predict_fruitcnn128.py": "08575fec14f1cd2439840ff7561b569260093dd965682745e6e1b4991a96c4b6"
+}

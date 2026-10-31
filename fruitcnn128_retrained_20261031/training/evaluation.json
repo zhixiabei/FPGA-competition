@@ -1,0 +1,668 @@
+{
+  "validation": {
+    "original": {
+      "samples": 150,
+      "correct": 139,
+      "accuracy": 0.9266666666666666,
+      "macro_recall": 0.9173110127449036,
+      "nll": 0.3036941102447594,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          41,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          36,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          16,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          35,
+          1
+        ],
+        [
+          1,
+          0,
+          2,
+          0,
+          11
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 41,
+          "recall": 0.9318181872367859
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 36,
+          "recall": 0.9230769276618958
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 16,
+          "recall": 1.0
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 35,
+          "recall": 0.9459459185600281
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 11,
+          "recall": 0.7857142686843872
+        }
+      },
+      "rejected": 9,
+      "accepted_wrong": 10,
+      "accepted_correct": 131,
+      "accepted_accuracy": 0.9290780141843972
+    },
+    "hardware_resize": {
+      "samples": 150,
+      "correct": 137,
+      "accuracy": 0.9133333333333333,
+      "macro_recall": 0.9112088084220886,
+      "nll": 0.2946482801342794,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          40,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          35,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          14,
+          0,
+          2
+        ],
+        [
+          0,
+          1,
+          0,
+          35,
+          1
+        ],
+        [
+          0,
+          0,
+          1,
+          0,
+          13
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 40,
+          "recall": 0.9090909361839294
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 35,
+          "recall": 0.8974359035491943
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 14,
+          "recall": 0.875
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 35,
+          "recall": 0.9459459185600281
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 13,
+          "recall": 0.9285714030265808
+        }
+      },
+      "rejected": 12,
+      "accepted_wrong": 8,
+      "accepted_correct": 130,
+      "accepted_accuracy": 0.9420289855072463
+    },
+    "grayscale": {
+      "samples": 150,
+      "correct": 122,
+      "accuracy": 0.8133333333333334,
+      "macro_recall": 0.7787772417068481,
+      "nll": 0.5999134426623951,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          36,
+          1,
+          1,
+          6,
+          0
+        ],
+        [
+          1,
+          34,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          15,
+          0,
+          1
+        ],
+        [
+          5,
+          0,
+          1,
+          31,
+          0
+        ],
+        [
+          3,
+          0,
+          5,
+          0,
+          6
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 36,
+          "recall": 0.8181818127632141
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 34,
+          "recall": 0.8717948794364929
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 15,
+          "recall": 0.9375
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 31,
+          "recall": 0.837837815284729
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 6,
+          "recall": 0.4285714328289032
+        }
+      },
+      "rejected": 26,
+      "accepted_wrong": 16,
+      "accepted_correct": 108,
+      "accepted_accuracy": 0.8709677419354839
+    },
+    "weak_light": {
+      "samples": 150,
+      "correct": 136,
+      "accuracy": 0.9066666666666666,
+      "macro_recall": 0.8983657956123352,
+      "nll": 0.3142612886352005,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          38,
+          5,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          36,
+          1,
+          2,
+          0
+        ],
+        [
+          1,
+          0,
+          14,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          36,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          0,
+          12
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 38,
+          "recall": 0.8636363744735718
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 36,
+          "recall": 0.9230769276618958
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 14,
+          "recall": 0.875
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 36,
+          "recall": 0.9729729890823364
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 12,
+          "recall": 0.8571428656578064
+        }
+      },
+      "rejected": 15,
+      "accepted_wrong": 9,
+      "accepted_correct": 126,
+      "accepted_accuracy": 0.9333333333333333
+    }
+  },
+  "test": {
+    "original": {
+      "samples": 150,
+      "correct": 130,
+      "accuracy": 0.8666666666666667,
+      "macro_recall": 0.8483840823173523,
+      "nll": 0.3471290619585605,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          36,
+          2,
+          0,
+          2,
+          4
+        ],
+        [
+          2,
+          35,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          15,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          35,
+          1
+        ],
+        [
+          4,
+          0,
+          0,
+          1,
+          9
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 36,
+          "recall": 0.8181818127632141
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 35,
+          "recall": 0.8974359035491943
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 15,
+          "recall": 0.9375
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 35,
+          "recall": 0.9459459185600281
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 9,
+          "recall": 0.6428571343421936
+        }
+      },
+      "rejected": 16,
+      "accepted_wrong": 9,
+      "accepted_correct": 125,
+      "accepted_accuracy": 0.9328358208955224
+    },
+    "hardware_resize": {
+      "samples": 150,
+      "correct": 132,
+      "accuracy": 0.88,
+      "macro_recall": 0.8878988027572632,
+      "nll": 0.3826631460130989,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          36,
+          1,
+          1,
+          2,
+          4
+        ],
+        [
+          2,
+          34,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          14,
+          0,
+          1
+        ],
+        [
+          0,
+          1,
+          0,
+          35,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          13
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 36,
+          "recall": 0.8181818127632141
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 34,
+          "recall": 0.8717948794364929
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 14,
+          "recall": 0.875
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 35,
+          "recall": 0.9459459185600281
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 13,
+          "recall": 0.9285714030265808
+        }
+      },
+      "rejected": 20,
+      "accepted_wrong": 8,
+      "accepted_correct": 122,
+      "accepted_accuracy": 0.9384615384615385
+    },
+    "grayscale": {
+      "samples": 150,
+      "correct": 119,
+      "accuracy": 0.7933333333333333,
+      "macro_recall": 0.7680637240409851,
+      "nll": 0.6641270467541827,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          32,
+          2,
+          2,
+          4,
+          4
+        ],
+        [
+          2,
+          33,
+          1,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          14,
+          0,
+          1
+        ],
+        [
+          2,
+          1,
+          1,
+          33,
+          0
+        ],
+        [
+          4,
+          0,
+          3,
+          0,
+          7
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 32,
+          "recall": 0.7272727489471436
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 33,
+          "recall": 0.8461538553237915
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 14,
+          "recall": 0.875
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 33,
+          "recall": 0.8918918967247009
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 7,
+          "recall": 0.5
+        }
+      },
+      "rejected": 24,
+      "accepted_wrong": 14,
+      "accepted_correct": 112,
+      "accepted_accuracy": 0.8888888888888888
+    },
+    "weak_light": {
+      "samples": 150,
+      "correct": 133,
+      "accuracy": 0.8866666666666667,
+      "macro_recall": 0.8717607259750366,
+      "nll": 0.34649559513758454,
+      "classes": [
+        "apple",
+        "banana",
+        "grape",
+        "orange",
+        "strawberry"
+      ],
+      "confusion": [
+        [
+          38,
+          1,
+          0,
+          2,
+          3
+        ],
+        [
+          1,
+          35,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          15,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          35,
+          1
+        ],
+        [
+          3,
+          0,
+          0,
+          1,
+          10
+        ]
+      ],
+      "per_class": {
+        "apple": {
+          "samples": 44,
+          "correct": 38,
+          "recall": 0.8636363744735718
+        },
+        "banana": {
+          "samples": 39,
+          "correct": 35,
+          "recall": 0.8974359035491943
+        },
+        "grape": {
+          "samples": 16,
+          "correct": 15,
+          "recall": 0.9375
+        },
+        "orange": {
+          "samples": 37,
+          "correct": 35,
+          "recall": 0.9459459185600281
+        },
+        "strawberry": {
+          "samples": 14,
+          "correct": 10,
+          "recall": 0.7142857313156128
+        }
+      },
+      "rejected": 18,
+      "accepted_wrong": 7,
+      "accepted_correct": 125,
+      "accepted_accuracy": 0.946969696969697
+    }
+  },
+  "checkpoint_sha256": "77268f092b8e455496b477766a41c76e31c85da1bd5293c007b780f2f8342a86",
+  "best_epoch": 75,
+  "fpga_deployed": false,
+  "fpga_resource_verified": false,
+  "real_camera_accuracy_measured": false,
+  "limitation": "Internet product photos and synthetic views do not establish board-camera accuracy. LBP masks are weak foreground supervision, not semantic segmentation."
+}

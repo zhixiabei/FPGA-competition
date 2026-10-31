@@ -1,0 +1,84 @@
+{
+  "architecture": "fruit_scharr_texture_rgb128_v1",
+  "classes": [
+    "apple",
+    "banana",
+    "grape",
+    "orange",
+    "strawberry"
+  ],
+  "total_images": 998,
+  "split_totals": {
+    "train": 698,
+    "test": 150,
+    "validation": 150
+  },
+  "epochs_completed": 105,
+  "best_epoch": 75,
+  "elapsed_seconds": 232.78100000000268,
+  "test_results": {
+    "original": {
+      "samples": 150,
+      "accuracy": 0.8666666666666667,
+      "macro_recall": 0.8483840823173523,
+      "rejected": 16,
+      "accepted_correct": 125,
+      "accepted_wrong": 9,
+      "accepted_accuracy": 0.9328358208955224,
+      "coverage": 0.8933333333333333
+    },
+    "hardware_resize": {
+      "samples": 150,
+      "accuracy": 0.88,
+      "macro_recall": 0.8878988027572632,
+      "rejected": 20,
+      "accepted_correct": 122,
+      "accepted_wrong": 8,
+      "accepted_accuracy": 0.9384615384615385,
+      "coverage": 0.8666666666666667
+    },
+    "grayscale": {
+      "samples": 150,
+      "accuracy": 0.7933333333333333,
+      "macro_recall": 0.7680637240409851,
+      "rejected": 24,
+      "accepted_correct": 112,
+      "accepted_wrong": 14,
+      "accepted_accuracy": 0.8888888888888888,
+      "coverage": 0.84
+    },
+    "weak_light": {
+      "samples": 150,
+      "accuracy": 0.8866666666666667,
+      "macro_recall": 0.8717607259750366,
+      "rejected": 18,
+      "accepted_correct": 125,
+      "accepted_wrong": 7,
+      "accepted_accuracy": 0.946969696969697,
+      "coverage": 0.88
+    }
+  },
+  "validation_results": {
+    "original": {
+      "samples": 150,
+      "accuracy": 0.9266666666666666,
+      "macro_recall": 0.9173110127449036
+    },
+    "hardware_resize": {
+      "samples": 150,
+      "accuracy": 0.9133333333333333,
+      "macro_recall": 0.9112088084220886
+    },
+    "grayscale": {
+      "samples": 150,
+      "accuracy": 0.8133333333333334,
+      "macro_recall": 0.7787772417068481
+    },
+    "weak_light": {
+      "samples": 150,
+      "accuracy": 0.9066666666666666,
+      "macro_recall": 0.8983657956123352
+    }
+  },
+  "checkpoint_sha256": "77268f092b8e455496b477766a41c76e31c85da1bd5293c007b780f2f8342a86"
+}
