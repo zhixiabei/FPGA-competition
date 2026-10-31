@@ -126,10 +126,12 @@ module fruitfixed_system #(
     wire has_texture;
     wire green_valid,green_row_end;
     wire [7:0] green_pixel;
+    wire rgb_valid,rgb_row_end;
+    wire [23:0] rgb_pixel;
     generate if(BACKGROUND_CONTROL!=0) begin: background_control
         handfixed_background background(.clk(clk),.rst_n(rst_n),.run_enabled(run_enabled),
             .start(pp_start),.scan_background(background_job),.done(pp_done),
-            .pixel_valid(green_valid),.row_end(green_row_end),.green(green_pixel),
+            .pixel_valid(rgb_valid),.row_end(rgb_row_end),.rgb(rgb_pixel),
             .reference_ready(background_ready),.foreground(foreground),.changed_pixels());
     end else begin: no_background_control
         assign background_ready=1'b0;
@@ -139,6 +141,7 @@ module fruitfixed_system #(
     handfixed_preprocess preprocess(.clk(clk),.rst_n(rst_n),.start(pp_start),
         .has_texture(has_texture),.texture_edges(),.texture_range(),
         .green_valid(green_valid),.green_row_end(green_row_end),.green_pixel(green_pixel),
+        .rgb_valid(rgb_valid),.rgb_row_end(rgb_row_end),.rgb_pixel(rgb_pixel),
         .classifier(1'b1),.snapshot_base(snapshot_base),
         .roi_x(FIXED_X),.roi_y(FIXED_Y),.roi_side(FIXED_SIDE),.busy(pp_busy),.done(pp_done),
         .mem_valid(pp_valid),.mem_write(pp_write),.mem_addr(pp_addr),.mem_data(pp_data),
@@ -173,7 +176,11 @@ module fruitfixed_system #(
     wire [2:0] confirmed_class;
     wire skipped_unknown=prep && pp_done && !background_job && run_enabled &&
                          !discard_compute && (!has_texture || !foreground);
-    wire filter_clear=!run_enabled || discard_compute || memory_error || core_fault ||
+    // The background gate already confirms two scans. Do not retain an old
+    // fruit through the label filter after a confirmed empty scene.
+    wire background_empty=prep && pp_done && !background_job && run_enabled &&
+                          !discard_compute && !foreground;
+    wire filter_clear=!run_enabled || discard_compute || memory_error || core_fault || background_empty ||
                       (prep && pp_done && background_job);
     fruitfixed_result_filter result_filter(.clk(clk),.rst_n(rst_n),.clear(filter_clear),
         .in_valid((run_enabled && !discard_compute && decoding && dec_done) || skipped_unknown),

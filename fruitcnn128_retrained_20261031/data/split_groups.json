@@ -1,0 +1,8641 @@
+[
+  {
+    "group": "selected_fb617864143855c6e01a",
+    "label": "apple",
+    "split": "train",
+    "size": 33,
+    "paths": [
+      "apple/apple_0085_9f81bff1654a.jpg",
+      "apple/apple_0086_1e6431428ece.jpg",
+      "apple/apple_0087_d73a2023946a.jpg",
+      "apple/apple_0088_0f6f7f267c45.jpg",
+      "apple/apple_0089_8170ffcbe416.jpg",
+      "apple/apple_0090_3f0f0fd68869.jpg",
+      "apple/apple_0091_4d1d1b2f83ee.jpg",
+      "apple/apple_0092_5e96d95b0c88.jpg",
+      "apple/apple_0093_d9546675b57a.jpg",
+      "apple/apple_0094_71ac1556597b.jpg",
+      "apple/apple_0095_d8f0fd146e27.jpg",
+      "apple/apple_0096_85690014665b.jpg",
+      "apple/apple_0097_817c96d52dce.jpg",
+      "apple/apple_0098_69a156af0975.jpg",
+      "apple/apple_0099_a7f4038ed0a5.jpg",
+      "apple/apple_0100_3e57680e9d7f.jpg",
+      "apple/apple_0101_6342d1907942.jpg",
+      "apple/apple_0102_f6f35791ad44.jpg",
+      "apple/apple_0103_acd2752f6058.jpg",
+      "apple/apple_0104_a98f90bb1588.jpg",
+      "apple/apple_0105_8ef917140fd4.jpg",
+      "apple/apple_0106_f5546e8ea544.jpg",
+      "apple/apple_0107_56b69bd9294e.jpg",
+      "apple/apple_0108_c0c7c7475e57.jpg",
+      "apple/apple_0109_c91621574254.jpg",
+      "apple/apple_0110_d9a660363a29.jpg",
+      "apple/apple_0111_12b4d30e4068.jpg",
+      "apple/apple_0112_8398f7e29284.jpg",
+      "apple/apple_0113_3cd503c28a9a.jpg",
+      "apple/apple_0114_54aa6a19e77c.jpg",
+      "apple/apple_0115_26359f54dce8.jpg",
+      "apple/apple_0116_11a0532a95b4.jpg",
+      "apple/apple_0117_a07599f65ed7.jpg"
+    ],
+    "phone_capture": true
+  },
+  {
+    "group": "selected_caa78262cbe3e48732f8",
+    "label": "apple",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "apple/apple_0211_b0c32c6ea542.jpg",
+      "apple/apple_0232_958c7620fd61.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fe8c90bf47c6c723a05d",
+    "label": "apple",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "apple/apple_0140_43ec8d9aa91f.jpg",
+      "apple/apple_0190_877dcbad9b90.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7c8551a04e0337902d5a",
+    "label": "apple",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "apple/apple_0064_75eff1c3be08.jpg",
+      "apple/apple_0290_027bd94c1eff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7e165491fd0eec1f9871",
+    "label": "apple",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "apple/apple_0168_6ef135c70342.jpg",
+      "apple/apple_0229_e464cca149d5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5789ccd3f29a8e9395a6",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0281_83f28db10ab0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d107b00c15e523cd948f",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0273_18a11118a208.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c652cef3ad3ca7e48450",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0078_05644ca5f420.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9670da958ab1a0b47406",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0002_52de45c88215.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b98a8c816a132d11e944",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0076_1f1230aeaf36.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_99bce3f459ddc14f3fa4",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0059_0919c111d57d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0781c636975ed382c208",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0192_af3786fdc55d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_35792fefb97bf87c4b0e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0264_e38093179ef3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_44a97939c2af2848a889",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0231_2da5a2bc263e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4935439ebdc7773bf43b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0242_8f23fc840750.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8906e375aa5882d3a980",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0205_d510f59f9ac4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8ee21dd6e14ba3880cac",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0260_9a2e0190ac85.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f2ffa0a7efb5c19f6c19",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0135_354ce7d2b8da.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e8ccbfeef8a097ab7dd5",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0075_4386b47872f3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7e4f7a0134a608ba933e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0200_278c624e61e7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c21e2f9088367ab42174",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0125_94ab154bb1da.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a42c61293f6e0faa991b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0049_a4e60b940d12.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c3d47cf08303152bf8fd",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0259_74c00fe07def.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1048741de48f15e90671",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0118_60ea17dc1595.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6ad00e3d8949114e54fc",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0017_98363633b1c0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9a269e10ca94eb929cd5",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0055_38809992b5d4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fcb50fe5e2989be003b3",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0263_56ce10fb2158.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f24dfdcfa5f6aa774d11",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0253_6af3e5231632.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_00d6a24d2bae31407808",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0214_578c3f052452.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f3986b1e83c1aa549f3f",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0234_4d9bfd0bc230.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9d3da111a0257ecf49ec",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0221_ef4f70039cc8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_76b9595c07dfa5b3870e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0150_52fcab68a74c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_866e0b33a9bad0a97e74",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0248_e25f42a35841.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_65d348c4c2693b255aa1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0185_8fc5dea14298.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7722fc403c254474db5a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0243_3c6d9d414638.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0c3d0c56d926093b57ed",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0022_7f48d8e93a55.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cc48c8199939ab279498",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0230_b06f75824936.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f9f536a753ea4bf86e1a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0215_4a2eb73859b4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c00a1030f117a440684d",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0256_ceee63758ff6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2eb61163cba2ea76a32c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0011_0054650a31b0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_92941c7c69dca0d6a7b7",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0195_d841afec4027.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a614c9deb46839b2d491",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0178_4740597ac8b9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d2d5ac4d5ad3b6e920e7",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0268_896aa9fd020b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fc48fb9669b5df7bd461",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0065_5c718287fce6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_84a71284b7ee08cc0b3a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0169_0c14b288aa51.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8ab45b8972a4496d9411",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0166_e641162ad1cb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_362d783edab734fe6522",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0189_208245eb09ec.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_57bf74770deedd339c4a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0132_d7b6697c59e6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_dd1c6978ae30a9632e96",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0039_f829064ccef4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b401cd0ba1960a7c80e3",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0043_92c343ff1432.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d1da05ee3e07c1b5fc54",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0164_2a418cccb199.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8e488e771dbfc59effc8",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0278_c01c1183b452.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_77a09a395a3a6b9f7a43",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0143_6f9eab513441.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6e83a48f8d7151d85c58",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0291_76703df785b3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3e05fb7adbbd851adef1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0133_f63bf224d8e7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7c9693df1f11beccd1c6",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0236_320f10f3193a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_05a67624ac390c411c09",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0274_3699e52a205e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d0558b3a9b434556f0d3",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0218_4ff6875f38c6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9eda540f3f6e598d319d",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0024_1a9e72cd5206.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8dec29e511a307aa7204",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0027_c923ae6e619a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_87dcc479c64255e195a9",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0147_496103d3855b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a6ee99e88de3a4cd2007",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0008_38707fe80297.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9cf2c8434be5828827d1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0223_5183cc94fb0e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ecabb2e8a24d437e756f",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0199_57497d7f5108.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_89a72d54cb4d61faeb98",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0187_65eef8eeee15.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_58b7fdd1b18b64c93002",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0239_9424785e9de0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_92d2d0db12549524a3c7",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0247_154c3bfd3429.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4b980e8b6c78dddcdac1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0181_e234f7fd559f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_60a27cd6eddb3463ebf1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0197_d5ecc1ccf30a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f03cb6a3a9ab131c4a81",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0180_26adadb0d363.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5ca6c0a112825dcda4f6",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0179_b420c984fca1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8fae2fd039d5e32d3949",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0157_715eae84c5aa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4b576dce0822111582ee",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0286_d8e3c03b5b98.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_87f809f67690c06de005",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0052_6d87577f51ac.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d9428c2ece65685b450a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0163_2a72813ff045.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_37ddbb8ae48cfee57d98",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0054_68c36a2359d8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f94444c8bac8e1cee557",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0006_c07123482e92.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6554081595c336cd06b5",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0007_dc4edd3858ea.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5151eb6751b475e1ea8e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0071_cd1d60b41761.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2107c2d6096168f8a9cf",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0284_9bf136403846.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_076dea69f8406c95c2d2",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0019_40537011d1df.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_59fab9d44138dcd58c6b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0152_711f691f3df4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_54dead6ce83e4a790482",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0267_ca26edb3c78a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_77eab7ce4e5904bc9b9e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0029_6dba5ed6dbdb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fcad9c16b505bd33a26a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0146_b9b3be1784ec.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4d9b889b31d5c450b8f9",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0003_fd1871064e19.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_953a468566a068c29b82",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0034_d5f3f30c3c3a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a3b34bcfb2c922a07c15",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0217_74db07ca1a71.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ba11f31ea6b9f5918dde",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0186_9bf0bcd65f9d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_47bca8a832111ff33606",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0053_926c46eddd2c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_496309e7624796ad297b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0040_4127f6f45e3e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_047c163d0efa359cc938",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0144_2f2fb170519e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_aa58ca63ceb45ec8cbf9",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0057_ae8e519a7bff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b93a04a38ec0719a5d82",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0031_a540f97937df.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b7de26d87ea4946f09bb",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0257_a8d3a251d186.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a4881430fc81b979aa73",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0058_520643c74298.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7e4ccec62848e8db09e7",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0222_4e736b45ee5e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c796b83ebbd6861d151",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0123_8796712d82db.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2514700d98ae5a1dbdee",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0207_142b13aa69a7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fcd3613dc83e5540b398",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0051_0a79207a2056.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a7745e5aae40c94b938",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0025_3376e76e6f67.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_85ee6aa3145cd3016778",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0226_9eddc363f6c8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_06a01fb67034d27f03d1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0238_1f9f040d2faa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_962e78db02fff31c717c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0210_762dd7262be4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ddfbd103525342447bdf",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0212_b45b41575c67.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2d23e037af7fde1bf006",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0121_7198bd85b081.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4b760f93ca6d0627749b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0072_a89256d17c4c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c5a3b769fca570268755",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0126_31d6e4b55d48.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_295dc2af29df75cd8e9c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0271_802c51b26d0d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_03384179ea44ec80a09a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0130_0ff50d0222d9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_af63f4a887298245055d",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0032_bcff05d96574.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2d181297f4bcb2438178",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0134_d920e9d60290.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_78782bcdb081c702d229",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0127_096a2283192c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8ea6f41290e583aca798",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0026_579ab0029976.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e50346894aada378611a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0216_312f59d59476.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_72286a742011fa0c64b0",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0246_72ff4c124588.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_eed1ba7fce77c5fbeb27",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0084_1384af3b51b6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b90f9936412edee0e021",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0270_5f8af8f99afc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2b05bd3f782ee596b9c2",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0240_23c53051fb9c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_57200286a7411bc59ace",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0175_dd494a977c38.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1158c5f26b49ee9395a2",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0081_9659d5afb5fa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e99bd63838a596bff59b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0194_1f5cc24b94b2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_86bd377199a04393fd5b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0148_c166bc558312.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_02cfcf7f8d5d8931546c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0142_3e5a78a2d529.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3a8a210570aae03115e9",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0188_29b95afba094.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9a44b9f2175b2f51337d",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0047_9939eb967da7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_abf103e209422216fc25",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0224_7f7963b4822d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5d5219e24e578283d77b",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0156_df51cf96479d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ec4d9ecf367c2a6629bd",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0244_22b8cfb4be5d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f13b011bd656968786ac",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0129_43e1a91af57e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_320d7ce003ae72cea5c2",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0241_50abe545b0f5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7932eba5e9e06706c617",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0172_8ffc1f61d88d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d5bcdd9575443c5a6a61",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0235_7cf0f17a3c9e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5c712ef83661b2dd7d55",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0083_e7b8c94e538f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_86346ef91cc94dc6c591",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0266_aacfa82ebde8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_76ab35a62859a66b84c5",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0061_cb0c38e5c263.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_349a6c0e4c410a628933",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0154_d19cb005d460.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1d6f489003f03624d1be",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0272_d7e44da87280.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3b209424ff209e91c2e1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0289_f810176e5860.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_41ad3479a82befe3f0d0",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0018_e375e8d4edb9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f44c25d7a9a7559941e7",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0131_29843b8827c9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ca5167485299b32d08ea",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0171_f2a0a0e61e51.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3de5719b85af0476e895",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0198_8be1232e976c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e4b2feb69198cba5ded2",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0036_79686cf429fe.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_49165ce18aeeff30edff",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0056_c218433bcc6c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3b1f0d2789039a8210a2",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0033_612637cdf349.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ae2894c9d7f5f4afa3ed",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0073_1e269bcf2e38.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9fb17b41b388bb6b181e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0067_6ab70b60eca2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0c470675edd0a71212c4",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0280_2aded145cb18.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e590d5e42e84477962b9",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0139_7498ae99d467.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4ebe3f5890a33bece164",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0149_f050446f5694.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1602805fb6921372853d",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0038_b4a0df5167fd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d20cb343ee9499f9ebee",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0173_8cb86cac68b1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8731660bf4f9c65cda88",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0174_e29e2d415504.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5b274aff920c9b46d86c",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0014_84103be9a56f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2b6f1d4df2123af2565c",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0237_77b4311600b1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5bc84609b4fd107828b0",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0213_5519da4908f0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e07dd5fb2413a5239dbb",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0077_cae4b80db7d6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5c20cc4e70e6ab8c24bf",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0060_206e9622c647.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_51c5c827233143adecbd",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0028_10cfed2f5f26.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a58dc5769f66d0049fd0",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0219_c1f8ed5f945c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a4f8332898a90c0d618a",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0206_be316feb8095.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d633451546e2bd91b474",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0068_b3e3a86e17f0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_add287d4a0b7864b8162",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0193_89d3539f8a88.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a7b715eb1e75d0141928",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0277_b5ed352dfcce.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_849a00b173170ca114a2",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0203_cb1ad3f3ab7c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0493be22f1301b5426dc",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0153_db9fc2bc0714.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9a585a6222da789415d9",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0209_27e65268b650.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f843cc5a804258334375",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0044_d4e85b770004.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4a969cf6a4184fef460f",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0262_1533b594626c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9e787737990c9c5e8e21",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0167_1e187e97b40c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b3dee3a263ff66af32f7",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0252_0b474bcee49b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_edada68b337e3620a482",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0251_b0afdcad3417.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_123317f7582f54306d9f",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0138_01cc48f9c2df.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_07e65156056142b92d67",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0001_436f759df108.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_68f8867a1ec9431157f5",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0282_6d24cbd54197.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7bb85b5a85176f983a7f",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0227_ab176139e67f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6fb2489e2e953d852d0f",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0004_d10fe030acc2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_de8d7162822490918222",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0063_66dcca461c30.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a2d04f160fce20c64ede",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0124_7aa13fabf29b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a2323559b5704fefada",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0048_890b81457749.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_10f6756f51e33ac6fb08",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0160_d8761c0c2c83.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ed4acee1def4944e20f7",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0204_5a89b4a41ed5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_75dd3a70bd08c673013d",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0013_738573e8a19d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3b802cc90830e2afce54",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0170_7280c1b74240.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_53e1deb8a96561a3ea3e",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0030_425c1ddfae02.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_087091f8d5515e1ea0ff",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0276_5dce94e43622.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b788591d3191fd2c13d1",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0196_cbdcb1411148.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_18350e2c51f16c77513c",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0159_0d82289b5c53.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c7e7e96d26a62a92e7fe",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0161_cd52456c4b97.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9df6040ef37ea4425469",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0021_29000dfce9d3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_056db5c5df103e3e818c",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0283_f4c5a49ce283.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_72656b094d497c8423ed",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0137_6c522fc1195a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b714124a65279ab5889d",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0010_63b401977d1e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_af1a301ed7f3b0cdb57b",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0015_9d7a70c2163d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f149cb1575b8a2e41c3b",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0151_7c5b89ea3c04.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9574da9bdfab466a2209",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0082_9156ce97f837.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_98d3f8352c6ad20afbb5",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0245_67c33513021f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_56bca140bf4722e5e90c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0176_0473d1402a40.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_256d42e57a518b6f86cb",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0009_7225a22b5a7e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_32209e68b6d36f30d961",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0182_cfb75e10ec00.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4ce789af1f852b58e8b1",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0208_24e7ca0e686e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_28f8e39c6476c1c7368f",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0062_f9b06d64bd9a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a6e72b81be7167d83270",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0254_7451da2effaf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_10799aedee909275550f",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0275_e2dfa9293fb7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9475e1ab2dd3c174b72f",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0070_e03bfd9866c8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_73ca090142526923ebcc",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0035_6809ac8d99b7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e9dcc388cf24b0d20230",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0042_29e751122f30.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_79a3d15cadfaa479166f",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0265_5fc3862ffb3d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cbb804217f5cb07cdbb9",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0288_82f0335c6464.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d9425121964b341e370a",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0080_db050a9c0e08.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_907f910aed38553d3b41",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0037_96348dcb55f7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_43ab9559cd0e05c52edb",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0279_5ac54b231ebc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0513c2d93811c687043e",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0141_8fb94671124b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_855411122389c8070531",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0012_597ebaedf322.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b2cc013aae200b2421f5",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0250_595202c93c22.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5a945a24bf2d321e646c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0287_70633f970d32.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d092c59dc411500d097c",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0074_1c64ad610431.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_07549976547ac8b5c0c2",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0119_187fea132ac3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ce5d8e28467ace0620b2",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0128_0efcadba938b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a5d71a5d897c88a5a8bd",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0066_8033769b9e39.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d9a149d549a81d54537d",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0069_39bc75368e88.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e3b618c590878e3fe8d4",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0249_521f85c9cc50.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_10ca3a67dbc47c56cbe8",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0183_b6ac67df3c9d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_aa24c95aa12c128625f7",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0158_6491e0393cba.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b1f0724193072cf8a655",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0145_44acf0fd1132.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_daef3354242f2000d320",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0155_9981015452a1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_049f612ae1c4cdc68af2",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0045_5c588f679d18.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_458b9b2d3b8d1c0c5c19",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0228_9a937c1c2daf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bd7a8ee341a3b48620aa",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0041_8cfc5934fd0a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_31dbb5dc6262b6063524",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0269_f8059bb24d86.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3dcdfc2fc511e90c30b6",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0136_461033c2aad3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3ec83ff6bf0056874be8",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0122_1172b9f24dec.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f2b7915171c177d8e3e6",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0191_387b71488210.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_89ba57222faf742e3734",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0162_f47a8dfe8a27.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5a2a6c8c3b64e4e3584e",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0285_129a57e3318e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_165ca72055d272acc84f",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0255_030c02cec158.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e20e112b799767ea0e4c",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0165_bc7a4e5d702f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2361cf6676399fdd68d5",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0261_9f44abdfa3a2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1a8037a938add53d875a",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0120_48799f87238c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3119a8e2234461c17fed",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0023_0bb93f2ba4e9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3647c48ad3a7cfc76bb2",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0177_5b67804b485c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a84945300d402bf4a166",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0202_3aab78ddd30c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1153b173d53a5570f7aa",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0225_caa4bc407040.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cdf4b2c71b772169495f",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0016_351c3b00eb0a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1141691afe4f31ccf14d",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0233_d0a2f255c019.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_aac32ae3567fb6b3fa19",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0258_85988d73ab35.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b646b0f78c52577ab89e",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0050_66761af7e3fa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cc48dc890e97ef631bfa",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0005_b8682d961e89.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_06deb7980113fa537728",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0201_d022619995a2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8748488c922ea833a4d7",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0079_efe1a8bc7a29.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_909259ff56a2c90b4bab",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0020_457ed682b642.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7436d09ba241b385c3d3",
+    "label": "apple",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "apple/apple_0220_e1866716ac71.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2a51e77fc5bd713a0367",
+    "label": "apple",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "apple/apple_0046_19a10bcfd178.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_723961c68dd8f6d58f18",
+    "label": "apple",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "apple/apple_0184_da6426533b0e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_27f6d3d6fb779eb0c978",
+    "label": "banana",
+    "split": "train",
+    "size": 20,
+    "paths": [
+      "banana/banana_0080_3c8b9444c7ed.jpg",
+      "banana/banana_0081_5189a5dd882b.jpg",
+      "banana/banana_0082_a8492391dbf2.jpg",
+      "banana/banana_0083_312422194ef2.jpg",
+      "banana/banana_0084_b56e2c91c217.jpg",
+      "banana/banana_0085_ba72c24fc74b.jpg",
+      "banana/banana_0086_a25b7f647ca0.jpg",
+      "banana/banana_0087_7dd9f9a72ddc.jpg",
+      "banana/banana_0088_d27df3708993.jpg",
+      "banana/banana_0089_8313fa903423.jpg",
+      "banana/banana_0090_c6eb1bd80ad5.jpg",
+      "banana/banana_0091_05de8bb59847.jpg",
+      "banana/banana_0092_77338eb29c26.jpg",
+      "banana/banana_0093_24968797c23f.jpg",
+      "banana/banana_0094_ca1d23e3568e.jpg",
+      "banana/banana_0095_3c7928499a30.jpg",
+      "banana/banana_0096_08a2a1674299.jpg",
+      "banana/banana_0097_36c44747b465.jpg",
+      "banana/banana_0098_611cf6409323.jpg",
+      "banana/banana_0099_b353cf758ff6.jpg"
+    ],
+    "phone_capture": true
+  },
+  {
+    "group": "selected_07431a2c930056b766a6",
+    "label": "banana",
+    "split": "train",
+    "size": 4,
+    "paths": [
+      "banana/banana_0126_5c80ae3e13ba.jpg",
+      "banana/banana_0127_9b2da6ba6cfa.jpg",
+      "banana/banana_0133_9112c2990d28.jpg",
+      "banana/banana_0236_769a7534492b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0969b78f38f2fac5fc10",
+    "label": "banana",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "banana/banana_0140_08434429da02.jpg",
+      "banana/banana_0237_2db8cf16708e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e134fb03f5191983e7b2",
+    "label": "banana",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "banana/banana_0030_9c021785f1a4.jpg",
+      "banana/banana_0057_8bb79124aaf0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b1bf58e1a9ed172f34ff",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0123_92e3c5efacd1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0f54126003649632c1c8",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0223_a318b0a5afd2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1344e8530bb127248c80",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0193_c7a6e704b053.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_12389d6e8fc8e3585086",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0044_3eea5da28296.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_94b5017578aa91d34127",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0054_44a06ea02bd6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d952e6a7b34cf37cdc3c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0017_2499751511d8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_257a1942a5c583149dfe",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0150_65240584afc5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bc6e04b77e9f8339092b",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0111_527b6610a367.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ee047cb224d746dc9eee",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0162_c12289413688.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_81af0ae5559feae39f0c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0177_2030383c889b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_29acf547fde85db42876",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0028_f86703e59bca.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3aa20ab11ecb01d54846",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0113_eb1ae5f6637b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_04991ec2ed62c49e8bf8",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0013_1bc1c8445436.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ec8d413e9e7a9d7f47a6",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0135_23782d6fed74.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_beffee3b47fc50463c12",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0229_6b21be25c328.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_236ac0c4208b7a507ef2",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0195_ba4ab512d153.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_956025e2d510e290d67e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0120_7cafb3bf7cc8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7debe01a87bc97b797bd",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0149_5a846082f767.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_63df29d774dd3722f2b0",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0016_56bd66198518.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_11fcf5ae799999f0d94a",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0175_7d05584bdb26.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_06218408d1dc4a361730",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0172_6f21c441956c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6ea95f1bfb11854b02e5",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0006_06ce6de07b42.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d32ffadc0b4c4cc6751c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0004_c28e7828fd36.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3a0e1a91648945a16879",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0197_bb799dc6b771.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_611bff04eef616448155",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0136_0574b6c99ef7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7f70248a830adcdce8f1",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0225_83a7d2949f8b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_003ef2c7116aa98add74",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0114_cd083b2bec2b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a67b0f74dde2985e753d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0008_413f1aadeb8b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_23d5cad6077ee05465c7",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0169_7dd027f3d534.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1c8cb28ec9e55ac89f70",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0189_f9c44ac92f2e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0c8e1496455be7cdd53e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0243_9388243c4de7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_80f1355668907c1bf0a3",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0207_ab026cfe9149.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ce6d285f6f9b484eaa2b",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0121_b73f3a55d8c3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_86c853f8b152b75e848d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0256_4ceffcc8f5b7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_747467c3d845d88136f0",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0122_44576f036f30.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_684e145a92833a8297c6",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0138_f6e467061b74.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6e0daa1a19989105d2a1",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0174_bbf848e6959d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ebbf728f4d7b830367be",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0247_999b2c826711.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_66c5adbb3928043898bb",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0183_f272d9c58d85.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f63c91d888c0e8a157d8",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0012_f924a22e4988.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_95bd1ca77c17107382a0",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0007_063559dc9115.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_71f75b144934002dbe0d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0063_b8fb83fd7ef8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9d3a76fcc17fb98fa8e5",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0179_744edc52ec14.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_85ad055658bd79a3777d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0116_d04f983cb120.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4b2af66ddb1a33d04894",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0240_69e92b5012ff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0d6ca0f23dcbbb42862b",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0002_8b313ed633a9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ed7e36c596434127d7da",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0231_9e5ae6d3af59.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3730619ea9b5c0a3f888",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0211_4c138022f603.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c7ae4c4367c714975fb8",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0217_d512639610f2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b1bca7d558c82e0c162a",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0118_d6f464d5485c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c9d7bef9147dd075352",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0221_cf958cf9a22f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_16787067a383d40b01ed",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0134_46c552ca15a2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e0e63dc873f8216d392e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0042_ec4c76fd5d41.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ec93d7b88bd503ed70d7",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0078_6a58a9705a3a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cd112acd757baf358d3e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0145_28385acebae2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9074a08e574e727e8c17",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0130_af4524111089.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2f5eb90cfece4e022d23",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0252_8fc2820cd20e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8fea115f45fed41247f6",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0152_61d5cdc86961.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_99f88032154b4e8b0b06",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0039_f7d467f1051e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9f228f4800fe3c6bd767",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0146_c1b12c0210bb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_48615d74a6bde2cbb61f",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0181_f13d351280e7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_32c38938a400fb49eb61",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0254_2d6cdab58c61.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4442c6436b4fc1e4fa03",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0147_82ee2cfabb74.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2f006210597c7faed1f3",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0228_04cf9c46a5c9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5db872f9d067c903936a",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0142_396602851f3f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a1da354fb763fc0b05dd",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0226_1a42648a9105.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_03cd12505e8a41504804",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0117_650d1bc69fc7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d93c8e6c1f71c673a72d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0182_541786a136e6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5d950a483db0fe8e0c8d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0144_5df24cc3204c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c50835200fe4c0d83180",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0148_365a66408d2f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9416b026ac47d42784a4",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0037_9fa2339a51ce.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_35d3ff461d917f9d2274",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0165_d1e1cd8d4be3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4a25d74a9bc84df9f237",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0041_c1601fd03d1c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_71856ddd23f398ca7147",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0160_70241d0b5b52.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0b769677fbb038bc9a46",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0128_c13f84c52ab0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_43f42dfe2a1560e2f49f",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0224_f9ad06dea866.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9dbff656289d85b314ea",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0255_1f19a520f17a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fa0bf747677ea6d4e822",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0115_c74d5e3a1310.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1a50cb88abb66b1c0248",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0214_34934e50c2cc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5136dce1649a98f89241",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0022_7377ed583f5c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ae588bc360f3cb939f4c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0129_388cde7d88cd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f5fc3cb56fdf8efc193b",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0021_611b56765851.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b2cee2746e5c0c2fc55c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0056_c777fc48b268.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_23c5b09c6227d07d8752",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0005_7b6ee2ed581d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fe9c28dea651c3f672c9",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0043_be6ae46c93a4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0ac830e745e82a7421b3",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0216_a5228890326e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_55b8c30c0751bcaae603",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0064_1e310d156bdb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_df084f594852abe3b4f0",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0046_18dbac57f5d7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_558f2a1330bae7d4d2ed",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0105_5377759a81b1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e89d45f370347a4195eb",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0199_c302715f3549.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fd79f58fa521976943b2",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0073_7f24ded37045.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_28a8b376d3e8693f4afa",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0137_618c8dd618d2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2589a6bf8d37ba9f7115",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0230_ca6398981617.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4f215241985b01a1c4ea",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0119_b404654bab0c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7292374acc4f1244cb14",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0164_955040d9698e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_29c9f4f9896def60b8db",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0001_7f050baef976.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0e6a7a0892d617c80950",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0047_ce032b7fb483.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d938dc74fe3ccf9c37d1",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0200_e32e86014e66.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0174f9f364b41bd1c036",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0027_b8d74c00759b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7821b83ccdf1fbd68b1f",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0176_fe96329a0aa7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fa0d46bdd90ef69fd8bd",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0009_6f953e253e97.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ad2545247b7307e2f41e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0061_6d116ebeba3b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0407a30d6e63c2323168",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0071_5a43035548dd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a10713a5cf0f3ccd2034",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0038_889d6a0f079b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_87dd9d679d2dc07c50a2",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0032_9cf80999ae91.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6eff7b2b4fc51c7c8ab6",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0131_02db9c57e097.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_acbddc880786dcddbf71",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0166_705507996305.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3dbd4390ed138d92648f",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0077_e2a56cd9bc39.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5ef119cebdf46e98b962",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0209_44fd2d874fb4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cf5cd24ed546b124b860",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0158_7c3196afd7b3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c37e0872d61a71a9a2bb",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0191_924b30da35c9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b56d79cd728c645218be",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0227_a5e44e4d015e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_24f107c2850ddd7409f5",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0018_101ff73ff1c6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d31059a75091dddc5e10",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0107_e6ca80412d07.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7b1a9960a80812a15a10",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0220_05088001db88.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e9e7783a3b25e313b91a",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0241_60b8d07609d4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9fc437fcbc789566ccc6",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0104_54e757fe73d0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_22ddd11ae8cc0b2f5e8c",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0053_bd5cba73774f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e419157db926dde905a2",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0058_c3e8874f0022.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e7334d5f7fc219cae6b2",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0036_2d53d0e01f9a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7501e2f9f33043435c19",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0125_a5b50a2d8dd8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e1149dbb84ef4064f9a8",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0060_d7a06e7ac53b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_63702fc93152683bbd55",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0124_6f46add318b0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a97a8a444461b83e8556",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0248_0ab674356136.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c7a29e42853f80d624fd",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0102_a71cd8a7cb35.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9affad33caf38845486c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0062_5dba750cb520.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_99e931ed3781894ab972",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0035_09ff9d19cf0e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_34bc52660af4b05f1aad",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0212_77bfcdb894d7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1cc9cb50e1b066f6191a",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0208_374564ba52a2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_56c6bca7c91c1ab9946c",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0100_837ac872ec3c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bfbf1237c0aab33cace2",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0206_b8f5df070fcf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c551b3713b2b7580008f",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0178_150f5fce5160.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_38357112382b2931c851",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0143_16a39587750e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_478e51c240fd941648c0",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0139_f820ce90bf73.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2e48a0fb816d9fbe860d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0219_b1a3422c528a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_673450948a1e82a18278",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0218_6ee8c023118a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_26c82d13eeddac0e8715",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0070_57030bad10a9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d27915dd24d0675d06fc",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0153_fd9f0e5c37ea.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_397408015775b0833d93",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0201_b345b48c8e2e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e6196e0372ff44147e69",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0213_d111e7535ed4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_31ab1ab3a75be21d2aff",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0108_061eaee7514b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6a557ffd68aa607c399c",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0079_999ff39f4576.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_47c1ccc2588122d83451",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0246_ae091c591d4c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_942c9d258c2da293bd1d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0050_b31982f45650.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_47949f6da4c2d9ac6d06",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0251_dc3dc5e49a00.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_24228925e05aacf410e0",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0245_64e83e4a9803.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ac9aef7dda6df4f3c15e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0184_c16e2c8a0135.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_90de22a79b37fb797152",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0154_215b2e79df99.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f6782b93af6ea0d4fb70",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0033_a58feca8f00a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fe57f18882132f97955d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0069_04305c8e8b33.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a894b5bf2b2a243d7b56",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0026_3cc08b6c5dbd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_865b0d4e5203e69bd862",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0076_19c36aa0c3d4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9babf52b0a398c14949b",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0029_94f5c8f41079.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3ad71fa6ff675b0fcb85",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0059_75afa0d301d8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c9a1f0666bfa5f76b817",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0015_489792931495.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_638d12a7267387306279",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0075_f2a0db478c23.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b985f740b3b8c1b2d09c",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0141_a69b78df1a03.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_040862469e6f9375e9d3",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0196_3f3c6b2edb00.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3925c30eac1efc8f1ab8",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0072_de7fbe715b54.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fe89f5f1fd667a85c65f",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0110_5a3772f7e32d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ec32e15d7a2a2d93ac53",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0157_bc2c3e14a27c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_82a0dcd8cc4408c5cac3",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0234_4839b40a8ece.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5eaef0c236498383c8e0",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0049_f6c4979e7ab0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2debbab40c3f36ae7a04",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0253_04fe8f81b2d5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1cad50ce403cc6c8f4c8",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0065_b6401e33303d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0cfb3858fffb538f04b7",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0192_e4a609eaf309.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c354e838ad775f0b2c32",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0109_650e000f5e81.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_eaacdd3b545d7dcddb53",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0106_b5f845101322.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3dcf9cb3b8b45485fd61",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0066_6c26ada2b4a3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7403bb0efe9fd6f1eea2",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0194_815e5ee26eff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2b674d6d2726b6bf6740",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0233_560abeee9865.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e4cac47a33d367a01224",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0235_974b7862fd41.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ff22d536149519a958d5",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0205_88c7a8d50ed9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0435867c742c60c0c8eb",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0045_c5dbb190041b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d5682fefb8b470010ecc",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0171_c4f4c69acccf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_aa9ef286e5fe49eee056",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0031_ae6eb64189ac.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_96ed056b5e55ff17d03b",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0239_d831fa9eaffa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_59e3c12618c8f252573d",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0161_811878eadcca.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c29e1a9239e8e78fbda",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0180_4afbbbbdae68.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_dfead1b839e48f20a7e9",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0159_a6b926e2f39b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1be599da71b3edcd09d7",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0258_a39388fe8fad.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f3a0d21e82a2d47f2970",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0019_1df7f1a5bb69.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_59a2cf80f9b8bb299ed3",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0132_73ce56682fbc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c26fccf984515724b4ed",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0210_d8d472a154b9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_11be155ae5b87984a37b",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0151_35ffb940fa13.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7ce5fe897fc15955c277",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0190_b9fc3f920890.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_01db89d48f9b0dd98598",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0222_1df898f7df73.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5d61d3a567f8677650a8",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0068_19d033bdb242.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_47661d36989efe10dc0e",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0034_3b70502c3381.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8928cf23b7d540d2aa09",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0048_88ca652de0a7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_489f989e45353699efe1",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0185_9d23d57cadf6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4ca705ea47195ae6c87c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0204_6844e6844ebc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6303fb641f5941eb63df",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0067_82c29c3ab779.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f1c5f8f346b8633cd6e3",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0238_ed28c0b0318d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8d3a373c4278c77b4795",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0155_3140e1d145d6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d8a68fac859c2b57256d",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0074_67c9529cbc25.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cc63489c4e66741e7598",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0052_9bd7e8799d5f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_71c447108fd33bdb7da1",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0014_f7c50148ab03.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6033465c7d268273d92e",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0024_b2cdf21e6b66.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a0e2837d4a739bb24cd",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0025_00cdbf69f5dd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c40dc32825f7bd241276",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0112_15fc840daa96.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2dc44aef1ee55fa19cb3",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0215_e000ea272dde.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fc2a1d4dbc6b23d3b915",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0242_f0ef970746a6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_daf49b1cde515578508c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0163_84522a8169de.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c1d30327cf98926d7512",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0170_109ceb06a339.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a26ee6ae6a9beac13cb",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0250_214aced8087c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5090da877d543f1a197d",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0167_8a30c7a35d94.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c734b999cb05d17b660",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0244_e748f6f03718.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3622492abfe66969ddb7",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0203_207f307bb869.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8b18e3fd824f65e3a747",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0186_a17a5fb18b8b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5482e9923be322e312ac",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0103_89ed54bb9616.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2cd2e714c0342dcae990",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0040_f25cbfbb44f0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_db87379057bc1e09d0f9",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0257_1df81fb85fa3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fc00a78aa5df34ce5096",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0249_7e4d9a33af41.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d5ab23775577614ea05d",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0101_9f6dd271c5f4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b05d90169e884048bb14",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0187_f1a4243b6d5f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_582716c24578da54c167",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0232_a0fafbd9dd10.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a04110f74146b927e80",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0198_b899c2d5fec7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f803a7f49ac8695fa3ac",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0202_07c8ffa6ca15.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fb09e5a7ca84e4a387cd",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0011_645012b12b8c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9010dd545f87e3169a0d",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0023_6921021fda8e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_99577569a99982e50275",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0055_4431cc18bec9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0a04f4693fe93c93a943",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0168_3b4c58d6d30d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3826e3bfa4b930eb427f",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0173_576934e81e5b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_38456bf5e4ad8dd7c82c",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0003_0007f86d6752.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_252590ee2c2daf6800ff",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0051_7b7acf3c8b1a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f4fe1569ca691eb10800",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0188_ec6d9e29afba.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_69c6033a9f28fb4485a9",
+    "label": "banana",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "banana/banana_0020_9061f52d3eab.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_56afba45c0eda41a7ff5",
+    "label": "banana",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "banana/banana_0156_e32bbb3d3c50.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2f2b5f5bcfbef162f231",
+    "label": "banana",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "banana/banana_0010_f1b0c624be56.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a213abaebff6bfd33f6",
+    "label": "grape",
+    "split": "train",
+    "size": 26,
+    "paths": [
+      "grape/grape_0083_1898621d7d80.jpg",
+      "grape/grape_0084_3a86c9a525da.jpg",
+      "grape/grape_0085_1d2379f4c448.jpg",
+      "grape/grape_0086_f38ef9c882ae.jpg",
+      "grape/grape_0087_ee5457386cdf.jpg",
+      "grape/grape_0088_ce5f830f91cd.jpg",
+      "grape/grape_0089_3c989b311a7c.jpg",
+      "grape/grape_0090_7f8a788cffb7.jpg",
+      "grape/grape_0091_f6d5b5e816ee.jpg",
+      "grape/grape_0092_cad1b5a7f852.jpg",
+      "grape/grape_0093_bdd7494c7f17.jpg",
+      "grape/grape_0094_7ae93df35148.jpg",
+      "grape/grape_0095_6717fc8c0e0e.jpg",
+      "grape/grape_0096_f784a653a0f4.jpg",
+      "grape/grape_0097_203d9dbfa9e5.jpg",
+      "grape/grape_0098_1ff6289675ec.jpg",
+      "grape/grape_0099_ac6ecb05e9d7.jpg",
+      "grape/grape_0100_c93f6d51907a.jpg",
+      "grape/grape_0101_b83c8f0a8335.jpg",
+      "grape/grape_0102_b34e71e26217.jpg",
+      "grape/grape_0103_e5f538b84d9d.jpg",
+      "grape/grape_0104_3dc0814fec45.jpg",
+      "grape/grape_0105_39b4fb523b57.jpg",
+      "grape/grape_0106_a8d60480ab23.jpg",
+      "grape/grape_0107_464943c33048.jpg",
+      "grape/grape_0108_3ac5e56912cf.jpg"
+    ],
+    "phone_capture": true
+  },
+  {
+    "group": "selected_9d1766fd7d39e33cd7ad",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0028_2bd8859b214c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9d7226e3058a7aa1a9d3",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0068_4e283a2b771e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_909649593ddf7e68aef9",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0062_fc092612a7a5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2577b571b39db3d28759",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0026_dacc8d23f776.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_274f94b691f882249b60",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0050_03a7022ca2e8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_41fdc8db8540651377fb",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0073_6f18c5edc5c0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7fe0e981f6e70c71ad2b",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0065_6451cd1af644.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b4fb7d14587e8559550d",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0057_1001b13fef9b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8b933e46f13f52fe06b9",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0031_bc7d5dab8c56.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6f00366a3e4600d81730",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0070_78095664e0e7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f7a193ec244584b6b3a7",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0054_402faea1a9f1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8d3d7186e14e83a8a2e3",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0007_065f4911258a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_493897354fa5d56a50d2",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0077_11bde290547a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5dbd3c6415cd6fb37e3c",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0040_d01e31c20bee.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_646dff79671922b6fa85",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0004_0709c9a53d8d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a99cf5ba77393e21c775",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0048_6e9e2f98d3cc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_af15fe406a7ed61657c9",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0046_ac60b29b28e9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a4eb53e78bee5a791f63",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0005_982dd5b7ac99.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_adf797e07c6cec569b00",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0020_371726bb6d2e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5176ce1d71c55abbe4b7",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0061_2a08288da04e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b840e239c78726b43c79",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0064_2cd57774bbff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_85e21ab7e03b7be636f9",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0032_f01b6d0d6d3b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ed4d5e3392c28f307d42",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0008_4f7d9534cee0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fea4a0901895fceae0a6",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0075_019a07a145a3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d150679e0f980abf5779",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0021_3ebace43f89d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_083c1eb68580e90ba403",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0045_fecbf6e2b2ca.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4b36dc74c6a0594ebd7b",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0076_7ec530a8f79b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_be8baba78a62bfdc8870",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0074_a790cb2eb151.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_357a8ce17d66990afa86",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0010_a3e28ff9389e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_16072bef4b5b1963e244",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0025_1962ff35646a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1692c95da0ed2eb71ba4",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0027_39680dc2fcff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_53c29633fe5054d934a9",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0060_47b79984f7b6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b5e14694ba64d53ac7d0",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0019_1d423b4115de.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_43407bba9917d3e96c2b",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0047_c9dc938b3047.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ef4ceff0a3af56263fd9",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0078_f5ecc4b42f95.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6de0ea33cf853e1ffe16",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0072_854dbe10c7ce.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d8fb08166683f358b848",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0052_8f3785093b3a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a9dc2344d679a72c19d",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0080_29db5203aa6d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ddce078b56dc5bcf8db0",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0034_0629df749d07.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_69f7146e9585e4dc1577",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0049_1f264ac25477.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5bf24bc149b645830333",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0035_56c8976e00e7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0f3478d83e4d506589a4",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0016_169c1554ed34.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_55c7a137573133d68b19",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0044_2b323e3daaca.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_18b174694c4d41532151",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0067_1898d58077a4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_13d30a4028d5654368bd",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0066_371917f9ce0d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_03f99990f3cc5b4327c9",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0024_d22ea49ad071.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c21afd62abadffc18afa",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0001_f2b23ed0f022.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f5e59bcc9e6737e9cca8",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0051_8425fd78e1f1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_05a8af658a84677b447a",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0082_1528f3cfdc14.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ac289514a7d32e7dfc6c",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0033_96e1220f1e53.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a7b52f951c66d3788579",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0022_b7189aabc170.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6bb358be414b9dd07e4a",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0029_536b85ccd053.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5f6bb2b1fa9cc42d04a6",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0014_1224b4281c74.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bd949bcc85ae75ae3fbe",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0018_3e0df51079ac.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c0885a0b9482efc5480c",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0079_8189d8d48fdb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_89b7ac0d089e48162d68",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0037_19ad79aecf1a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_34c88ff3dd84c2702c06",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0003_2492a96e6344.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5fd1456ddaeca6d994d2",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0043_af1df5650532.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4a84bd90076a725307d1",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0038_9f647c552b36.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_69a516484d1638db1839",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0041_85fcd6a58e4c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c21c9d99c06141076f67",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0056_ea17f9477029.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c45ded15f1ec1e082acf",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0059_3355113437f6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_13d0eba8181d483505ee",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0012_b5222b3096b2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9387bddb8e267c14f501",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0036_60178658d6cd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e2f8e03b4a518b3c2fbd",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0069_3ed62144bea1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b4f24ac2bfe5d1734c9c",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0071_760910fea897.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2d0c87e169d1c8803c65",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0030_a7ed558a4010.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_61d547cd1d3325f3520c",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0009_19ed7f1228cd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3dd38eed38744ca9f03e",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0011_e807e236c589.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b343e79683cb57ca638e",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0015_ace865e7f23a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_17f343ab0fa3b7b55fd7",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0053_5d5e454a0584.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5e38133eba199592d00c",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0055_11fda5766956.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_25fd3c81a72df91a67a2",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0013_1261477d351f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_72df853c6ee5c4a9cfa1",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0063_6a8af1553325.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_07173caa6d90280a4b17",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0023_6133a66c55b4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_dc36b9d0d6aa126fe434",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0002_cdb2551a8a28.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5e2614fd39745a289f54",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0006_fcf1274a4c4d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_609e6a68b97ec284c0b4",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0081_7d47fe8fbb17.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e238a2ff9e74e2299445",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0058_81984dcd28b4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_714a14451ef0a60e69ff",
+    "label": "grape",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "grape/grape_0039_7d3f82e52251.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_98fdc860c999c3d80b2d",
+    "label": "grape",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "grape/grape_0042_5e3a1d12fc35.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_501fc5adb6d7b7cbef89",
+    "label": "grape",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "grape/grape_0017_efb33d861965.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_41b4edaae6c9b77a1f80",
+    "label": "orange",
+    "split": "train",
+    "size": 36,
+    "paths": [
+      "orange/orange_0065_5f1c36899db2.jpg",
+      "orange/orange_0066_fa62dc59d6f0.jpg",
+      "orange/orange_0067_7a7d9834cbb7.jpg",
+      "orange/orange_0068_68d4d2c0765c.jpg",
+      "orange/orange_0069_a2a5e908b370.jpg",
+      "orange/orange_0070_221f9c576ab9.jpg",
+      "orange/orange_0071_c86f66ebc941.jpg",
+      "orange/orange_0072_5a0d7e5e8841.jpg",
+      "orange/orange_0073_aaf93ce9da8d.jpg",
+      "orange/orange_0074_7b351e32e9bd.jpg",
+      "orange/orange_0075_faba4c912237.jpg",
+      "orange/orange_0076_0c7808f4ea62.jpg",
+      "orange/orange_0077_0aaf94bb0941.jpg",
+      "orange/orange_0078_45c06661b878.jpg",
+      "orange/orange_0079_2217079296fa.jpg",
+      "orange/orange_0080_0a920bd4b033.jpg",
+      "orange/orange_0081_0dc6700e7309.jpg",
+      "orange/orange_0082_5068b95d2f71.jpg",
+      "orange/orange_0083_42803d91c013.jpg",
+      "orange/orange_0084_16dc96a24a4c.jpg",
+      "orange/orange_0085_ec81e38c9f7a.jpg",
+      "orange/orange_0086_130e07e8a38e.jpg",
+      "orange/orange_0087_d8badb427950.jpg",
+      "orange/orange_0088_f9ce871055dc.jpg",
+      "orange/orange_0089_db1ec9404b42.jpg",
+      "orange/orange_0090_cccdae00869e.jpg",
+      "orange/orange_0091_dcc1af901de0.jpg",
+      "orange/orange_0092_3dff65ddd50a.jpg",
+      "orange/orange_0093_4cfd6b7c4103.jpg",
+      "orange/orange_0094_a4c1a49ff4ed.jpg",
+      "orange/orange_0095_59e499fc3468.jpg",
+      "orange/orange_0096_5c6000862e53.jpg",
+      "orange/orange_0097_10ee028fe690.jpg",
+      "orange/orange_0098_7d5a1a7ace0e.jpg",
+      "orange/orange_0099_9a2c112e5d16.jpg",
+      "orange/orange_0100_2c4331a429fb.jpg"
+    ],
+    "phone_capture": true
+  },
+  {
+    "group": "selected_32b29ee0b6071b69a5e7",
+    "label": "orange",
+    "split": "train",
+    "size": 3,
+    "paths": [
+      "orange/orange_0001_7dd49232f9ff.jpg",
+      "orange/orange_0002_f116ff676ba0.jpg",
+      "orange/orange_0021_c26eea2b4441.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5a3a61c347d0a1331054",
+    "label": "orange",
+    "split": "train",
+    "size": 2,
+    "paths": [
+      "orange/orange_0122_c47746b73459.jpg",
+      "orange/orange_0222_313b7b9507c4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_713575038ab1aaaaa5c3",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0184_6a6bdeabc979.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_edc558f9a1076d2aec3e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0210_d6ca8fac9a43.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c65f32b1c0607ebd46ef",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0008_2f54fb06bf8e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5aae42378557a587a9f6",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0173_0c99a269563b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a40b5350ded595ac2573",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0211_84d8d147303d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4d496874bf43e7b7ffd9",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0183_bcaa762716c9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5c6381dd6858e8655a24",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0119_e9b1f9fe9f0b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_89a86d09811abd45460e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0202_efd7be7d99f2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3781c72cba07f5856139",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0148_00165a8b3eea.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4a025ba8751a54ea2235",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0169_61a72756249e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e76345929ed902fa6967",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0147_d97a255c515e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0b8e73449d3ad31b0b3a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0155_2e3976fa2bf6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1df8e2670a1e2bb29b14",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0200_a02d4916e15d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_af5c6e2254bb75047ff6",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0112_d89068bb4cd4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0b44caee9515029aa685",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0176_adf5b93aeb7f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7748f05581d11fe7aa46",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0164_0e1c09e100d4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_972500fbdb9de238aa50",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0171_f081964a8e11.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_22fd4e60d03a3fe1f68b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0013_1aeedc42a566.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8eb0661a126281a0e7ab",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0191_7326e1539a4d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c6a0d08465757811e98f",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0010_def2a1fee038.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_eb28194442534334aa2e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0033_b487cb9519bd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6187c0d6b54d33593ffc",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0054_237e9b8e4dfa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1bf903d7bbb7826c4870",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0026_8fca980a9d05.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b25f20803c8a9aa072c4",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0209_a6a948c9f923.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_446448070c9422a5ee63",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0232_9589ee3f0b14.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6490d1bceabb8dab267c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0213_0b93a6572915.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7ec1c7aea761d921e00e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0230_7d082aa2b933.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f96b99f7a782460580b3",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0061_58a798872d56.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d05028252a07633710b2",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0030_60411231731d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9ff2a3206ae8df3d1900",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0047_e817e95ed620.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9cad2f483c28ef6ab870",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0188_e2eb2bcd9278.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_75a1c4deb08bde0e508e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0241_5a6aa25ca97b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_54bce81c5aea029e84c1",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0048_6c932c0f01d8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2db40ee50f9f4e7c399c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0102_03f3fac89f99.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3944539312783f6c1832",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0192_28e6b937edcf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5a9851bf62e75f0669d5",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0133_4d7cd372def8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_66ea85e51bf7de67f4da",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0143_ca7ad5a2d264.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0515270c41a533c7d44a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0172_690b14b32da1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8fc542c16b66449b41fa",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0242_bea6c3a7ebe9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5c749e6c8d6978ae090f",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0212_3ad2b5c7c8ca.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_afa76134b97f1aad8d74",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0160_87ee22172478.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_77e519772477ebeb97dc",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0138_fb36ca898128.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c8892376989c7872c63a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0235_560e21c23245.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_de5d67842e7eea92b584",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0237_811d560d66ac.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5cba4a9ec01a9238f2af",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0027_1cff6d95fbe4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4afd4fd506c4897f6ef2",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0197_9130b9a99e73.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bc6e7d3636f18c4855e8",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0109_eca2449e7efc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ff555c4218d8aab1c82a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0004_c2f8eee8a6f2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9ac7d6e173e1c4eeb7a8",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0113_411bde4cf88e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c85c62e5c08f73b1e904",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0247_faa0081f8753.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b1e3da00675a3a560c86",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0207_8dbb0e1a51cc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bffed9084805d2d2dd01",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0028_1f7fda2bcbbb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a109e15638a30703f282",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0132_0eb1372b7c1d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6f7abc9b75e03bcbee1f",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0186_ee37423df2ae.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_07b66f6688e5dfd4ca56",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0005_c2d1790ee1a7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bff691fac5dfc50b056b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0166_a25d76345c8e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ed820567f6d1bd54524b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0161_6bb74b3c44e5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_98ffb4404b0340674399",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0236_f345109d4b6c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_510dbe2f812dad5f2ab5",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0196_64d1b4d865f8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_64f2c95e3f8940be91e7",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0037_9c51ec829001.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9812857a58dd10bd37b3",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0016_22325774e710.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_994ea520f6985b7b32d1",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0219_fc84f7ad62e6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fa23ce79e51a120dce87",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0118_8234f9e52803.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_25edcf992b7e2352d2cf",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0194_b298d4fb60fe.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_acffe984fd3de7de49d5",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0003_d4e29c74db7b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_611c593fe96f2527d307",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0006_f2a7bd774bf9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1cffb774db787010b45c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0215_3bb98b1cc18f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f6334766e2811764906b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0157_d7ba893c1095.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3416b79efbe4c745de18",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0189_1e501f9a93b8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4af43e73cc0259a6425a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0187_715fe9a54bd1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8e141b8d445a7a57877c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0020_83cc3776aa8a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9409474b9ce191924b60",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0220_492a344a3220.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_909f0a917de8b20fa2f6",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0174_3863b5639b34.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a44cce54e45f8b5e9b87",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0178_6dbc77d356d7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c277929575b2a4b45a9b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0135_2b4b4b11c65f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_faeb052430b90067ec4a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0153_0ec32895f1d7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a95ff78ec4d3bb5a9c50",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0103_355e3e39c4ea.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0cfdab4468d76eb7477d",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0101_cb844500b8ed.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_16b0e640a87300bef976",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0128_a50c2b6052ac.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_33b88428a6a4f4309809",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0014_25fdb8f236a0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2e7bec62ee452f6ef468",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0227_6c198a10c467.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9bda1d4daf5b59958a92",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0246_471349780bbf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0f1d84f3d48b0a0c80ce",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0015_ea44a19c32a9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b70ded44ff48d149d926",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0134_8e0302d08c94.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fda606fa5f04954d2038",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0224_356883b63fc0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0551b2c7ac6fc7edb127",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0139_835253d8b199.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_df5de9f3cdae65d6b938",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0201_64effe0b436a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9c2f320edfc55569e858",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0175_ab447c076fc3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3a7c6407ef5bde405aa2",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0104_163dcd4450c0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d2db4eda3b629946041d",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0216_22ede2cfb10c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c99fc8401d49de5f832",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0234_d1e63b95cfd2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9ea3c9dd2cf7f2948b9c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0039_c4e51d9a2555.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a120b5ea7f05193091ee",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0238_d3f037e48a28.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c1e71e48b143c2339e3e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0120_c358812f64fd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6d205fc53af9c40c35a2",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0208_b604a080173a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_30085f4449ae20cbd8ea",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0226_c0b5c4e2f344.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1c9110d7d3e73297ac1e",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0051_b9f5e9d1f75d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f332933a767e08d3a688",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0056_b4698cf07d83.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f03d7a5ea879db561638",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0217_7eb4fcddef6c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c32b8040ef35273b7eee",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0111_99922c4aa9c6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_33b52993d8a055eb3d05",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0045_20fef36820da.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ad7b71e1a9af0dd153be",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0063_c7e0c9c514e6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6bd5b5824f10995236a2",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0018_21b88a67b7e4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_146cf90b192c8e478182",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0042_9f912a2ea604.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_05c5830ce4a58ba7d553",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0060_417e12101872.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0efc741cd53ff4a09baf",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0206_24a091cee549.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b67e81428f03aea90b04",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0057_1a3821360cd7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ee37654d4981fccb4ee3",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0239_bc29f9c63574.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_24e449d24ef6097f4a7b",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0228_4ae009b869fe.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c585579ed25801046993",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0168_dd08e5398be4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7cb960d43f48505b6799",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0009_c4a0965e8ab7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6ffd6e39e9fd3351fd72",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0062_23da59d5249b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5e06fc7a2db87e5724cf",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0031_e53458a01b18.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7e60035621596741ba9e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0115_a6cb7249c1ce.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cd21d91c461705e89d7a",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0022_7727e897983c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2b2f027c82cacbb70765",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0165_ee5b648da3cd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d13177180b6e0ae4e2f0",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0105_af270869c492.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_028efeccbba5c5251c8f",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0243_c90ee83851b3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_66d47db3fc905ee05f25",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0125_a7c12a6de23a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_35b9bf3b5f3d063e4cf7",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0179_eb1daa7fbc86.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_06508f464de0759634c8",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0124_3a60dea8e15a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7c754e083128547cc660",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0193_46bc220f3777.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c6365f4dbc115491f55f",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0231_c17139d6a337.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_52daa24a06cfc534852b",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0195_3f53b17a9b9f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6f867064036398dc3402",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0205_e80b5030c99d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_820fced2a02cdd284573",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0240_74fc348bfb07.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_523cb7fbd0f0cd15528f",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0130_bb94adb88b23.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_61592cef6797004a177b",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0043_4bc5a9ee9d6c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f6ea15c11906986f2c9e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0229_67672e14cc86.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a7fcb19e580ea7e4fb81",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0007_53a94c201bea.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2764ca0a88be22b50a1b",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0064_c36b76fbd4f4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0aa132466e92bcdcf2d7",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0214_2cca8b33a680.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ea0c6ab2f6acf7ab4f10",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0023_4e43a461982b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f1b34b43cf0ad5253640",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0131_c5e31fd729b5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5311b013279985264a4c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0233_60deb8d57687.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2584a7e284633efe34d0",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0144_e988826460f7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_067061accb7a12eb075a",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0245_7521ff263cc0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d0f8c9076acffa19c3a0",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0198_8fbf0ef6322d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_999e8f551d58f2b44bee",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0129_3b677040be70.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c402348a031fc1ebaea",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0059_6cbb5c57c730.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5e78384d3d29c8eb3bf8",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0182_b80f58aececb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_75d37d4aa5d2fddbcd2a",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0244_d29e3b0a4cf3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_595deaa49c76416b63f2",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0158_1faf96a6a21a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_08a3da5fa9274a26ed2c",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0058_87185749ef58.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d49093d7042942902aa0",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0117_bb350657992e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_84d10a3e81598b2640e8",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0145_8f1bc6ad61b1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_285b73d2b7455f76329b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0038_1ff3d41703b9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b7094a2f1b802ef4dd09",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0017_7b231b5342c8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6be7cc7b287d75183eb3",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0011_9c68a128375a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_35af07ab9314e813b1ce",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0159_2c4b0c882258.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f65db8a73bea2ec03486",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0049_ee0cfd067d92.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_00f0fd949bacac03162c",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0044_234a70bcc6a1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cefd41048fd88f293bf0",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0029_8fe9b777e0c9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7acc3e58a3eeb841800c",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0177_24bd69bc7708.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_131b80f380a6e6170f8a",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0110_0691b819e7ee.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5a0bf07f380015b821cf",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0034_86bdb2fc08bb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_37536205475693d33e03",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0106_373607b72622.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ddfd8218ffb092f330a1",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0146_1de61b9a3e6b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_65202b5807d236dd114e",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0167_e8807c79186c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_873f41856c1c51d77cc6",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0052_a7b5b477df2c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e1b63956f148f7fb9ff4",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0163_330bfabb9b21.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c33251d35904ee78d90b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0055_0f87617d41a8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bfc835bd02d5c3ae3e02",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0151_ce32a64b90fa.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6034fb67a60c61dfb791",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0154_5ae0a2421a05.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e86c7ba85c1e7204916b",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0136_344c4376712c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fffdb77bdf947ca3baad",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0032_96ce83f70360.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0ff14e8897c71f06ef09",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0107_41c8fb925c04.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_66f838dfc1ab27911dca",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0046_5389605444df.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_922d126aa470f97600d3",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0114_b332ab02d2f5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_242102a5878561b2563b",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0140_175521774c53.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_df10cf9cd8e916a49f8a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0126_86d2295ce463.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0348aa9fdeff7a08a130",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0221_abdae041da12.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_cf00580b31c9b8fc44a6",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0204_7249a869b8d5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5ecebb5a31bb4becbe56",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0024_ca896850bcf0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_72ced2ed1ef8e613206b",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0035_b3ddad4ce7cf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0be0c8bfcfd1ca527747",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0225_f395cde8fac0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f6a1e12c0fceddb62e95",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0108_b62bb7601617.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a68d7b63ddbbe8e50322",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0019_44ab12ea20f5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a1cc555d9ba1ea6bcc46",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0116_f55923b0d798.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1c0962ebdb14433f80e5",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0199_72211f0cc392.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1e4a1949d5cdd7260c5e",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0036_b4db929a2378.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b804c1cade14e15ed096",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0152_af7ac4e4df08.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3e506f2dca0a64689bbb",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0162_6c4ce89d0df4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a61dbf8dcd0a43cc1402",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0012_ffe2416888d1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8a1c371b1dd75bb46ada",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0190_93473c90a82e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b98cdf810c55aa3a2906",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0137_c635117669cb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8340d369bed4d64db95e",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0156_a70d0d16101f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6fa8c07dbebe10263b70",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0149_3e38457e6909.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e76e7f5369af6f588133",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0025_f24e9a9d86d0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_85c1264b082be4944e9d",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0041_495a7b07e660.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9074c8fe916834d60ef4",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0185_fcff1cd5df2d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d5664eea16312b855938",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0218_92c4b1b49e3b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_33c71a4235286adeb27c",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0053_659efc8d8381.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0fc4a92163417293da65",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0127_46a4bcdfb08a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8cae9f56d9f5c4f11c38",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0180_799676c13b41.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_93abe571ef53a4be128d",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0142_3481eb5f7ff4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a44a879aa05ee4a79a93",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0181_668fb4bae4e4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_5e87637a72e63334d8bd",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0040_bcbe316509fe.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b0921feb8a1dfa06ed2b",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0150_5b0ac7852599.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9b9bcb8fb9696d8757c9",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0203_002b80e5d4d0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a0875b0efdc82158d64a",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0050_1a224b0e6daf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9b6125ab9d6aa2e237e4",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0170_d162b961d7ff.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8899afc3eb61690b969d",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0123_cc54aeca2be1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d0c383d9166b1e8e1195",
+    "label": "orange",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "orange/orange_0121_e7e27d66af1e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e57384feed9cdc6665ba",
+    "label": "orange",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "orange/orange_0141_7ca20ddf69fc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_57359dec440ae16dbb1b",
+    "label": "orange",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "orange/orange_0223_920bbc631d2c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3b65b26e71d6270ee82c",
+    "label": "strawberry",
+    "split": "train",
+    "size": 27,
+    "paths": [
+      "strawberry/strawberry_0001_44a47f0d63f7.jpg",
+      "strawberry/strawberry_0002_291e43cb0d08.jpg",
+      "strawberry/strawberry_0003_3aee54a02859.jpg",
+      "strawberry/strawberry_0004_f95372063fce.jpg",
+      "strawberry/strawberry_0005_ad612e2fd1c1.jpg",
+      "strawberry/strawberry_0006_2378bcda1ebd.jpg",
+      "strawberry/strawberry_0007_07177492466b.jpg",
+      "strawberry/strawberry_0008_8590a67040b1.jpg",
+      "strawberry/strawberry_0009_e100109e341e.jpg",
+      "strawberry/strawberry_0010_ddf6c3096a11.jpg",
+      "strawberry/strawberry_0011_a305e876cc62.jpg",
+      "strawberry/strawberry_0012_8cd0f5addaa6.jpg",
+      "strawberry/strawberry_0013_c0bbd4a6dbe4.jpg",
+      "strawberry/strawberry_0014_bf11fe2a1c56.jpg",
+      "strawberry/strawberry_0015_0407ca5b627c.jpg",
+      "strawberry/strawberry_0016_b402082b0b09.jpg",
+      "strawberry/strawberry_0017_2de8dab40a60.jpg",
+      "strawberry/strawberry_0018_6f6068976d95.jpg",
+      "strawberry/strawberry_0019_e598c15967af.jpg",
+      "strawberry/strawberry_0020_ef5dec02db0e.jpg",
+      "strawberry/strawberry_0021_4507623daf19.jpg",
+      "strawberry/strawberry_0022_5fe98c0d360a.jpg",
+      "strawberry/strawberry_0023_efb61b4e86c7.jpg",
+      "strawberry/strawberry_0024_6500fb120a88.jpg",
+      "strawberry/strawberry_0025_ca055adf2553.jpg",
+      "strawberry/strawberry_0026_b7bf13f28872.jpg",
+      "strawberry/strawberry_0027_4fc95dba1d24.jpg"
+    ],
+    "phone_capture": true
+  },
+  {
+    "group": "selected_9de6b80bc5d32903c4c6",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0076_1aa309306b84.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3c1f1294ac98c775d23f",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0058_e21106c2b234.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_32fccaee210b2fef9ea4",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0056_7bbf5b0fa231.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_312ed02cd3f87c0ed554",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0071_369ff74cddd3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0d86fb5eda18c719322e",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0067_1e0ed93739a2.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b35b4ec5f28dc29c989a",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0060_c99e2bafeb67.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_71d1416f5ac2baf627f8",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0062_ed2b87bfc3d1.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_698590f301bd180eb009",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0053_7f2a503ad49e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f137c1437e60a7b3116d",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0034_4e9333e5d883.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_625a6bb93b514ceec682",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0044_8e170a1e07bb.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0f122c779f75603921f9",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0036_13ab4983d97f.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c275d62519223a9dafd8",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0039_e20b35ec3bb6.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_199615281ce43100f73e",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0059_b607675821d7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_14830a9e0a9edad6eba6",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0054_4f2e3f9887e3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d7fc6bbff9d2278781f8",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0089_2bdf3ea32b27.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_677e137db6f915e1f4ad",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0074_3573faf66440.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_6ecadd0b94803a98840f",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0064_c86aac9e1f37.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d6bd5123ca8678abbc5e",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0028_406b8c89dcda.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fa67eb01847fb92ef124",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0040_130a5fd32d6b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_119d16518754815456f2",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0092_a2c4aa17997e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_0e2570f915ca55ca90ab",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0049_1341a7137348.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_3fd00c2d00eb77e31538",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0093_2c31c03f5820.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_64d7a069e85ad1b4aa90",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0041_fc1314cd16d3.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9d25306328b3745b163c",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0080_816ba13a1b21.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_34cca23042f72e887d64",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0088_6f6171b7db29.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_28b7559a36b205c12739",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0055_590b593adcb8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f7fd4f0b759e9a8660ff",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0078_c63d4636bb4e.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_425e688a0710ca46f54d",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0079_29f4ebc95ddd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e4ae4e3a2c9ac18e2ce6",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0029_9540e5583897.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e4c13b729a7e34559769",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0035_123c7f22598a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_38e1f5638ffca0e8a731",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0045_cc1c90e7725c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_640ebbf97fa21579f11d",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0033_7f32824e773a.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_de63c16af26649d2c4eb",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0065_aad7910ebefc.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f65c332e52747368365d",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0042_5956cdb43bcd.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b7c65318cdfb341e6803",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0047_10c3b7a6efba.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_bd4f2dc44d37477c2535",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0063_2fcf77ba35ba.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_e9155fdc3cab2aaca2f9",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0091_b19999f3ddc5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9e9209fa5139d9698bb3",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0072_51db51205691.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_2fa69f3eb1bbbddf31b1",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0061_00b40894849d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_477233be9b9bb9975847",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0083_4d7ece22fbd8.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b78d6116d5198c77f7f2",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0048_0efba80e6bf4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7164eaafdfb7f9dd6007",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0066_eec342845e98.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_04022c590634145c4867",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0043_51f14cafde53.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_fc7c3337e87123c10cfa",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0073_731a89027f33.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a5c55ee2edc60b13a09a",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0069_59f30ba4d51c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_86816e37f94b6922b29f",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0081_2f312f375084.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_145af9273f3b0832098f",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0086_b625c9294511.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_c4b1c095888f9b9808b3",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0030_c7c38ca8fb72.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_575d5011845550a5fa93",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0068_87f50d991d95.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_67bddd480a8c0b10e73a",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0057_53736fe001bf.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9b61f89aecb5ae2e3010",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0051_ed8887870d0c.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_b34e0e804bff4a646076",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0031_ffa788296ed9.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_16ef1ece3a1da4413946",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0070_2142bfb0cb33.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_4399da46238d454d5c6b",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0085_778fd304fb1d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_9bb5367be34658da89fb",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0075_e0dfd0b91681.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_8193d9409e7c2d4cbf36",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0052_2c6eedc7fce0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_f71678802c05cba33dc8",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0090_718f3f208af5.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_aba920e95db47caa86aa",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0050_fe037ee28a9d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d3d55cb435f00045c082",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0046_b920bbe26847.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_1e92ac5de797530eed93",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0082_0c22fe5ecdb4.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_d918c2106544eaae2d76",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0087_f2a64445c183.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_ebb66944bceb7766dca8",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0077_eb562de36197.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_274d5bbca54871ec539a",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0038_b7cd9371402b.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_a6ea2e81e173645c45a3",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0037_66d98f727ec0.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_14236671a97719a060a6",
+    "label": "strawberry",
+    "split": "train",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0084_db69d810fea7.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_7d79377d1ea775d87de0",
+    "label": "strawberry",
+    "split": "validation",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0094_68f422e9606d.jpg"
+    ],
+    "phone_capture": false
+  },
+  {
+    "group": "selected_453f84a3aa085fcb373b",
+    "label": "strawberry",
+    "split": "test",
+    "size": 1,
+    "paths": [
+      "strawberry/strawberry_0032_849ea7b96a68.jpg"
+    ],
+    "phone_capture": false
+  }
+]

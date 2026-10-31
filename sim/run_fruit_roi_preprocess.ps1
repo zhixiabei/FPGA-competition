@@ -33,11 +33,10 @@ $hashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv')
 $compile=$sourceNames -join ' '
 $script=@"
 onerror {quit -code 1 -force}
-onbreak {resume}
+onbreak {quit -code 1 -force}
 vlib work
 vlog -sv $compile
-vsim -t ps work.tb_fruit_roi_preprocess
-onfinish stop
+vsim -onfinish exit -t ps work.tb_fruit_roi_preprocess
 run -all
 quit -code 0 -force
 "@

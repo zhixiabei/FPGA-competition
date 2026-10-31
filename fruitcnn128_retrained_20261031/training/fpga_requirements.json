@@ -1,0 +1,16 @@
+{
+  "device": "PH1P35MDG324",
+  "max_slice_percent": 90,
+  "max_slices": 19094,
+  "total_slices": 21216,
+  "measured_slice_percent": null,
+  "approved_for_deployment": false,
+  "requires": [
+    "128 ROI preprocessing",
+    "tiling for oversized inputs",
+    "8x8 -> 2x2 average pool",
+    "background sampling update",
+    "new export descriptors",
+    "place and route <=90% slices"
+  ]
+}

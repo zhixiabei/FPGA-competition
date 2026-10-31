@@ -1,0 +1,6 @@
+{
+  "status": "complete",
+  "checkpoint_sha256": "77268f092b8e455496b477766a41c76e31c85da1bd5293c007b780f2f8342a86",
+  "fpga_resource_verified": false,
+  "fpga_deployed": false
+}

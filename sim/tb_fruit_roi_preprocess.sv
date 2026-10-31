@@ -21,6 +21,8 @@ module fruit_roi_preprocess_case #(
     reg [127:0] mem_rsp_data=0;
     wire green_valid,green_row_end;
     wire [7:0] green_pixel;
+    wire rgb_valid,rgb_row_end;
+    wire [23:0] rgb_pixel;
     wire background_ready,foreground;
     wire [10:0] changed;
 
@@ -29,14 +31,15 @@ module fruit_roi_preprocess_case #(
         .snapshot_base(SNAPSHOT_BASE),.roi_x(16'(ROI_X)),.roi_y(16'(ROI_Y)),
         .roi_side(16'd480),.has_texture(),.texture_edges(),.texture_range(),
         .green_valid(green_valid),.green_row_end(green_row_end),.green_pixel(green_pixel),
+        .rgb_valid(rgb_valid),.rgb_row_end(rgb_row_end),.rgb_pixel(rgb_pixel),
         .busy(busy),.done(done),.mem_valid(mem_valid),.mem_write(mem_write),
         .mem_addr(mem_addr),.mem_data(mem_data),.mem_ready(mem_ready),
         .mem_rsp_valid(mem_rsp_valid),.mem_rsp_data(mem_rsp_data)
     );
     handfixed_background background (
         .clk(clk),.rst_n(rst_n),.run_enabled(1'b0),.start(start),
-        .scan_background(1'b1),.done(done),.pixel_valid(green_valid),
-        .row_end(green_row_end),.green(green_pixel),
+        .scan_background(1'b1),.done(done),.pixel_valid(rgb_valid),
+        .row_end(rgb_row_end),.rgb(rgb_pixel),
         .reference_ready(background_ready),.foreground(foreground),.changed_pixels(changed)
     );
 
@@ -116,6 +119,8 @@ module fruit_roi_preprocess_case #(
     endfunction
 
     integer green_count=0,background_samples=0;
+    integer rgb_count=0,background_bytes=0;
+    reg [14:0] expected_rgb555;
     integer write_count=0,normalized_checks=0,out_of_frame_sample_checks=0;
     integer coordinate_checks=0,read_count=0,stall_cycles=0;
     integer immediate_reads=0,delayed_reads=0,cycles=0;
@@ -248,19 +253,26 @@ module fruit_roi_preprocess_case #(
                     end
                 end
             end
-            x=green_count%128;y=green_count/128;
-            selected=green_valid && (x%4==1) && (y%4==1);
-            if(background.reference_memory.I_wr_en!==selected)
-                $fatal(1,"Background 32x32 selector mismatch case=%0d pixel=%0d",
-                    CASE_INDEX,green_count);
-            if(selected) begin
-                expected_green=expected_pixel(x,y,1);
-                if(background.reference_memory.I_wr_addr!==11'(1024+background_samples) ||
-                   background.reference_memory.I_wr_data!==8'(expected_green))
-                    $fatal(1,"Background reference write mismatch case=%0d sample=%0d",
-                        CASE_INDEX,background_samples);
-                background_samples=background_samples+1;
+            if(background.reference_memory.I_wr_en) begin
+                pixel_index=background_bytes/2;
+                x=(pixel_index%32)*4+1;y=(pixel_index/32)*8+3;
+                expected_rgb555={5'(expected_pixel(x,y,0)>>3),
+                                 5'(expected_pixel(x,y,1)>>3),5'(expected_pixel(x,y,2)>>3)};
+                if(background.reference_memory.I_wr_addr!==11'(1024+background_bytes) ||
+                   background.reference_memory.I_wr_data!==
+                     (background_bytes%2 ? {1'b0,expected_rgb555[14:8]} : expected_rgb555[7:0]))
+                    $fatal(1,"RGB555 reference write mismatch case=%0d byte=%0d",CASE_INDEX,background_bytes);
+                background_bytes=background_bytes+1;
             end
+            if(rgb_valid) begin
+                x=rgb_count%128;y=rgb_count/128;
+                if(rgb_count>=PIXELS || rgb_pixel!=={8'(expected_pixel(x,y,0)),
+                   8'(expected_pixel(x,y,1)),8'(expected_pixel(x,y,2))} || rgb_row_end!==(x==127))
+                    $fatal(1,"RGB sideband mismatch case=%0d pixel=%0d",CASE_INDEX,rgb_count);
+                if(x%4==1 && y%8==3) background_samples=background_samples+1;
+                rgb_count=rgb_count+1;
+            end
+            x=green_count%128;y=green_count/128;
             if(green_valid) begin
                 if(green_count>=PIXELS || green_pixel!==8'(expected_pixel(x,y,1)) ||
                     green_row_end!==(x==127))
@@ -285,8 +297,8 @@ module fruit_roi_preprocess_case #(
              (out_of_frame_sample_checks==0 || out_of_frame_sample_checks>=coordinate_checks)) ||
             sampled_byte_offsets!==16'hffff || read_count<1000 ||
             immediate_reads<100 || delayed_reads<100 || stall_cycles<100 ||
-            background_samples!=1024 ||
-            !background_ready || foreground || background.samples!=1024)
+            background_samples!=512 || background_bytes!=1024 || rgb_count!=PIXELS ||
+            !background_ready || foreground || background.samples!=512 || background.scan_fault)
             $fatal(1,"Incomplete ROI/background coverage case=%0d green=%0d writes=%0d normalized=%0d coords=%0d offsets=%h reads=%0d immediate=%0d delayed=%0d stalls=%0d bg=%0d outside_samples=%0d ready=%b",
                 CASE_INDEX,green_count,write_count,normalized_checks,
                 coordinate_checks,sampled_byte_offsets,read_count,immediate_reads,delayed_reads,

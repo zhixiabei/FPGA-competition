@@ -4,7 +4,7 @@
 module fruit_flash_programmer #(
     parameter [23:0] FLASH_ADDRESS=24'hf00000,
     parameter integer MODEL_BYTES=170752,
-    parameter [31:0] MODEL_CRC32=32'hbbd4adef,
+    parameter [31:0] MODEL_CRC32=32'h3a37bea7,
     parameter integer HALF_PERIOD=8,
     parameter integer POWERUP_CYCLES=1000000
 )(
