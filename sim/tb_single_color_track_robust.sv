@@ -400,14 +400,16 @@ module tb_single_color_track_robust #(
             $fatal(1,"Startup U contour was forced to a known shape");
         lock_square(88,88,24'hf02020); u_target();
         for(k=0;k<3;k=k+1) begin
-            full_result(1,0);
+            // The first large, unsupported size change holds geometry; a
+            // repeated measurement may update it, but never confirms a shape.
+            full_result(1,k==0);
             if(seen_shapes[next_id-1][1:0]!==(k<2 ? SH_SQUARE : SH_UNKNOWN))
                 $fatal(1,"Merged-leg U contour violated finite shape hold frame=%0d step=%0d shape=%0d",
                     next_id-1,k,seen_shapes[next_id-1][1:0]);
             checks=checks+1;
         end
         checks=checks+1;
-        $display("SINGLE_COLOR_TRACK_U_SHAPE_PASS pixels=80x80 leg=15 bridge=15 startup_unknown=1 merged_split_unknown=1 shape_hold_frames=2");
+        $display("SINGLE_COLOR_TRACK_U_SHAPE_PASS pixels=80x80 leg=15 bridge=15 startup_unknown=1 merged_split_unknown=1 geometry_confirm=2 shape_hold_frames=2");
 
         // K1 view selection cannot feed back into selected-color tracking.
         lock_square(88,88,24'hf02020);

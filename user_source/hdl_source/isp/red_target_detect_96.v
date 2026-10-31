@@ -69,11 +69,13 @@ module red_target_detect_96 #(
     //
     // Red and blue use normalized chroma/hue bounds instead of a large
     // absolute channel difference. For a selected primary as the largest
-    // channel these integer comparisons require:
-    //   max(secondary) <= 2*primary/3.
-    // Red additionally requires 5*|G-B| <= R-min(G,B), approximately +/-12
-    // hue degrees, to exclude the camera's red-orange boundary. Blue keeps
-    // its original +/-20 degree bound. Calibrate red using AWB output samples.
+    // channel, blue requires max(secondary) <= 2*primary/3.
+    // Red uses asymmetric hue bounds: 4*(G-B)<=R-B on the orange side
+    // (15 degrees), and 3*(B-G)<=R-G on the other side (20 degrees).
+    // Its secondary-channel ceiling is 3R/4 so moderately pale red remains
+    // measurable. White, low-saturation red and the tested orange stay excluded.
+    // These are camera-calibration starting points, not universal color labels.
+    // Blue retains both original bounds. Preserve the G/B order in the pipe.
     // Green objects from the camera are commonly shifted toward yellow-green
     // or cyan-green by the illuminant and AWB. Green therefore keeps the same
     // floor/delta checks but uses max(R,B) <= 4G/5 without requiring R and B
@@ -101,6 +103,7 @@ module red_target_detect_96 #(
             wire [7:0] blue_in = I_tdata[79-p*24-:8];
             reg [7:0] dominant_in, secondary_a_in, secondary_b_in;
             reg [7:0] dominant, secondary_max, secondary_min;
+            reg secondary_a_high;
             wire [8:0] red = {1'b0,dominant};
             wire secondary_a_larger = secondary_a_in >= secondary_b_in;
             wire [8:0] secondary_limit;
@@ -109,7 +112,8 @@ module red_target_detect_96 #(
             wire [9:0] hue_limit;
             wire [10:0] four_dominant;
             wire [10:0] five_secondary;
-            wire [10:0] red_hue_limit;
+            wire [9:0] red_hue_limit;
+            wire [9:0] triple_red;
             wire delta_ok;
             wire strict_primary_mask;
             wire relaxed_green_mask;
@@ -123,10 +127,12 @@ module red_target_detect_96 #(
             always @(posedge I_clk or negedge I_rst_n) begin
                 if (!I_rst_n) begin
                     dominant <= 0; secondary_max <= 0; secondary_min <= 0;
+                    secondary_a_high <= 0;
                 end else begin
                     dominant <= dominant_in;
                     secondary_max <= secondary_a_larger ? secondary_a_in : secondary_b_in;
                     secondary_min <= secondary_a_larger ? secondary_b_in : secondary_a_in;
+                    secondary_a_high <= secondary_a_larger;
                 end
             end
             // The larger secondary channel gives the stronger bounds.
@@ -145,13 +151,17 @@ module red_target_detect_96 #(
             assign hue_limit = {1'b0,red} + {1'b0,secondary_min,1'b0};
             assign four_dominant = {red,2'b0};
             assign five_secondary = {1'b0,secondary_max,2'b0} + {3'b0,secondary_max};
-            assign red_hue_limit = {3'b0,dominant} + {1'b0,secondary_min,2'b0};
+            assign red_hue_limit = {2'b0,dominant} +
+                {2'b0,secondary_min} + {1'b0,secondary_min,1'b0};
+            assign triple_red = {2'b0,dominant}+{1'b0,dominant,1'b0};
             assign strict_primary_mask =
                 (red >= RED_MIN_9) &&
                 delta_ok &&
-                (twice_red >= triple_secondary) &&
-                (red_m ? five_secondary <= red_hue_limit :
-                         triple_secondary <= hue_limit);
+                (red_m ? triple_red >= {secondary_max,2'b0} :
+                         twice_red >= triple_secondary) &&
+                (red_m && secondary_a_high ?
+                    {secondary_max,2'b0} <= red_hue_limit :
+                    triple_secondary <= hue_limit);
             assign relaxed_green_mask =
                 (red >= RED_MIN_9) &&
                 delta_ok &&
@@ -750,7 +760,7 @@ module red_single_shape_engine #(
     localparam integer MATCH_Y = IMG_HEIGHT/8 > 8 ? IMG_HEIGHT/8 : 8;
     localparam [2:0] CLASS_IDLE=0, CLASS_START=1, CLASS_WAIT=2,
         CLASS_SMOOTH=3, CLASS_PUBLISH=4, CLASS_ASSOC=5;
-    localparam integer RESULT_BITS = 10+1+1+1+2+48;
+    localparam integer RESULT_BITS = 10+1+1+1+2;
     reg track_occupied, track_confirmed;
     reg [X_BITS-1:0] track_xmin, track_xmax;
     reg [Y_BITS-1:0] track_ymin, track_ymax;
@@ -793,10 +803,11 @@ module red_single_shape_engine #(
          (window_ymin != 0 && I_y == window_ymin) ||
          (window_ymax != IMG_HEIGHT-1 && I_y == window_ymax));
 
-    // Retain the first run near the preceding row. A generous 16-pixel row
-    // margin covers slanted edges without a second run bank. Unusually steep
-    // edges cut by this gate are marked bad, never forced into a shape.
-    // Once a run ends, another connected run marks a split/hole as bad.
+    // Capture a COMPLETE run before testing its link to the previous row.
+    // Gating individual beats by the previous xmin cuts shallow rotated edges
+    // and large circles before their run reaches the previous interval.
+    // An unrelated run is discarded at its end, allowing the next run to try.
+    // Once a linked run ends, another connected run still marks a hole as bad.
     reg source_open, source_continue, source_first_row, row_open, row_hit;
     reg row_stopped, row_bad, row_clipped;
     reg row_dropped;
@@ -811,15 +822,16 @@ module red_single_shape_engine #(
     wire source_accept = I_valid && (source_open || begin_frame);
     wire fresh_row = begin_frame || !row_open;
     wire previous_row=!begin_frame && !source_first_row && r0_hit;
-    wire [X_BITS:0] row_gate_min=r0_xmin > 16 ? r0_xmin-16 : 0;
-    wire [X_BITS:0] row_gate_max={1'b0,r0_xmax}+16;
-    wire near_previous=!previous_row ||
-        ({1'b0,I_xmax} >= row_gate_min && {1'b0,I_xmin} <= row_gate_max);
     wire row_present=!fresh_row && row_hit;
+    wire row_connected=!previous_row ||
+        ({1'b0,row_xmax}+1'b1 >= {1'b0,r0_xmin} &&
+         {1'b0,row_xmin} <= {1'b0,r0_xmax}+1'b1);
     wire row_gap=row_present && (!selected_hit ||
         {1'b0,I_xmin} > {1'b0,row_xmax}+1'b1);
-    wire row_ended=(!fresh_row && row_stopped) || row_gap;
-    wire take_hit=selected_hit && !row_ended && (row_present || near_previous);
+    wire discard_run=row_gap && !row_connected;
+    wire retain_run=row_present && !discard_run;
+    wire row_ended=(!fresh_row && row_stopped) || (row_gap && row_connected);
+    wire take_hit=selected_hit && !row_ended;
     wire [X_BITS:0] beat_span={1'b0,I_xmax}-{1'b0,I_xmin}+1'b1;
     wire split_run=row_ended && selected_hit && previous_row &&
         I_xmin <= r0_xmax && I_xmax >= r0_xmin;
@@ -832,16 +844,17 @@ module red_single_shape_engine #(
         I_xmin : row_drop_min;
     wire merge_dropped=take_hit && previous_row && r0_dropped &&
         I_xmax >= r0_drop_min;
-    wire gate_cut=take_hit && !row_present && previous_row && row_gate_min != 0 &&
-        {1'b0,I_xmin} <= row_gate_min+3;
-    wire next_row_hit=row_present || take_hit;
-    wire next_row_bad=(!fresh_row && row_bad) || split_run || merge_dropped || gate_cut ||
+    wire next_row_hit=retain_run || take_hit;
+    wire next_row_bad=(!fresh_row && !discard_run && row_bad) || split_run || merge_dropped ||
         (take_hit && I_pixels != beat_span);
-    wire next_row_clipped=(!fresh_row && row_clipped) || (take_hit && beat_clipped);
-    wire [X_BITS:0] next_row_pixels=(row_present ? row_pixels : 0)+
+    wire next_row_clipped=(!fresh_row && !discard_run && row_clipped) || (take_hit && beat_clipped);
+    wire [X_BITS:0] next_row_pixels=(retain_run ? row_pixels : 0)+
         (take_hit ? I_pixels : 3'd0);
-    wire [X_BITS-1:0] next_row_xmin=row_present ? row_xmin : I_xmin;
+    wire [X_BITS-1:0] next_row_xmin=retain_run ? row_xmin : I_xmin;
     wire [X_BITS-1:0] next_row_xmax=take_hit ? I_xmax : row_xmax;
+    wire next_row_connected=!previous_row ||
+        ({1'b0,next_row_xmax}+1'b1 >= {1'b0,r0_xmin} &&
+         {1'b0,next_row_xmin} <= {1'b0,r0_xmax}+1'b1);
     reg r0_valid, r0_first, r0_last, r0_bad, r0_clipped;
     reg [9:0] r0_id;
     reg [X_BITS:0] r0_pixels;
@@ -891,7 +904,8 @@ module red_single_shape_engine #(
                 if (I_row_end || I_final) begin
                     r0_valid<=1; r0_first<=begin_frame || source_first_row;
                     r0_last<=I_final;
-                    r0_hit<=next_row_hit; r0_bad<=next_row_bad; r0_clipped<=next_row_clipped;
+                    r0_hit<=next_row_hit && next_row_connected;
+                    r0_bad<=next_row_bad; r0_clipped<=next_row_clipped;
                     r0_pixels<=next_row_pixels; r0_xmin<=next_row_xmin; r0_xmax<=next_row_xmax;
                     r0_dropped<=next_row_dropped; r0_drop_min<=next_drop_min;
                     r0_id<=begin_frame ? I_id : source_id;
@@ -909,6 +923,8 @@ module red_single_shape_engine #(
         {1'b0,r0_xmin}+{1'b0,r0_xmax};
     wire [COORD_BITS-1:0] r0_y2 = {r0_y,1'b0};
     reg r1_valid, r1_first, r1_last, r1_hit, r1_bad, r1_clipped;
+    reg r1_work_qualified;
+    wire work_qualified;
     reg [9:0] r1_id;
     reg [X_BITS:0] r1_pixels, r1_span;
     reg [X_BITS-1:0] r1_xmin, r1_xmax;
@@ -918,15 +934,20 @@ module red_single_shape_engine #(
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             r1_valid<=0; r1_first<=0; r1_last<=0; r1_hit<=0; r1_bad<=0;
-            r1_clipped<=0;
+            r1_clipped<=0; r1_work_qualified<=0;
             r1_id<=0; r1_pixels<=0; r1_span<=0;
             r1_xmin<=0; r1_xmax<=0; r1_y<=0; r1_mx2<=0; r1_my2<=0;
             r1_umin<=0; r1_umax<=0; r1_vmin<=0; r1_vmax<=0;
         end else if (I_clear) begin
-            r1_valid<=0;
+            r1_valid<=0; r1_work_qualified<=0;
         end else begin
             r1_valid<=r0_valid;
             if (r0_valid) begin
+                // Row records are separated by a complete input scanline.
+                // The preceding accumulation is already stable here; capture
+                // its size qualification alongside the next row's metadata.
+                // This breaks bbox subtraction -> restart -> feature muxes.
+                r1_work_qualified<=work_qualified;
                 r1_first<=r0_first; r1_last<=r0_last; r1_hit<=r0_hit;
                 r1_id<=r0_id; r1_pixels<=r0_pixels; r1_span<=r0_span;
                 r1_xmin<=r0_xmin; r1_xmax<=r0_xmax; r1_y<=r0_y;
@@ -968,21 +989,34 @@ module red_single_shape_engine #(
     // and overlap subtraction used by the perimeter on this control path.
     wire linked_row = !r1_first && work_seen &&
         {1'b0,r1_y} == {1'b0,prev_y}+1'b1 &&
-        r1_xmin <= prev_xmax && r1_xmax >= prev_xmin;
-    wire work_qualified=work_seen && work_area >= MIN_PIXELS &&
+        {1'b0,r1_xmin} <= {1'b0,prev_xmax}+1'b1 &&
+        {1'b0,r1_xmax}+1'b1 >= {1'b0,prev_xmin};
+    assign work_qualified=work_seen && work_area >= MIN_PIXELS &&
         ({1'b0,work_xmax}-{1'b0,work_xmin}+1'b1 >= MIN_WIDTH) &&
         ({1'b0,work_ymax}-{1'b0,work_ymin}+1'b1 >= MIN_HEIGHT);
-    wire finish_component=!r1_first && work_qualified && (!r1_hit || !linked_row);
+    // A qualified distractor above the tracked object must not end the frame
+    // search. Retire it and continue until a contour overlaps the raw track.
+    // Acquisition still uses one complete contour, without a candidate RAM.
+    wire work_preferred=r1_work_qualified && (!track_occupied ||
+        (work_xmin <= track_xmax && work_xmax >= track_xmin &&
+         work_ymin <= track_ymax && work_ymax >= track_ymin));
+    wire finish_component=!r1_first && work_preferred && (!r1_hit || !linked_row);
     wire restart_component=r1_first ||
-        (!work_complete && !work_qualified && (!r1_hit || !linked_row));
+        (!work_complete && !work_preferred && (!r1_hit || !linked_row));
     wire collect_row=r1_hit && (r1_first || (!work_complete && !finish_component));
     wire [16:0] row_outline = ({{(16-X_BITS){1'b0}},r1_span}+17'd1)<<4;
     wire [16:0] shared_boundary = linked_row ?
         ({{(16-X_BITS){1'b0}},overlap_width}<<4)+diagonal_steps*17'd5 : 17'd0;
-    wire [16:0] perimeter_sum =
-        {1'b0,(restart_component ? 16'd0 : work_perimeter)}+row_outline-shared_boundary;
-    wire [COUNT_BITS:0] area_sum =
-        {1'b0,(restart_component ? {COUNT_BITS{1'b0}} : work_area)}+r1_pixels;
+    // Compute the accumulations independently of component selection. Putting
+    // restart before the adders chains qualification/overlap, a high-fanout
+    // select and the complete carry path into one pixel-clock interval.
+    // A collected restart row has no linked predecessor, so its perimeter
+    // is exactly row_outline and its area/moments are just this row's values.
+    wire [16:0] accumulated_perimeter=
+        {1'b0,work_perimeter}+row_outline-shared_boundary;
+    wire [16:0] perimeter_sum=restart_component ? row_outline : accumulated_perimeter;
+    wire [COUNT_BITS:0] accumulated_area={1'b0,work_area}+r1_pixels;
+    wire [COUNT_BITS:0] area_sum=restart_component ? r1_pixels : accumulated_area;
     always @* begin
         next_seen=restart_component ? 1'b0 : work_seen;
         next_bad=restart_component ? 1'b0 : work_bad;
@@ -1010,7 +1044,8 @@ module red_single_shape_engine #(
             if (!next_seen || r1_xmax > next_xmax) next_xmax=r1_xmax;
             if (!next_seen || r1_y < next_ymin) next_ymin=r1_y;
             if (!next_seen || r1_y > next_ymax) next_ymax=r1_y;
-            next_mx2=next_mx2+r1_mx2; next_my2=next_my2+r1_my2;
+            next_mx2=restart_component ? r1_mx2 : work_mx2+r1_mx2;
+            next_my2=restart_component ? r1_my2 : work_my2+r1_my2;
             if (!next_seen || r1_umin < next_umin) next_umin=r1_umin;
             if (!next_seen || r1_umax > next_umax) next_umax=r1_umax;
             if (!next_seen || r1_vmin < next_vmin) next_vmin=r1_vmin;
@@ -1119,8 +1154,12 @@ module red_single_shape_engine #(
     // One frame-rate ALU checks both axes, then smooths all four displayed
     // coordinates. Spans omit the inclusive +1; comparing half-spans gives
     // the exact inclusive width/height ratio limit without another adder.
-    reg [3:0] assoc_index;
+    reg [4:0] assoc_index;
     reg association_ok;
+    reg [1:0] axis_size_stable;
+    reg pending_geometry, pending_matches;
+    reg [X_BITS-1:0] pending_xmin, pending_xmax;
+    reg [Y_BITS-1:0] pending_ymin, pending_ymax;
     reg [COORD_BITS-1:0] assoc_track_span, assoc_job_span;
     reg [COORD_BITS:0] math_temp, math_delta;
     reg [COORD_BITS:0] math_left, math_right;
@@ -1128,7 +1167,17 @@ module red_single_shape_engine #(
     wire [COORD_BITS:0] math_value=math_left+
         (math_right ^ {(COORD_BITS+1){math_subtract}})+
         (math_subtract || math_round);
-    wire target_matches=track_occupied && job_found && association_ok;
+    wire boxes_overlap=job_xmin <= track_xmax && job_xmax >= track_xmin &&
+        job_ymin <= track_ymax && job_ymax >= track_ymin;
+    wire association_hit=track_occupied && job_found && association_ok &&
+        (boxes_overlap || (&axis_size_stable));
+    // A changing silhouette is accepted immediately when its current shape
+    // agrees with the track (including square rotation). Otherwise a large
+    // size change must recur at the same coordinates, not steal the box once.
+    wire geometry_consistent=!track_confirmed || (&axis_size_stable) ||
+        (shape_result != 0 && shape_result == track_shape) ||
+        (pending_geometry && pending_matches);
+    wire target_matches=association_hit && geometry_consistent;
     wire [1:0] matched_shape=track_shape == 3 && shape_circle_support ?
         2'd3 : shape_result;
     always @* begin
@@ -1177,32 +1226,39 @@ module red_single_shape_engine #(
         end
     end
 
-    // Four coordinates share the association ALU after classification.
-    // Two-pixel deadband holds static jitter; half-distance steps follow slow
-    // movement, and a >=16 pixel jump follows immediately. Raw geometry above
-    // remains unfiltered for association and the next frame's search window.
+    // Smooth center and span separately with the SAME frame-rate ALU.
+    // Center has a two-pixel deadband; fast translation additionally requires
+    // a stable measured size. Span expands immediately to contain a rotating
+    // contour and contracts gradually. A size jump is never fast translation.
+    // Raw geometry remains unfiltered for association and the search window.
     reg [X_BITS-1:0] display_xmin, display_xmax;
     reg [Y_BITS-1:0] display_ymin, display_ymax;
-    reg [2:0] smooth_index;
+    reg [4:0] smooth_index;
     reg smooth_direct, smooth_hold;
-    reg [COORD_BITS-1:0] smooth_raw, smooth_old;
+    reg [COORD_BITS:0] smooth_center;
+    reg [COORD_BITS-1:0] smooth_raw_min,smooth_raw_max,smooth_old_min,smooth_old_max;
     always @* begin
-        case(smooth_index[2:1])
-            0:begin smooth_raw=track_xmin; smooth_old=display_xmin; end
-            1:begin smooth_raw=track_xmax; smooth_old=display_xmax; end
-            2:begin smooth_raw=track_ymin; smooth_old=display_ymin; end
-            default:begin smooth_raw=track_ymax; smooth_old=display_ymax; end
-        endcase
+        smooth_raw_min=smooth_index[4] ? track_ymin : track_xmin;
+        smooth_raw_max=smooth_index[4] ? track_ymax : track_xmax;
+        smooth_old_min=smooth_index[4] ? display_ymin : display_xmin;
+        smooth_old_max=smooth_index[4] ? display_ymax : display_xmax;
     end
     reg [COORD_BITS-1:0] axis_track_min, axis_track_max, axis_job_min, axis_job_max;
+    reg [COORD_BITS-1:0] axis_pending_min,axis_pending_max;
+    wire smooth_small=$signed(math_delta) >= -4 && $signed(math_delta) <= 4;
+    wire smooth_fast=axis_size_stable[smooth_index[4]] &&
+        ($signed(math_delta) <= -32 || $signed(math_delta) >= 32);
+    wire span_small=$signed(math_delta) >= -2 && $signed(math_delta) <= 0;
     always @* begin
-        axis_track_min=assoc_index[3] ? track_ymin : track_xmin;
-        axis_track_max=assoc_index[3] ? track_ymax : track_xmax;
-        axis_job_min=assoc_index[3] ? job_ymin : job_xmin;
-        axis_job_max=assoc_index[3] ? job_ymax : job_xmax;
+        axis_track_min=assoc_index[4] ? track_ymin : track_xmin;
+        axis_track_max=assoc_index[4] ? track_ymax : track_xmax;
+        axis_job_min=assoc_index[4] ? job_ymin : job_xmin;
+        axis_job_max=assoc_index[4] ? job_ymax : job_xmax;
+        axis_pending_min=assoc_index[4] ? pending_ymin : pending_xmin;
+        axis_pending_max=assoc_index[4] ? pending_ymax : pending_xmax;
         math_left=0; math_right=0; math_subtract=0; math_round=0;
         if(class_state==CLASS_ASSOC) begin
-            case(assoc_index[2:0])
+            case(assoc_index[3:0])
                 0:begin math_left=axis_track_max; math_right=axis_track_min; math_subtract=1; end
                 1:begin math_left=axis_job_max; math_right=axis_job_min; math_subtract=1; end
                 2:begin math_left=axis_track_max; math_right=axis_track_min; end
@@ -1212,22 +1268,38 @@ module red_single_shape_engine #(
                 6:begin math_left=assoc_track_span; math_right=assoc_job_span; end
                 7:begin math_left=math_temp;
                     math_right=assoc_track_span > 32 ? assoc_track_span : 32; end
+                8:begin math_left=assoc_job_span; math_right=assoc_track_span; math_subtract=1; end
+                9:begin math_right=math_temp; math_subtract=math_temp[COORD_BITS]; end
+                10:begin math_left=axis_job_min; math_right=axis_pending_min; math_subtract=1; end
+                12:begin math_left=axis_job_max; math_right=axis_pending_max; math_subtract=1; end
             endcase
         end else if(class_state==CLASS_SMOOTH) begin
-            math_left=smooth_raw; math_right=smooth_old;
-            math_subtract=!smooth_index[0];
-            math_round=smooth_index[0] && !math_delta[COORD_BITS];
+            case(smooth_index[3:0])
+                0:begin math_left=smooth_old_min; math_right=smooth_old_max; end
+                1:begin math_left=smooth_raw_min; math_right=smooth_raw_max; end
+                2:begin math_left=math_delta; math_right=math_temp; math_subtract=1; end
+                3:begin
+                    math_left=math_temp;
+                    math_right=(smooth_hold || (!smooth_direct && smooth_small)) ? 0 :
+                        (smooth_direct || smooth_fast) ? math_delta :
+                        {math_delta[COORD_BITS],math_delta[COORD_BITS:1]};
+                end
+                4:begin math_left=smooth_old_max; math_right=smooth_old_min; math_subtract=1; end
+                5:begin math_left=smooth_raw_max; math_right=smooth_raw_min; math_subtract=1; end
+                6:begin math_left=assoc_job_span; math_right=assoc_track_span; math_subtract=1; end
+                7:begin
+                    math_left=assoc_track_span;
+                    math_right=(smooth_hold || (!smooth_direct && span_small)) ? 0 :
+                        (smooth_direct || !math_delta[COORD_BITS]) ? math_delta :
+                        {{2{math_delta[COORD_BITS]}},math_delta[COORD_BITS:2]};
+                end
+                8:begin math_left=smooth_center; math_right=assoc_track_span; math_subtract=1; end
+                9:begin math_left=smooth_center; math_right=assoc_track_span; end
+                10:begin math_left=math_temp; math_right=1; end
+            endcase
         end
     end
-    wire smooth_small=$signed(math_delta) >= -2 && $signed(math_delta) <= 2;
-    wire smooth_fast=$signed(math_delta) <= -16 || $signed(math_delta) >= 16;
-    wire [COORD_BITS-1:0] smooth_value=smooth_hold ? smooth_old :
-        smooth_direct || smooth_fast ? smooth_raw :
-        smooth_small ? smooth_old : math_value[COORD_BITS:1];
     wire publish_valid=track_occupied && track_confirmed;
-    wire [47:0] publish_box=publish_valid ?
-        {{(12-Y_BITS){1'b0}},display_ymax,{(12-Y_BITS){1'b0}},display_ymin,
-         {(12-X_BITS){1'b0}},display_xmax,{(12-X_BITS){1'b0}},display_xmin} : 48'd0;
     reg event_a_valid, event_b_valid;
     reg [RESULT_BITS-1:0] event_a, event_b;
     always @* begin
@@ -1237,24 +1309,27 @@ module red_single_shape_engine #(
             if (class_state != CLASS_IDLE) begin
                 // A new truncated source must not let an older, unfinished
                 // classification revive a stale track. Preserve both IDs.
-                event_a={job_id,1'b1,1'b0,1'b0,2'd0,48'd0};
-                event_b_valid=1; event_b={abort_id,1'b0,1'b0,1'b0,2'd0,48'd0};
-            end else event_a={abort_id,1'b0,1'b0,1'b0,2'd0,48'd0};
+                event_a={job_id,1'b1,1'b0,1'b0,2'd0};
+                event_b_valid=1; event_b={abort_id,1'b0,1'b0,1'b0,2'd0};
+            end else event_a={abort_id,1'b0,1'b0,1'b0,2'd0};
         end else if (frame_done && class_state != CLASS_IDLE) begin
             // Only malformed/sub-minimum-rate frames can overtake this
             // classifier. Report the old frame as invalid instead of mixing.
-            event_a_valid=1; event_a={job_id,1'b1,1'b0,1'b0,2'd0,48'd0};
+            event_a_valid=1; event_a={job_id,1'b1,1'b0,1'b0,2'd0};
         end else if (class_state == CLASS_PUBLISH) begin
             event_a_valid=1;
             event_a={job_id,1'b0,publish_valid,
                 (publish_valid && track_misses != 0),
-                (publish_valid ? track_shape : 2'd0),publish_box};
+                (publish_valid ? track_shape : 2'd0)};
         end
     end
 
     // The second queued event is always invalid: only abort/cancel can create
     // a burst, and a new classifier needs more than two clocks to complete.
     // Retain its ID/overflow only, with implicit zero validity/shape/geometry.
+    // A valid event drains one clock after CLASS_PUBLISH. Display geometry
+    // cannot change until the next CLASS_SMOOTH, so it need not be copied into
+    // this queue. Abort/clear never alter that geometry; invalid events use 0.
     reg [RESULT_BITS-1:0] result_0, result_0_n;
     reg [10:0] result_1, result_1_n;
     reg [1:0] result_count, result_count_n;
@@ -1283,6 +1358,9 @@ module red_single_shape_engine #(
             track_xmin<=0; track_xmax<=0; track_ymin<=0; track_ymax<=0;
             display_xmin<=0; display_xmax<=0; display_ymin<=0; display_ymax<=0;
             smooth_index<=0; smooth_direct<=0; smooth_hold<=0;
+            smooth_center<=0; axis_size_stable<=0;
+            pending_geometry<=0; pending_matches<=0;
+            pending_xmin<=0; pending_xmax<=0; pending_ymin<=0; pending_ymax<=0;
             assoc_index<=0; association_ok<=0; assoc_track_span<=0; assoc_job_span<=0;
             math_temp<=0; math_delta<=0;
             track_shape<=0; track_pending_shape<=0; track_shape_hits<=0; track_shape_age<=0;
@@ -1294,30 +1372,36 @@ module red_single_shape_engine #(
             track_misses<=0; track_shape<=0; track_pending_shape<=0;
             track_shape_hits<=0; track_shape_age<=0; result_count<=0;
             smooth_index<=0;
+            pending_geometry<=0;
             O_ready<=0; O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0; O_overflow<=0;
         end else begin
             result_0<=result_0_n; result_1<=result_1_n; result_count<=result_count_n;
             O_ready<=result_count != 0;
             if (result_count != 0) begin
                 O_valid<=0; O_hold<=0; O_boxes<=0; O_shapes<=0;
-                {O_frame_id,O_overflow,O_valid[0],O_hold[0],O_shapes[1:0],O_boxes[47:0]}
-                    <=result_0;
+                {O_frame_id,O_overflow,O_valid[0],O_hold[0],O_shapes[1:0]}<=result_0;
+                O_boxes[47:0]<=result_0[3] ?
+                    {{(12-Y_BITS){1'b0}},display_ymax,{(12-Y_BITS){1'b0}},display_ymin,
+                     {(12-X_BITS){1'b0}},display_xmax,{(12-X_BITS){1'b0}},display_xmin} : 48'd0;
             end
             if (abort_done) begin
                 class_state<=CLASS_IDLE; track_occupied<=0; track_confirmed<=0;
                 track_misses<=0; track_shape<=0; track_pending_shape<=0;
                 track_shape_hits<=0; track_shape_age<=0;
+                pending_geometry<=0;
             end else if (frame_done) begin
                 class_state<=CLASS_ASSOC; assoc_index<=0; association_ok<=1;
+                pending_matches<=1; axis_size_stable<=0;
                 job_id<=snap_id;
                 if (class_state != CLASS_IDLE) begin
                     track_occupied<=0; track_confirmed<=0; track_misses<=0;
                     track_shape<=0; track_pending_shape<=0;
                     track_shape_hits<=0; track_shape_age<=0;
+                    pending_geometry<=0;
                 end
             end else if(class_state==CLASS_ASSOC) begin
                 assoc_index<=assoc_index+1'b1;
-                case(assoc_index[2:0])
+                case(assoc_index[3:0])
                     0:assoc_track_span<=math_value;
                     1:begin
                         assoc_job_span<=math_value;
@@ -1329,15 +1413,27 @@ module red_single_shape_engine #(
                     3,4:math_delta<=math_value;
                     5:math_delta<=math_delta[COORD_BITS] ? math_value : math_delta;
                     7:association_ok<=association_ok && math_delta <= math_value &&
-                        math_delta <= (assoc_index[3] ? 2*MATCH_Y : 2*MATCH_X);
+                        math_delta <= (assoc_index[4] ? 2*MATCH_Y : 2*MATCH_X);
+                    8:math_temp<=math_value;
+                    9:axis_size_stable[assoc_index[4]]<=
+                        (math_temp[COORD_BITS] ? math_value : math_temp) <=
+                        (assoc_track_span > 32 ? (assoc_track_span>>3) : 4);
+                    10,12:math_temp<=math_value;
+                    11,13:pending_matches<=pending_matches &&
+                        $signed(math_temp) >= -4 && $signed(math_temp) <= 4;
                 endcase
-                if(assoc_index==15) class_state<=CLASS_START;
+                if(assoc_index==31) class_state<=CLASS_START;
             end else if (class_state == CLASS_START) begin
                 class_state<=CLASS_WAIT;
             end else if (class_state == CLASS_WAIT && shape_ready) begin
                 class_state<=CLASS_SMOOTH; smooth_index<=0;
                 smooth_direct<=!track_confirmed;
                 smooth_hold<=track_confirmed && !target_matches && track_occupied_n;
+                pending_geometry<=association_hit && !geometry_consistent;
+                if(association_hit && !geometry_consistent) begin
+                    pending_xmin<=job_xmin; pending_xmax<=job_xmax;
+                    pending_ymin<=job_ymin; pending_ymax<=job_ymax;
+                end
                 track_occupied<=track_occupied_n; track_confirmed<=track_confirmed_n;
                 track_xmin<=track_xmin_n; track_xmax<=track_xmax_n;
                 track_ymin<=track_ymin_n; track_ymax<=track_ymax_n;
@@ -1345,15 +1441,23 @@ module red_single_shape_engine #(
                 track_pending_shape<=track_pending_shape_n;
                 track_shape_hits<=track_shape_hits_n; track_shape_age<=track_shape_age_n;
             end else if (class_state == CLASS_SMOOTH) begin
-                if(!smooth_index[0]) math_delta<=math_value;
-                else case(smooth_index[2:1])
-                    0:display_xmin<=smooth_value;
-                    1:display_xmax<=smooth_value;
-                    2:display_ymin<=smooth_value;
-                    3:display_ymax<=smooth_value;
+                case(smooth_index[3:0])
+                    0,8,9:math_temp<=math_value;
+                    1,2,6:math_delta<=math_value;
+                    3:smooth_center<=math_value;
+                    4,7:assoc_track_span<=math_value;
+                    5:assoc_job_span<=math_value;
                 endcase
-                smooth_index<=smooth_index+1'b1;
-                if(smooth_index==7) class_state<=CLASS_PUBLISH;
+                if(smooth_index[3:0]==9) begin
+                    if(smooth_index[4]) display_ymin<=math_temp[COORD_BITS] ? 0 : math_temp[COORD_BITS:1];
+                    else display_xmin<=math_temp[COORD_BITS] ? 0 : math_temp[COORD_BITS:1];
+                end
+                if(smooth_index[3:0]==10) begin
+                    if(smooth_index[4]) display_ymax<=math_value[COORD_BITS:1] < IMG_HEIGHT ? math_value[COORD_BITS:1] : IMG_HEIGHT-1;
+                    else display_xmax<=math_value[COORD_BITS:1] < IMG_WIDTH ? math_value[COORD_BITS:1] : IMG_WIDTH-1;
+                    if(smooth_index[4]) class_state<=CLASS_PUBLISH;
+                    else smooth_index<=16;
+                end else smooth_index<=smooth_index+1'b1;
             end else if (class_state == CLASS_PUBLISH) begin
                 class_state<=CLASS_IDLE;
             end
@@ -2061,7 +2165,7 @@ module color_shape_descriptor #(
         AREA25_DONE=4,CHECK_METRICS=5,CIRCLE_X_DONE=6,
         CIRCLE_X_CHECK=7,CIRCLE_U_DONE=8,CIRCLE_U_CHECK=9,
         CENTER_START=10,CENTER_DONE=11,SPAN_START=12,SPAN_DONE=13,
-        SKEW_CHECK=14,FINISH=15;
+        SKEW_CHECK=14,FINISH=15,COVER_START=16,INIT_SPANS=17;
     localparam integer DEV_BITS =
         (MOM_BITS+2 > COUNT_BITS+COORD_BITS+2) ?
         MOM_BITS+2 : COUNT_BITS+COORD_BITS+2;
@@ -2071,8 +2175,12 @@ module color_shape_descriptor #(
     localparam integer MATH_BITS =
         DEV_BITS+4 > PRODUCT_BITS ? DEV_BITS+4 : PRODUCT_BITS;
     // Keep the original modulo-MATH_BITS arithmetic, but carry only one
-    // thirteen-bit limb through the shared arithmetic/compare units per clock.
-    localparam integer LIMB_BITS = 13;
+    // four-bit limb through the shared arithmetic/compare units per clock.
+    // This runs once per frame; pixel throughput and arithmetic precision
+    // are unchanged. Reuse dead intermediate storage below to offset tracking.
+    // Four bits keep the operand selectors smaller than a bit-pair serial
+    // unit while avoiding the original wide comparison carry chain.
+    localparam integer LIMB_BITS = 4;
     localparam integer LIMBS = (MATH_BITS+LIMB_BITS-1)/LIMB_BITS;
     localparam integer LIMB_INDEX_BITS = LIMBS > 1 ? $clog2(LIMBS) : 1;
     localparam integer PAD_BITS = LIMBS*LIMB_BITS;
@@ -2101,12 +2209,11 @@ module color_shape_descriptor #(
     reg [MULTIPLIER_BITS+2:0] multiplier;
     reg [LIMB_INDEX_BITS-1:0] limb_index;
     reg arithmetic_carry,compare_right_carry,compare_carry,compare_equal;
-    // Exact unsigned bounds: P*P fits 32 bits; A*1216, A*864 and
-    // A*25 need COUNT_BITS+11, +10 and +5 bits respectively.
-    reg [31:0] perimeter_squared;
-    reg [COUNT_BITS+10:0] metric_upper;
-    reg [COUNT_BITS+9:0] metric_lower;
-    reg [COUNT_BITS+4:0] area25;
+    // These lifetimes do not overlap: perimeter checks, box coverage, then
+    // projected moments/deviations. Reuse one bank without reducing any
+    // arithmetic width: P*P fits 32 bits and A*25 fits COUNT_BITS+5 bits.
+    wire [31:0] perimeter_squared=deviation[31:0];
+    wire [COUNT_BITS+4:0] area25=deviation[COUNT_BITS+4:0];
     reg [3:0] check_index;
     reg [COUNT_BITS-1:0] saved_area;
     reg [X_BITS-1:0] saved_xmin,saved_xmax;
@@ -2130,11 +2237,11 @@ module color_shape_descriptor #(
     reg isotropic,centered,skew,circle_metric,square_metric,triangle_metric;
     reg circle_fill,circle_support,square_fill,square_spans_ok;
     reg center_negative;
-    reg signed [MATH_BITS-1:0] moment;
     reg [COORD_BITS:0] saved_span;
     wire [MATH_BITS-1:0] area_wide={{(MATH_BITS-COUNT_BITS){1'b0}},area};
-    // Candidate RAM no longer feeds a difference and a wide comparison in
-    // the same clock. Capture the exact original spans on the start edge.
+    // Capture the four exact spans before classification, reusing the
+    // projection selector and one subtractor across four clocks. Candidate
+    // RAM never feeds a difference and a wide comparison in the same clock.
     reg [COORD_BITS:0] width,height,u_span,v_span;
     wire [COORD_BITS+4:0] w8={width,3'b0},h8={height,3'b0};
     wire [COORD_BITS+4:0] u8={u_span,3'b0},v8={v_span,3'b0};
@@ -2160,7 +2267,7 @@ module color_shape_descriptor #(
     reg [LIMB_BITS-1:0] compare_right_base,compare_right_extra;
     reg [LIMB_BITS-1:0] arithmetic_left,arithmetic_right;
     reg arithmetic_initial_carry,arithmetic_right_invert;
-    // Constant slices avoid an index-times-thirteen barrel shifter. Invert
+    // Constant slices select the current limb without a barrel shifter. Invert
     // only the shared selected limb, while keeping its padding bits zero.
     wire [LIMB_BITS-1:0] limb_mask=limb_index==LIMBS-1 ?
         {LIMB_BITS{1'b1}}>>(PAD_BITS-MATH_BITS) : {LIMB_BITS{1'b1}};
@@ -2219,7 +2326,7 @@ module color_shape_descriptor #(
                 end
             end
             CENTER_DONE:begin
-                arithmetic_left=select_limb(moment,limb_index);
+                arithmetic_left=select_limb(deviation,limb_index);
                 arithmetic_right=select_limb(product,limb_index);
                 arithmetic_right_invert=!center_negative;
                 arithmetic_initial_carry=!center_negative;
@@ -2237,10 +2344,8 @@ module color_shape_descriptor #(
         compare_right_base=0;compare_right_extra=0;
         case(state)
             CHECK_METRICS:case(check_index)
-                0:begin compare_left_base=select_limb(perimeter_squared,limb_index);compare_right_base=select_limb(metric_upper,limb_index);end
-                1:begin compare_left_base=select_limb(metric_lower,limb_index);compare_right_base=select_limb(perimeter_squared,limb_index);end
-                2:begin compare_left_base=select_limb(perimeter_squared,limb_index);compare_right_base=select_limb(metric_upper,limb_index);end
-                3:begin compare_left_base=select_limb(metric_upper,limb_index);compare_right_base=select_limb(perimeter_squared,limb_index);end
+                0,1:begin compare_left_base=select_limb(perimeter_squared,limb_index);compare_right_base=select_limb(product,limb_index);end
+                2,3:begin compare_left_base=select_limb(product,limb_index);compare_right_base=select_limb(perimeter_squared,limb_index);end
                 4:begin compare_left_base=select_limb(perimeter_squared,limb_index);compare_right_base=select_limb(area_wide<<12,limb_index);end
                 5:begin compare_left_base=select_limb(w8,limb_index);compare_right_base=select_limb(h8,limb_index);compare_right_extra=select_limb(height,limb_index);end
                 6:begin compare_left_base=select_limb(h8,limb_index);compare_right_base=select_limb(w8,limb_index);compare_right_extra=select_limb(width,limb_index);end
@@ -2291,6 +2396,8 @@ module color_shape_descriptor #(
         projection_center=$signed({1'b0,projection_min})+
             $signed({1'b0,projection_max})-(projection==3 ? 2*IMG_HEIGHT : 0);
     end
+    wire [COORD_BITS:0] initial_span=
+        {1'b0,projection_max}-{1'b0,projection_min}+1'b1;
 
     integer arithmetic_bit;
     always @(posedge I_clk or negedge I_rst_n) begin
@@ -2299,7 +2406,6 @@ module color_shape_descriptor #(
             limb_index<=0;arithmetic_carry<=0;
             compare_right_carry<=0;compare_carry<=0;compare_equal<=0;
             multiplicand<=0;multiplier<=0;product<=0;deviation<=0;
-            perimeter_squared<=0;metric_upper<=0;metric_lower<=0;area25<=0;
             check_index<=0;
             saved_area<=0;saved_xmin<=0;saved_xmax<=0;saved_ymin<=0;saved_ymax<=0;
             saved_mx2<=0;saved_my2<=0;saved_umin<=0;saved_umax<=0;
@@ -2307,7 +2413,7 @@ module color_shape_descriptor #(
             projection<=0;isotropic<=0;centered<=0;skew<=0;
             circle_metric<=0;square_metric<=0;triangle_metric<=0;
             circle_fill<=0;circle_support<=0;square_fill<=0;square_spans_ok<=0;
-            moment<=0;center_negative<=0;saved_span<=0;
+            center_negative<=0;saved_span<=0;
             width<=0;height<=0;u_span<=0;v_span<=0;
             O_ready<=0;O_shape<=0;O_circle_support<=0;
         end else if (I_clear) begin
@@ -2328,15 +2434,22 @@ module color_shape_descriptor #(
                             saved_umin<=I_umin;saved_umax<=I_umax;
                             saved_vmin<=I_vmin;saved_vmax<=I_vmax;
                         end
-                        width<={1'b0,I_xmax}-{1'b0,I_xmin}+1'b1;
-                        height<={1'b0,I_ymax}-{1'b0,I_ymin}+1'b1;
-                        u_span<={1'b0,I_umax}-{1'b0,I_umin}+1'b1;
-                        v_span<={1'b0,I_vmax}-{1'b0,I_vmin}+1'b1;
+                        projection<=0;
                         multiplicand<={{(MATH_BITS-16){1'b0}},I_perimeter};
                         multiplier<={I_perimeter,1'b0};product<=0;multiply_count<=0;
                         limb_index<=0;
-                        multiply_return<=UPPER_DONE;state<=MULTIPLY;
+                        multiply_return<=UPPER_DONE;state<=INIT_SPANS;
                     end
+                end
+                INIT_SPANS:begin
+                    case(projection)
+                        0:width<=initial_span;
+                        1:height<=initial_span;
+                        2:u_span<=initial_span;
+                        3:v_span<=initial_span;
+                    endcase
+                    projection<=projection+1'b1;
+                    if(projection==3) state<=MULTIPLY;
                 end
                 MULTIPLY:begin
                     if(!booth_zero) begin
@@ -2352,28 +2465,23 @@ module color_shape_descriptor #(
                     end else limb_index<=limb_index+1'b1;
                 end
                 UPPER_DONE:begin
-                    perimeter_squared<=product;
+                    deviation<=product[31:0];
                     multiplicand<=area_wide;multiplier<={32'd1216,1'b0};
                     product<=0;multiply_count<=0;multiply_return<=LOWER_DONE;
-                    state<=MULTIPLY;
-                end
-                LOWER_DONE:begin
-                    metric_upper<=product;
-                    multiplicand<=area_wide;multiplier<={32'd864,1'b0};
-                    product<=0;multiply_count<=0;multiply_return<=AREA25_DONE;
-                    state<=MULTIPLY;
-                end
-                AREA25_DONE:begin
-                    metric_lower<=product;
-                    multiplicand<=area_wide;multiplier<={32'd25,1'b0};
-                    product<=0;multiply_count<=0;multiply_return<=CHECK_METRICS;
                     state<=MULTIPLY;
                     check_index<=0;circle_metric<=0;square_metric<=1;
                     triangle_metric<=1;isotropic<=1;square_spans_ok<=1;
                     centered<=1;skew<=0;projection<=0;
                 end
+                LOWER_DONE:begin
+                    // Consume A*1216 in place before computing A*864. Neither
+                    // scaled area needs a separate wide register or read mux.
+                    state<=CHECK_METRICS;
+                end
+                AREA25_DONE:begin
+                    state<=CHECK_METRICS;
+                end
                 CHECK_METRICS:begin
-                    if(check_index==0) area25<=product;
                     arithmetic_carry<=arithmetic_sum[LIMB_BITS];
                     compare_right_carry<=compare_right_sum[LIMB_BITS];
                     compare_carry<=compare_difference[LIMB_BITS];compare_equal<=comparison_equal;
@@ -2381,19 +2489,31 @@ module color_shape_descriptor #(
                         limb_index<=0;
                         case(check_index)
                             0:circle_metric<=comparison_le;
-                            1:square_metric<=square_metric && comparison_le;
-                            2:square_metric<=square_metric && comparison_le;
-                            3:triangle_metric<=triangle_metric && comparison_lt;
+                            1,3:square_metric<=square_metric && comparison_le;
+                            2:triangle_metric<=triangle_metric && comparison_lt;
                             4:triangle_metric<=triangle_metric && comparison_le;
                             5,6,7,8:isotropic<=isotropic && comparison_le;
                             default:square_spans_ok<=square_spans_ok && comparison_le;
                         endcase
                         if(check_index==12) begin
-                            multiplicand<=width;multiplier<={height,1'b0};
-                            product<=0;multiply_count<=0;multiply_return<=CIRCLE_X_DONE;
+                            multiplicand<=area_wide;multiplier<={32'd25,1'b0};
+                            product<=0;multiply_count<=0;multiply_return<=COVER_START;
                             state<=MULTIPLY;
-                        end else check_index<=check_index+1'b1;
+                        end else begin
+                            check_index<=check_index+1'b1;
+                            if(check_index==2) begin
+                                multiplicand<=area_wide;multiplier<={32'd864,1'b0};
+                                product<=0;multiply_count<=0;multiply_return<=AREA25_DONE;
+                                state<=MULTIPLY;
+                            end
+                        end
                     end else limb_index<=limb_index+1'b1;
+                end
+                COVER_START:begin
+                    deviation<=product[COUNT_BITS+4:0];
+                    multiplicand<=width;multiplier<={height,1'b0};
+                    product<=0;multiply_count<=0;multiply_return<=CIRCLE_X_DONE;
+                    state<=MULTIPLY;
                 end
                 CIRCLE_X_DONE:begin check_index<=0;state<=CIRCLE_X_CHECK;end
                 CIRCLE_X_CHECK:begin
@@ -2431,9 +2551,12 @@ module color_shape_descriptor #(
                     end else limb_index<=limb_index+1'b1;
                 end
                 CENTER_START:begin
+                    // Projected moment and deviation have disjoint lifetimes.
+                    // Each following subtraction consumes one limb before it
+                    // overwrites that same limb; higher limbs remain intact.
                     for(arithmetic_bit=0;arithmetic_bit<MATH_BITS;arithmetic_bit=arithmetic_bit+1)
                         if(arithmetic_bit/LIMB_BITS==limb_index)
-                            moment[arithmetic_bit]<=arithmetic_sum[arithmetic_bit%LIMB_BITS];
+                            deviation[arithmetic_bit]<=arithmetic_sum[arithmetic_bit%LIMB_BITS];
                     arithmetic_carry<=arithmetic_sum[LIMB_BITS];
                     if(limb_index==LIMBS-1) begin
                         limb_index<=0;multiplicand<=area_wide;
