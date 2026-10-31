@@ -1,13 +1,29 @@
 `timescale 1ns/1ps
-module tb_video_latency_osd;
-    localparam integer PX=984, PY=16, PANEL_W=280, PANEL_H=64;
+module tb_video_latency_osd #(
+    parameter integer LARGE_TEXT=0,
+    parameter integer NARROW_TEXT=0
+);
+    localparam integer NARROW_LAYOUT=LARGE_TEXT && NARROW_TEXT;
+    localparam integer PX=LARGE_TEXT ? (NARROW_LAYOUT ? 960 : 16) : 984;
+    localparam integer PY=LARGE_TEXT ? 592 : 16;
+    localparam integer PANEL_W=LARGE_TEXT ? (NARROW_LAYOUT ? 320 : 400) : 280;
+    localparam integer PANEL_H=LARGE_TEXT ? 112 : 64;
+    localparam integer TEXT_LEFT=NARROW_LAYOUT ? 4 : 8;
+    localparam integer TEXT_TOP=LARGE_TEXT ? 8 : 4;
+    localparam integer TEXT_W=LARGE_TEXT ? (NARROW_LAYOUT ? 312 : 384) : 256;
+    localparam integer TEXT_H=LARGE_TEXT ? 96 : 48;
+    localparam integer NUMERIC_LEFT=NARROW_LAYOUT ? 4 : 6;
+    localparam integer CELL_W=LARGE_TEXT ? 24 : 16;
+    localparam integer CELL_H=LARGE_TEXT ? 32 : 16;
+    localparam integer PREVIEW_W=PANEL_W+16, PREVIEW_H=PANEL_H+16;
     reg clk=0;
     always #5 clk=~clk;
     reg rst_n=0, de=0, strobe=0, valid=0;
     reg [11:0] x=0, y=0;
     reg [19:0] total_us=0, isp_us=0, buffer_us=0;
     wire panel, text, alert;
-    video_latency_osd dut(
+    video_latency_osd #(.PANEL_X(PX),.PANEL_Y(PY),.LARGE_TEXT(LARGE_TEXT),
+        .NARROW_TEXT(NARROW_TEXT)) dut(
         .I_clk(clk),.I_rst_n(rst_n),.I_sample_strobe(strobe),
         .I_sample_valid(valid),.I_total_us(total_us),.I_isp_us(isp_us),
         .I_buffer_us(buffer_us),.I_de(de),.I_x(x),.I_y(y),
@@ -45,23 +61,40 @@ module tb_video_latency_osd;
             case(row)
                 0: begin
                     value=ref_total>999999 ? 999999 : ref_total;
-                    line_text=ref_valid ?
-                        $sformatf("TOTAL:%03d.%03d MS",value/1000,value%1000) :
-                        "TOTAL:N/A     MS";
+                    if(NARROW_LAYOUT)
+                        line_text=ref_valid ?
+                            $sformatf("TOT:%03d.%03dMS",value/1000,value%1000) :
+                            "TOT:N/A    MS";
+                    else
+                        line_text=ref_valid ?
+                            $sformatf("TOTAL:%03d.%03d MS",value/1000,value%1000) :
+                            "TOTAL:N/A     MS";
                 end
                 1: begin
                     value=ref_isp>999999 ? 999999 : ref_isp;
-                    line_text=ref_valid ?
-                        $sformatf("ISP:  %03d.%03d MS",value/1000,value%1000) :
-                        "ISP:  N/A     MS";
+                    if(NARROW_LAYOUT)
+                        line_text=ref_valid ?
+                            $sformatf("ISP:%03d.%03dMS",value/1000,value%1000) :
+                            "ISP:N/A    MS";
+                    else
+                        line_text=ref_valid ?
+                            $sformatf("ISP:  %03d.%03d MS",value/1000,value%1000) :
+                            "ISP:  N/A     MS";
                 end
                 default: begin
                     value=ref_buffer>999999 ? 999999 : ref_buffer;
-                    line_text=ref_valid ?
-                        $sformatf("BUF:  %03d.%03d MS",value/1000,value%1000) :
-                        "BUF:  N/A     MS";
+                    if(NARROW_LAYOUT)
+                        line_text=ref_valid ?
+                            $sformatf("BUF:%03d.%03dMS",value/1000,value%1000) :
+                            "BUF:N/A    MS";
+                    else
+                        line_text=ref_valid ?
+                            $sformatf("BUF:  %03d.%03d MS",value/1000,value%1000) :
+                            "BUF:  N/A     MS";
                 end
             endcase
+            if(NARROW_LAYOUT && line_text.len()!=13)
+                $fatal(1,"Narrow latency oracle must retain exactly thirteen characters");
             expected_character=col<line_text.len() ? line_text[col] : " ";
         end
     endfunction
@@ -74,22 +107,21 @@ module tb_video_latency_osd;
             masks=0; local_x=px-PX; local_y=py-PY;
             inside_panel=enabled && local_x>=0 && local_x<PANEL_W &&
                 local_y>=0 && local_y<PANEL_H;
-            text_area=inside_panel && local_x>=8 && local_x<264 &&
-                local_y>=4 && local_y<52;
-            row=(local_y-4)/16; col=(local_x-8)/16;
+            text_area=inside_panel && local_x>=TEXT_LEFT && local_x<TEXT_LEFT+TEXT_W &&
+                local_y>=TEXT_TOP && local_y<TEXT_TOP+TEXT_H;
+            row=(local_y-TEXT_TOP)/CELL_H; col=(local_x-TEXT_LEFT)/CELL_W;
             ref_char=" "; ref_row=0; ref_col=0;
             if(text_area) begin
                 ref_char=expected_character(row,col);
-                ref_row=(local_y-4)%16;
-                ref_col=(local_x-8)%16;
+                ref_row=LARGE_TEXT ? ((local_y-TEXT_TOP)/2)%16 :
+                    (local_y-TEXT_TOP)%16;
+                ref_col=LARGE_TEXT ? 2+((local_x-TEXT_LEFT)/2)%12 :
+                    (local_x-TEXT_LEFT)%16;
             end
             #1;
-            glyph_on=ref_char=="." ?
-                ((ref_row==11 || ref_row==12) && (ref_col==6 || ref_col==7)) :
-                ref_char=="/" ?
-                (ref_row>=2 && ref_row<=11 && ref_col==13-ref_row) :
-                ref_glyph[15-ref_col];
-            alert_on=text_area && row==0 && col>=6 && col<=12 && ref_valid &&
+            glyph_on=ref_glyph[15-ref_col];
+            alert_on=text_area && row==0 && col>=NUMERIC_LEFT &&
+                col<=NUMERIC_LEFT+6 && ref_valid &&
                 (ref_total>128000 || ref_isp>999999 || ref_buffer>999999);
             masks[2]=inside_panel;
             masks[1]=text_area && glyph_on;
@@ -123,14 +155,20 @@ module tb_video_latency_osd;
 
     task automatic pixel(input integer px,py,input bit enabled,input bit save_pixel);
         reg [2:0] expected;
+        reg [2:0] previous;
         reg [23:0] rgb;
         begin
-            @(negedge clk); x=px; y=py; de=enabled;
+            @(negedge clk);
+            previous={panel,text,alert};
+            x=px; y=py; de=enabled;
             expected_masks(px,py,enabled,expected);
+            if({panel,text,alert}!==previous)
+                $fatal(1,"OSD output changed before its registered edge large=%0d narrow=%0d",
+                    LARGE_TEXT,NARROW_TEXT);
             @(posedge clk); #1;
             if({panel,text,alert}!==expected)
-                $fatal(1,"OSD pixel mismatch at %0d,%0d actual=%b expected=%b",
-                    px,py,{panel,text,alert},expected);
+                $fatal(1,"OSD pixel mismatch large=%0d narrow=%0d at %0d,%0d actual=%b expected=%b",
+                    LARGE_TEXT,NARROW_TEXT,px,py,{panel,text,alert},expected);
             checked_pixels=checked_pixels+1;
             if(text) glyph_pixels=glyph_pixels+1;
             if(alert) alert_pixels=alert_pixels+1;
@@ -156,8 +194,12 @@ module tb_video_latency_osd;
             for(integer xx=PX;xx<PX+PANEL_W;xx=xx+1) pixel(xx,yy,1,0);
 
         sample(1,20000,321,19679);
+        scan_panel(0);
         sample(1,56789,1234,55555);
+        scan_panel(0);
         sample(1,128000,123,127877);
+        scan_panel(0);
+        check(alert_pixels==0,"TOTAL at or below the limit showed an alert");
         sample(1,128001,124,127877);
         scan_panel(0);
         check(alert_pixels>0,"Over-limit TOTAL did not show an alert");
@@ -165,21 +207,29 @@ module tb_video_latency_osd;
         sample(1,100000,1048575,0);
         scan_panel(0);
         check(dut.current_overflow,"Out-of-range component did not show an alert");
+        sample(1,1048575,1048575,1048575);
+        scan_panel(0);
         sample(0,0,0,0);
-        sample(1,66733,12,66721);
+        sample(1,24123,1750,22373);
 
-        preview=$fopen("video_latency_compact.ppm","wb");
-        $fwrite(preview,"P6\n296 80\n255\n");
+        preview=$fopen(NARROW_LAYOUT ? "video_latency_narrow.ppm" :
+            (LARGE_TEXT ? "video_latency_large.ppm" : "video_latency_compact.ppm"),"wb");
+        $fwrite(preview,"P6\n%0d %0d\n255\n",PREVIEW_W,PREVIEW_H);
         scan_panel(1);
         $fclose(preview);
-        check(glyph_pixels>1000,"Compact panel preview lacks text");
+        check(glyph_pixels>1000,"Latency panel preview lacks text");
         pixel(PX-1,PY,1,0); pixel(PX,PY,1,0);
         pixel(PX+PANEL_W-1,PY+PANEL_H-1,1,0);
         pixel(PX+PANEL_W,PY+PANEL_H-1,1,0);
         pixel(PX,PY+PANEL_H,1,0);
-        pixel(PX+8,PY+4,0,0);
-        $display("VIDEO_LATENCY_OSD_PASS checks=%0d pixels=%0d glyph_pixels=%0d alerts=%0d",
-            checks,checked_pixels,glyph_pixels,alert_pixels);
+        pixel(PX+TEXT_LEFT,PY+TEXT_TOP,0,0);
+        pixel(PX+PANEL_W-1,PY+PANEL_H-1,0,0);
+        pixel(PX+PANEL_W/2,PY+PANEL_H/2,0,0);
+        pixel(PX+PANEL_W/2,PY+PANEL_H/2,1,0);
+        check(dut.PANEL_WIDTH==PANEL_W && dut.PANEL_HEIGHT==PANEL_H,
+            "Latency panel dimensions mismatch");
+        $display("VIDEO_LATENCY_OSD_PASS large=%0d narrow=%0d panel=%0dx%0d checks=%0d pixels=%0d glyph_pixels=%0d alerts=%0d",
+            LARGE_TEXT,NARROW_TEXT,PANEL_W,PANEL_H,checks,checked_pixels,glyph_pixels,alert_pixels);
         $finish;
     end
     initial begin #10000000; $fatal(1,"Latency OSD test timeout"); end

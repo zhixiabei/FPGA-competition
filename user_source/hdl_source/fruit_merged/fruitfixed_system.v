@@ -1,4 +1,4 @@
-// Fixed visible 480px ROI -> frozen seven-convolution classifier.
+// Fixed visible 480px square ROI -> frozen seven-convolution classifier.
 // Reuses the CRC-protected UART transport, but loads only the new bundle.
 // One snapshot writer alternates DDR slots, overlapping compute and capture.
 module fruitfixed_system #(
@@ -6,7 +6,12 @@ module fruitfixed_system #(
     parameter integer BACKGROUND_CONTROL=0,
     parameter integer SWITCH_CONTROL=0,
     parameter integer FLASH_MODEL_ENABLE=0,
-    parameter integer KEY_DEBOUNCE_CYCLES=1333334
+    parameter integer KEY_DEBOUNCE_CYCLES=1333334,
+    parameter integer FLASH_DIAGNOSTIC_ENABLE=0,
+    // Centre the original 480px square in the 960x720 area left of the sidebar.
+    parameter integer ROI_X=240,
+    parameter integer ROI_Y=120,
+    parameter integer ROI_SIDE=480
 )(
     input wire clk,rst_n,calibrated,uart_rx,memory_error,
     input wire key4_n,
@@ -50,10 +55,16 @@ module fruitfixed_system #(
     reg [4:0] op;
     assign operation={1'b0,op};
     wire [31:0] model_base,model_bytes,model_crc32;
-    wire [15:0] fixed_x,fixed_y,fixed_side;
+    localparam [15:0] FIXED_X=ROI_X, FIXED_Y=ROI_Y;
+    localparam [15:0] FIXED_SIDE=ROI_SIDE;
+    // HDMI boxes use inclusive right/bottom coordinates, while preprocessing
+    // uses a side length. Share the geometry so the guide matches the crop.
+    localparam [11:0] FIXED_X2=ROI_X+ROI_SIDE-1;
+    localparam [11:0] FIXED_Y2=ROI_Y+ROI_SIDE-1;
     reg guide_pending;
+    // Keep the frozen model metadata; constant ROI parameters own the guide.
     handfixed_config config_rom(.model_base(model_base),.model_bytes(model_bytes),.model_crc32(model_crc32),
-        .roi_x(fixed_x),.roi_y(fixed_y),.roi_side(fixed_side));
+        .roi_x(),.roi_y(),.roi_side());
     wire rx_valid,rx_error,tx_valid,tx_ready;
     wire [7:0] rx_byte,tx_byte;
     wire load_valid,load_write;
@@ -68,8 +79,14 @@ module fruitfixed_system #(
             .mem_ready(mem_ready),.mem_rsp_valid(mem_rsp_valid),.mem_rsp_data(mem_rsp_data),
             .flash_cs_n(flash_cs_n),.flash_sck(flash_sck),.flash_mosi(flash_mosi),.flash_miso(flash_miso),
             .diagnostics(flash_diagnostics));
-        flash_status_uart status_uart(.clk(clk),.rst_n(rst_n),.rx(uart_rx),.tx(uart_tx),
-            .runtime_status(status_packet),.flash_status(flash_diagnostics));
+        // Flash boot, DDR readback and both CRC checks remain independent of
+        // the optional R18S/R18F diagnostic receiver and transmitter.
+        if(FLASH_DIAGNOSTIC_ENABLE!=0) begin: diagnostic_uart
+            flash_status_uart status_uart(.clk(clk),.rst_n(rst_n),.rx(uart_rx),.tx(uart_tx),
+                .runtime_status(status_packet),.flash_status(flash_diagnostics));
+        end else begin: no_diagnostic_uart
+            assign uart_tx=1'b1;
+        end
     end else begin: uart_model
         assign flash_cs_n=1'b1;
         assign flash_sck=1'b0;
@@ -123,7 +140,7 @@ module fruitfixed_system #(
         .has_texture(has_texture),.texture_edges(),.texture_range(),
         .green_valid(green_valid),.green_row_end(green_row_end),.green_pixel(green_pixel),
         .classifier(1'b1),.snapshot_base(snapshot_base),
-        .roi_x(fixed_x),.roi_y(fixed_y),.roi_side(fixed_side),.busy(pp_busy),.done(pp_done),
+        .roi_x(FIXED_X),.roi_y(FIXED_Y),.roi_side(FIXED_SIDE),.busy(pp_busy),.done(pp_done),
         .mem_valid(pp_valid),.mem_write(pp_write),.mem_addr(pp_addr),.mem_data(pp_data),
         .mem_ready(compute_ready),.mem_rsp_valid(mem_rsp_valid),.mem_rsp_data(mem_rsp_data));
     wire core_valid,core_write,core_done,core_busy,core_fault;
@@ -187,8 +204,8 @@ module fruitfixed_system #(
             // Thereafter class, guide and source frame update only on completion.
             if(guide_pending) begin
                 guide_pending<=0;result_valid<=1;box_valid<=1;
-                box_x1<=fixed_x;box_y1<=fixed_y;
-                box_x2<=fixed_x+fixed_side;box_y2<=fixed_y+fixed_side;
+                box_x1<=FIXED_X;box_y1<=FIXED_Y;
+                box_x2<=FIXED_X2;box_y2<=FIXED_Y2;
             end
             if(frame_start) frame_number<=frame_number+1'b1;
             if(state!=IDLE) processing_cycles<=processing_cycles+1'b1;
@@ -226,8 +243,8 @@ module fruitfixed_system #(
                             // confirmation as CNN labels, preventing a single
                             // threshold excursion from clearing the display.
                             result_class<=confirmed_class;result_valid<=1;result_frame<=read_frame;
-                            box_valid<=1;box_x1<=fixed_x;box_y1<=fixed_y;
-                            box_x2<=fixed_x+fixed_side;box_y2<=fixed_y+fixed_side;
+                            box_valid<=1;box_x1<=FIXED_X;box_y1<=FIXED_Y;
+                            box_x2<=FIXED_X2;box_y2<=FIXED_Y2;
                             result_count<=result_count+1'b1;last_processing_cycles<=processing_cycles;
                         end
                         state<=IDLE;
@@ -240,8 +257,8 @@ module fruitfixed_system #(
                 DECISION:if(dec_done) begin
                     if(run_enabled && !discard_compute) begin
                         result_class<=confirmed_class;result_valid<=1;result_frame<=read_frame;
-                        box_valid<=1;box_x1<=fixed_x;box_y1<=fixed_y;
-                        box_x2<=fixed_x+fixed_side;box_y2<=fixed_y+fixed_side;
+                        box_valid<=1;box_x1<=FIXED_X;box_y1<=FIXED_Y;
+                        box_x2<=FIXED_X2;box_y2<=FIXED_Y2;
                         result_count<=result_count+1'b1;last_processing_cycles<=processing_cycles;
                     end
                     state<=IDLE;
@@ -254,8 +271,8 @@ module fruitfixed_system #(
                 pending<=0;discard_compute<=1;discard_capture<=1;
                 if(!memory_error && !core_fault) begin
                     result_class<=1;result_valid<=1;box_valid<=1;
-                    box_x1<=fixed_x;box_y1<=fixed_y;
-                    box_x2<=fixed_x+fixed_side;box_y2<=fixed_y+fixed_side;
+                    box_x1<=FIXED_X;box_y1<=FIXED_Y;
+                    box_x2<=FIXED_X2;box_y2<=FIXED_Y2;
                 end
             end
         end

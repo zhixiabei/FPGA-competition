@@ -8,6 +8,8 @@ module tb_fruit_showcase_panel;
     reg clk = 0;
     always #5 clk = ~clk;
     reg rst_n = 0;
+    reg [15:0] weight_bcd = 16'h1250;
+    reg weight_valid = 1'b1;
 
     wire [23:0] show_data, probe_data, runtime_data;
     wire show_de, show_hs, show_vs, show_rd, show_sof;
@@ -25,8 +27,8 @@ module tb_fruit_showcase_panel;
         .I_latency_sample_valid(1'b0),.I_latency_total_us(20'd0), \
         .I_latency_isp_us(20'd0),.I_latency_buffer_us(20'd0), \
         .I_cnn_enable(1'b0),.I_cnn_result_valid(1'b0),.I_cnn_class(3'd1), \
-        .I_checkout_weight_bcd(16'h1250),.I_checkout_price_bcd(16'h1000), \
-        .I_checkout_weight_valid(1'b1),.I_checkout_price_valid(1'b1), \
+        .I_checkout_weight_bcd(weight_bcd),.I_checkout_price_bcd(16'h1000), \
+        .I_checkout_weight_valid(weight_valid),.I_checkout_price_valid(1'b1), \
         .I_hand_box_valid(1'b0),.I_hand_box(48'd0), \
         .I_resnet_probe_status(32'd0),.I_video_rd_data(CAMERA_RGB), \
         .I_target_result_ready(1'b0),.I_target_found(1'b0), \
@@ -103,7 +105,7 @@ module tb_fruit_showcase_panel;
     endtask
 
     task check_class(input integer class_id);
-        reg [7:0] expected_char;
+        integer index;
         begin
             case (class_id)
                 2: begin
@@ -133,7 +135,7 @@ module tb_fruit_showcase_panel;
                 end
                 default: begin
                     expected_english = " UNKNOWN  ";
-                    expected_chinese = 16'h2020;
+                    expected_chinese = 16'h2d2d;
                     expected_color = 24'hffc040;
                 end
             endcase
@@ -145,42 +147,96 @@ module tb_fruit_showcase_panel;
                 "fruit class color mismatch");
 
             show_coord(960, 500);
-            check_bit(dut_show.S_fruit_panel_bg_on && dut_show.S_fruit_accent_on,
-                "left accent bar missing");
+            check_bit(dut_show.S_fruit_panel_bg_on &&
+                !dut_show.S_font_valid_next,
+                "panel left frame edge is missing");
             check_bit(dut_show.S_rgb_next === expected_color,
-                "left accent bar color mismatch");
+                "content frame does not follow fruit color");
 
             show_coord(400, 300);
             check_bit(dut_show.S_cnn_roi_on, "dynamic ROI border missing");
             check_bit(dut_show.S_rgb_next === expected_color,
                 "ROI border did not follow fruit color");
 
-            for (i = 0; i < 10; i = i + 1) begin
-                show_coord(960+i*32, 328);
-                expected_char = expected_english[79-i*8 -: 8];
-                check_bit(dut_show.S_cnn_char === expected_char,
-                    "English fruit label mismatch or truncation");
-                check_bit(dut_show.S_cnn_font_col === 0,
-                    "2x English glyph scaling lost cell alignment");
-            end
-
-            if (class_id != 1) begin
-                show_coord(1056, 216);
-                check_bit(dut_show.S_cnn_char === expected_chinese[15:8],
-                    "first Chinese fruit glyph code mismatch");
+            show_coord(1056, 216);
+            check_bit(dut_show.S_fruit_chinese_on &&
+                dut_show.S_cnn_char === expected_chinese[15:8] &&
+                dut_show.S_font_valid_next,
+                "first fruit result glyph missing");
+            if (class_id != 1)
                 check_bit(dut_show.u_target_char_lib.font_index ===
                     6'(32+expected_chinese[11:8]),
                     "first Chinese glyph ROM mapping mismatch");
-                show_coord(1120, 216);
-                check_bit(dut_show.S_cnn_char === expected_chinese[7:0],
-                    "second Chinese fruit glyph code mismatch");
+            show_coord(1120, 216);
+            check_bit(dut_show.S_cnn_char === expected_chinese[7:0] &&
+                dut_show.S_font_valid_next,
+                "second fruit result glyph missing");
+            if (class_id != 1)
                 check_bit(dut_show.u_target_char_lib.font_index ===
                     6'(32+expected_chinese[3:0]),
                     "second Chinese glyph ROM mapping mismatch");
-            end else begin
-                show_coord(1056, 216);
-                check_bit(!dut_show.S_fruit_chinese_on,
-                    "unknown class should not show Chinese name");
+
+            show_coord(1040, 136);
+            check_bit(!dut_show.S_font_valid_next &&
+                dut_show.S_rgb_next === 24'h101418,
+                "obsolete result status remains");
+            for(index=0;index<10;index=index+1) begin
+                show_coord(960+index*32,328);
+                check_bit(dut_show.S_fruit_english_on &&
+                    dut_show.S_cnn_char === expected_english[79-index*8 -:8] &&
+                    dut_show.S_font_valid_next &&
+                    dut_show.S_font_color_next === expected_color &&
+                    dut_show.S_cnn_font_col === 0 &&
+                    dut_show.S_cnn_text_y === 0,
+                    "English fruit name or style mismatch");
+                show_coord(991+index*32,359);
+                check_bit(dut_show.S_fruit_english_on &&
+                    dut_show.S_cnn_char === expected_english[79-index*8 -:8] &&
+                    dut_show.S_cnn_font_col === 15 &&
+                    dut_show.S_cnn_text_y === 15,
+                    "English fruit name cell is clipped");
+            end
+            show_coord(1024, 656);
+            check_bit(!dut_show.S_font_valid_next &&
+                dut_show.S_rgb_next === 24'h101418,
+                "obsolete footer text remains");
+        end
+    endtask
+
+    task check_blank_region(
+        input integer left,top,width,height,
+        input [23:0] background
+    );
+        integer x,y;
+        begin
+            for(y=top;y<top+height;y=y+1)
+                for(x=left;x<left+width;x=x+1) begin
+                    show_coord(x,y);
+                    checks=checks+1;
+                    if(dut_show.S_font_valid_next ||
+                        dut_show.S_rgb_next !== background)
+                        $fatal(1,"Deleted text not blank at x=%0d y=%0d",x,y);
+                end
+        end
+    endtask
+
+    task check_weight(
+        input [15:0] grams_bcd,
+        input valid,
+        input [63:0] expected
+    );
+        integer index;
+        begin
+            weight_bcd=grams_bcd;
+            weight_valid=valid;
+            for(index=0;index<8;index=index+1) begin
+                show_coord(992+index*32,424);
+                check_bit(dut_show.S_fruit_weight_value_on &&
+                    dut_show.S_cnn_char === expected[63-index*8 -:8] &&
+                    dut_show.S_font_valid_next &&
+                    dut_show.S_font_color_next === 24'hffffff &&
+                    dut_show.S_cnn_font_col === 0,
+                    "kilogram conversion/unit mismatch");
             end
         end
     endtask
@@ -205,45 +261,73 @@ module tb_fruit_showcase_panel;
         check_bit(dut_show.S_rgb_next === 24'h101418,
             "main showcase background color mismatch");
         show_coord(1000, 608);
-        check_bit(dut_show.S_rgb_next === 24'h181e24,
-            "showcase footer band color mismatch");
+        check_bit(dut_show.S_rgb_next === 24'h101418,
+            "obsolete footer background band remains");
 
         force dut_show.S_cnn_class = 3'd2;
         show_coord(1000, 105);
         check_bit(dut_show.S_rgb_next === 24'hff4058,
-            "upper accent rule missing");
+            "title frame bottom edge is missing");
         show_coord(1000, 188);
+        check_bit(dut_show.S_rgb_next === 24'h101418,
+            "empty status frame divider remains");
+        show_coord(1276, 500);
         check_bit(dut_show.S_rgb_next === 24'hff4058,
-            "name accent rule missing");
+            "content frame right edge is missing");
+        show_coord(1000, 2);
+        check_bit(dut_show.S_rgb_next === 24'hff4058,
+            "title frame top edge is missing");
+        show_coord(1000, 378);
+        check_bit(dut_show.S_rgb_next === 24'hff4058,
+            "result frame bottom edge is missing");
+        show_coord(1000, 474);
+        check_bit(dut_show.S_rgb_next === 24'hff4058,
+            "weight frame bottom edge is missing");
+        show_coord(1000, 574);
+        check_bit(dut_show.S_rgb_next === 24'hff4058,
+            "price frame bottom edge is missing");
+        show_coord(960, 576);
+        check_bit(dut_show.S_rgb_next === 24'h101418,
+            "left frame continues below price");
+        show_coord(1279, 656);
+        check_bit(dut_show.S_rgb_next === 24'h101418,
+            "empty footer frame remains");
         show_coord(984, 64);
         check_bit(dut_show.S_cnn_char === "F" &&
             dut_show.S_font_valid_next &&
             dut_show.S_font_color_next === 24'hffffff,
             "showcase header style mismatch");
-        show_coord(1040, 136);
-        check_bit(dut_show.S_cnn_char === "I" &&
-            dut_show.S_font_color_next === 24'ha8b3bb,
-            "identified status style mismatch");
         show_coord(1056, 216);
         check_bit(dut_show.S_font_color_next === 24'hff4058,
             "Chinese name did not use class color");
         show_coord(1024, 392);
         check_bit(dut_show.S_cnn_char === "W",
             "weight label missing");
-        show_coord(1024, 424);
-        check_bit(dut_show.S_cnn_char === "1" &&
-            dut_show.S_font_color_next === 24'hffffff,
-            "weight value style mismatch");
+        show_coord(991, 424);
+        check_bit(!dut_show.S_fruit_weight_value_on,
+            "kilogram field starts before x=992");
+        show_coord(1248, 424);
+        check_bit(!dut_show.S_fruit_weight_value_on,
+            "kilogram field exceeds eight characters");
+        check_weight(16'h0000,1'b1,"0.000 kg");
+        check_weight(16'h0001,1'b1,"0.001 kg");
+        check_weight(16'h0037,1'b1,"0.037 kg");
+        check_weight(16'h0999,1'b1,"0.999 kg");
+        check_weight(16'h1000,1'b1,"1.000 kg");
+        check_weight(16'h1250,1'b1,"1.250 kg");
+        check_weight(16'h9999,1'b1,"9.999 kg");
+        check_weight(16'h1250,1'b0,"-.--- kg");
+        check_weight(16'ha1b2,1'b1,"-.1-2 kg");
+        weight_bcd=16'h1250;
+        weight_valid=1'b1;
         show_coord(976, 520);
         check_bit(dut_show.S_cnn_char === "1",
             "price integer digits missing");
         show_coord(1040, 520);
         check_bit(dut_show.S_cnn_char === ".",
             "price decimal point missing");
-        show_coord(1024, 656);
-        check_bit(dut_show.S_cnn_char === "A" &&
-            dut_show.S_font_color_next === 24'ha8b3bb,
-            "showcase footer style mismatch");
+        check_blank_region(1040,136,160,16,24'h101418);
+        check_blank_region(1024,656,192,16,24'h101418);
 
         for (i = 1; i <= 6; i = i + 1)
             check_class(i);
@@ -270,9 +354,9 @@ module tb_fruit_showcase_panel;
         check_bit(!dut_runtime.S_cnn_panel_on,
             "runtime panel exceeds legacy geometry");
 
-        for (i = 0; i < 10; i = i + 1) begin
+        for (i = 0; i < 12; i = i + 1) begin
             glyph_union = 16'd0;
-            glyph_char = 8'h82+i;
+            glyph_char = i<10 ? 8'h82+i : i==10 ? "k" : "g";
             for (glyph_row = 0; glyph_row < 15; glyph_row = glyph_row + 1) begin
                 @(negedge clk);
                 @(posedge clk); #1;
@@ -282,7 +366,7 @@ module tb_fruit_showcase_panel;
             @(negedge clk);
             @(posedge clk); #1;
             glyph_union = glyph_union | glyph_bits;
-            check_bit(glyph_union != 16'd0, "Chinese glyph ROM entry is blank");
+            check_bit(glyph_union != 16'd0, "Required glyph ROM entry is blank");
         end
 
         $display("FRUIT_SHOWCASE_PANEL_PASS checks=%0d", checks);

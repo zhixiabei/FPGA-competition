@@ -295,29 +295,25 @@ module scharr_edge_detect_96 #(
     end
     // Centre taps add one row/column each. Together with the Gaussian centre,
     // the color now represents the same (+3,+3) position as the NMS contour.
-    wire [323:0] cartoon_center_window;
-    scharr_window_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH),
-        .IMG_HEIGHT(IMG_HEIGHT),.TRACK_POSITION(0))
+    wire [35:0] cartoon_center_pixels;
+    scharr_center_delay_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH))
     u_cartoon_center_window(
         .clk(I_clk),.rst_n(I_rst_n),.valid(pv),.user(pu),.last(pl),
-        .word(cartoon_quantized),.out_valid(),.out_user(),.out_last(),.ok(),
-        .windows(cartoon_center_window),.out_x(),.out_y());
+        .word(cartoon_quantized),.out_valid(),.out_user(),.out_last(),
+        .centers(cartoon_center_pixels));
     reg [35:0] cartoon_delay[0:2];
     integer cartoon_stage;
     always @(posedge I_clk) begin
-        for(cartoon_lane=0;cartoon_lane<4;cartoon_lane=cartoon_lane+1)
-            cartoon_delay[0][35-cartoon_lane*9 -:9]<=
-                cartoon_center_window[287-cartoon_lane*81 -:9];
+        cartoon_delay[0]<=cartoon_center_pixels;
         for(cartoon_stage=1;cartoon_stage<3;cartoon_stage=cartoon_stage+1)
             cartoon_delay[cartoon_stage]<=cartoon_delay[cartoon_stage-1];
     end
-    wire [323:0] cartoon_final_window;
-    scharr_window_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH),
-        .IMG_HEIGHT(IMG_HEIGHT),.TRACK_POSITION(0))
+    wire [35:0] cartoon_final_pixels;
+    scharr_center_delay_4 #(.DATA_WIDTH(9),.IMG_WIDTH(IMG_WIDTH))
     u_cartoon_final_window(
         .clk(I_clk),.rst_n(I_rst_n),.valid(vp[2]),.user(up[2]),.last(lp[2]),
-        .word(cartoon_delay[2]),.out_valid(),.out_user(),.out_last(),.ok(),
-        .windows(cartoon_final_window),.out_x(),.out_y());
+        .word(cartoon_delay[2]),.out_valid(),.out_user(),.out_last(),
+        .centers(cartoon_final_pixels));
     function [23:0] cartoon_expand;
         input [8:0] rgb;
         begin
@@ -365,12 +361,92 @@ module scharr_edge_detect_96 #(
                     {3{emboss_pipe[7][31-lane*8 -:8]}} : 24'h808080;
                 O_cartoon_data[95-lane*24 -:24]<=nv&&nok[3-lane]&&
                     ny>=6&&((nx<<2)+lane>=6)&&!edge_present[3-lane] ?
-                    cartoon_expand(cartoon_final_window[287-lane*81 -:9]) : 24'd0;
+                    cartoon_expand(cartoon_final_pixels[35-lane*9 -:9]) : 24'd0;
                 O_morph_data[95-lane*24 -:24]<=nv&&ny>=2&&((nx<<2)+lane>=2) ?
                     {3{morph_pipe[5][31-lane*8 -:8]}} : 24'd0;
             end
         end
     end
+endmodule
+
+// Centre of a 3x3 window, lane 0 in the most significant bits. Two clocks,
+// matching scharr_window_4, including bubbles and SOF before the first valid.
+// Only y-1 is needed: read the old row at x before replacing it with row y.
+// The two RAM ports store the upper/lower half-group at even/odd addresses.
+// For 9-bit pixels this is 640x18, fitting one 20K block at 1280-pixel width;
+// both halves are read and replaced in parallel, with no port collision.
+// The saved last lane supplies x-1 for lane 0; lanes 1..3 use this group's
+// first three pixels. Data from the first row or x=0/lane=0 is unspecified,
+// as in the full window, and is excluded by the caller's six-pixel border.
+module scharr_center_delay_4 #(
+    parameter integer DATA_WIDTH=9,IMG_WIDTH=1280
+)(
+    input clk,rst_n,valid,user,last,input [4*DATA_WIDTH-1:0] word,
+    output reg out_valid,out_user,out_last,
+    output wire [4*DATA_WIDTH-1:0] centers
+);
+    function integer address_width;
+        input integer depth;integer n;
+        begin
+            address_width=0;
+            for(n=depth-1;n>0;n=n>>1) address_width=address_width+1;
+            if(address_width<1) address_width=1;
+        end
+    endfunction
+    localparam integer GROUPS=IMG_WIDTH/4;
+    localparam integer A=address_width(GROUPS),B=4*DATA_WIDTH,H=2*DATA_WIDTH;
+    reg [A-1:0] x;
+    wire [A-1:0] rx=user?{A{1'b0}}:x;
+    wire [A:0] upper_address={rx,1'b0};
+    wire [A:0] lower_address={rx,1'b1};
+    wire enable=rst_n&&valid;
+    wire [B-1:0] previous_row;
+    reg vd,ud,ld;
+`ifdef SCHARR_PORTABLE_RAM
+    reg [H-1:0] row_pixels[0:2*GROUPS-1];
+    reg [B-1:0] row_read,row_output;
+    always @(posedge clk) if(enable) begin
+        row_read<={row_pixels[upper_address],row_pixels[lower_address]};
+        row_pixels[upper_address]<=word[B-1:H];
+        row_pixels[lower_address]<=word[H-1:0];
+    end
+    always @(posedge clk) if(vd) row_output<=row_read;
+    assign previous_row=row_output;
+`else
+    PH1P_LOGIC_ERAM #(
+        .DATA_WIDTH_A(H),.DATA_WIDTH_B(H),.ADDR_WIDTH_A(A+1),.ADDR_WIDTH_B(A+1),
+        .DATA_DEPTH_A(2*GROUPS),.DATA_DEPTH_B(2*GROUPS),.MODE("DP"),
+        .REGMODE_A("OUTREG"),.REGMODE_B("OUTREG"),
+        .WRITEMODE_A("READBEFOREWRITE"),.WRITEMODE_B("READBEFOREWRITE"),
+        .IMPLEMENT("20K(FAST)"),.CLKMODE("SYNC"),
+        .ECC_ENCODE("DISABLE"),.ECC_DECODE("DISABLE"),
+        .INIT_FILE("NONE"),.FILL_ALL("NONE")
+    ) u_row(
+        .clka(clk),.clkb(clk),.cea(enable),.ceb(enable),
+        .ocea(vd),.oceb(vd),.wea(enable),.web(enable),
+        .rsta(1'b0),.rstb(1'b0),.bea(1'b0),.beb(1'b0),
+        .addra(upper_address),.addrb(lower_address),
+        .dia(word[B-1:H]),.dib(word[H-1:0]),
+        .doa(previous_row[B-1:H]),.dob(previous_row[H-1:0]),
+        .ecc_sbiterr(),.ecc_dbiterr(),
+        .ecc_sbiterrinj(1'b0),.ecc_dbiterrinj(1'b0));
+`endif
+    reg [DATA_WIDTH-1:0] previous_tail;
+    always @(posedge clk or negedge rst_n) begin
+        if(!rst_n) begin
+            x<=0;vd<=0;ud<=0;ld<=0;
+            out_valid<=0;out_user<=0;out_last<=0;previous_tail<=0;
+        end else begin
+            vd<=valid;ud<=user;ld<=last;
+            if(user) x<=0;
+            if(valid) x<=rx==GROUPS-1?{A{1'b0}}:rx+1'b1;
+            out_valid<=vd;out_user<=ud;out_last<=ld;
+            // Capture the OLD registered RAM output, just as the full
+            // window does. A bubble must neither duplicate nor skip a tail.
+            if(vd) previous_tail<=previous_row[DATA_WIDTH-1:0];
+        end
+    end
+    assign centers={previous_tail,previous_row[B-1:DATA_WIDTH]};
 endmodule
 
 // Row-major 3x3 windows, lane 0 in the most significant bits. Two clocks.

@@ -55,12 +55,13 @@ module tb_color_mask_pipeline #(
     reg [11:0] reference_active_config=0;
     integer checks=0,pixels=0,frames=0,bubbles=0,early_markers=0;
     integer live_changes=0,white_pixels=0,black_pixels=0,filtered_changes=0;
+    integer policy_checks=0;
     integer mode_pixels [9:12];
     reg [3:0] colors_seen=0;
     integer iteration,mode_index,color_index,phase;
 
     function automatic bit reference_color(input [23:0] value,input integer color);
-        integer r,g,b,d,a,c;
+        integer r,g,b,d,a,c,other_min,other_max,hue_distance;
         begin
             r=value[23:16];g=value[15:8];b=value[7:0];
             case(color)
@@ -68,9 +69,59 @@ module tb_color_mask_pipeline #(
                 2: begin d=b;a=r;c=g; end
                 default: begin d=r;a=g;c=b; end
             endcase
+            other_min=a<c ? a : c;
+            other_max=a>c ? a : c;
+            hue_distance=a>c ? a-c : c-a;
             reference_color=d>=24 && d-a>=6 && d-c>=6 &&
-                (color==1 ? (4*d>=5*a && 4*d>=5*c) :
-                (2*d>=3*a && 2*d>=3*c && 3*a<=d+2*c && 3*c<=d+2*a));
+                (color==1 ? 4*d>=5*other_max :
+                (2*d>=3*other_max &&
+                 (color==2 ? 3*hue_distance : 5*hue_distance)<=d-other_min));
+        end
+    endfunction
+    // Literal expected decisions guard the scalar oracle separately from
+    // the streaming scoreboard. Blue retains its original +/-20 degree band.
+    task automatic check_policy(input [23:0] rgb,input integer color,input bit expected);
+        begin
+            if(reference_color(rgb,color)!==expected)
+                $fatal(1,"Color oracle witness RGB=%h color=%0d expected=%b",
+                    rgb,color,expected);
+            policy_checks=policy_checks+1;
+        end
+    endtask
+    function automatic [23:0] boundary_pixel(input integer color,input integer slot);
+        begin
+            case(color)
+                1: case(slot)
+                    0: boundary_pixel=24'h50640a; // Green at ratio 4/5.
+                    1: boundary_pixel=24'h51640a; // One step outside.
+                    2: boundary_pixel=24'h0a6450;
+                    3: boundary_pixel=24'h0a6451;
+                    4: boundary_pixel=24'h203c0c;
+                    5: boundary_pixel=24'h171817;
+                    6: boundary_pixel=24'h006400;
+                    default: boundary_pixel=24'h646464;
+                endcase
+                2: case(slot)
+                    0: boundary_pixel=24'h5500ff; // Blue still accepts +20.
+                    1: boundary_pixel=24'h5600ff;
+                    2: boundary_pixel=24'h0055ff;
+                    3: boundary_pixel=24'h0056ff;
+                    4: boundary_pixel=24'haaaaff;
+                    5: boundary_pixel=24'hababff;
+                    6: boundary_pixel=24'h0c0f32;
+                    default: boundary_pixel=24'h646464;
+                endcase
+                default: case(slot)
+                    0: boundary_pixel=24'hff3300; // Red at +12.
+                    1: boundary_pixel=24'hff3400;
+                    2: boundary_pixel=24'hff0033;
+                    3: boundary_pixel=24'hff0034;
+                    4: boundary_pixel=24'hf05a1e; // Red-orange (240,90,30).
+                    5: boundary_pixel=24'he6461e; // Nonzero-floor +12.
+                    6: boundary_pixel=24'hff5500; // Former red +20 rejected.
+                    default: boundary_pixel=24'hff0055;
+                endcase
+            endcase
         end
     endfunction
     function automatic [23:0] primary(input integer color,input bit dim);
@@ -102,6 +153,10 @@ module tb_color_mask_pipeline #(
                     image[index]=foreground;
                 if(y<3 && x<11) image[index]=foreground;
                 if(y>=H-3 && x>=W-11) image[index]=foreground;
+                // Four-pixel strips present every policy boundary on every
+                // lane, through all four real preview paths.
+                if(y>=H/4 && y<H/4+8 && x>=W/4 && x<W/4+32)
+                    image[index]=boundary_pixel(color,(x-W/4)/4);
                 raw_mask[index]=reference_color(image[index],color);
                 raw_eroded[index]=0;raw_dilated[index]=0;
                 majority_mask[index]=0;smooth_dilated[index]=0;clean_mask[index]=0;
@@ -240,6 +295,15 @@ module tb_color_mask_pipeline #(
             $fatal(1,"Invalid mask pipeline dimensions or color count");
         for(mode_index=9;mode_index<=12;mode_index=mode_index+1)
             mode_pixels[mode_index]=0;
+        check_policy(24'hff3300,0,1);check_policy(24'hff3400,0,0);
+        check_policy(24'hff0033,0,1);check_policy(24'hff0034,0,0);
+        check_policy(24'hf05a1e,0,0);check_policy(24'he6461e,0,1);
+        check_policy(24'hff5500,0,0);check_policy(24'hff0055,0,0);
+        check_policy(24'h5500ff,2,1);check_policy(24'h5600ff,2,0);
+        check_policy(24'h0055ff,2,1);check_policy(24'h0056ff,2,0);
+        check_policy(24'haaaaff,2,1);check_policy(24'hababff,2,0);
+        check_policy(24'h50640a,1,1);check_policy(24'h51640a,1,0);
+        check_policy(24'h0a6450,1,1);check_policy(24'h0a6451,1,0);
         idle(5);@(negedge clk);rst_n=1;
         for(color_index=0;color_index<COLOR_COUNT;color_index=color_index+1)
             for(mode_index=9;mode_index<=12;mode_index=mode_index+1) begin
@@ -256,11 +320,11 @@ module tb_color_mask_pipeline #(
             early_markers!=2*COLOR_COUNT || live_changes!=4*COLOR_COUNT ||
             colors_seen!==((1<<COLOR_COUNT)-1) ||
             white_pixels==0 || black_pixels==0 || bubbles<50*COLOR_COUNT ||
-            filtered_changes<25*COLOR_COUNT)
+            filtered_changes<25*COLOR_COUNT || policy_checks!=18)
             $fatal(1,"Incomplete color mask pipeline coverage");
-        $display("COLOR_MASK_PIPELINE_PASS W=%0d H=%0d frames=%0d pixels=%0d checks=%0d color_count=%0d colors_seen=%h modes=9..12 latency=11 early_sof=%0d midframe_changes=%0d bubbles=%0d white=%0d black=%0d cleaned=%0d",
+        $display("COLOR_MASK_PIPELINE_PASS W=%0d H=%0d frames=%0d pixels=%0d checks=%0d color_count=%0d colors_seen=%h modes=9..12 latency=11 early_sof=%0d midframe_changes=%0d bubbles=%0d white=%0d black=%0d cleaned=%0d policy_checks=%0d",
             W,H,frames,pixels,checks,COLOR_COUNT,colors_seen,early_markers,live_changes,bubbles,
-            white_pixels,black_pixels,filtered_changes);
+            white_pixels,black_pixels,filtered_changes,policy_checks);
         $finish;
     end
     initial begin

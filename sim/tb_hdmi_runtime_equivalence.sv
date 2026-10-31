@@ -3,6 +3,10 @@
 // Inject only the identical source x/y counters to visit text rectangles
 // efficiently; the stage-one/stage-two coordinates and controls still run.
 // The separate full-raster and top-level frame tests cover normal scanning.
+// Restrict the frozen-source proof to unchanged fonts, legacy CNN/runtime
+// overlays and core label placement. Disable the relocated HUD on both sides;
+// tb_fruit_font_pixels and the independent tb_latency_display_toggle oracle
+// verify its new placement, pixels and priority without rewriting golden RTL.
 module tb_hdmi_runtime_equivalence #(
     parameter integer PROBE=0, RUNTIME=1, FRUIT=1, DEBUG=0
 );
@@ -48,15 +52,15 @@ module tb_hdmi_runtime_equivalence #(
         .O_hdmi_hsync(HS),.O_hdmi_vsync(VS),.O_video_rd_en(RD), \
         .O_display_frame_start(SOF)
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.DEBUG_MODE(DEBUG),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_RAW_STATS(1),.SHOW_LATENCY(1),.SHOW_CNN(1),
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_RAW_STATS(1),.SHOW_LATENCY(0),.SHOW_CNN(1),
         .HANDCNN_DYNAMIC_ROI(1),.FRUIT_CNN(FRUIT),
         .SHOW_RESNET_PROBE(PROBE),.SHOW_RESNET_RUNTIME(RUNTIME)) dut(
         `MIXER_PORTS(got,gde,ghs,gvs,grd,gsof)
     );
     hdmi_mixer_reference #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.DEBUG_MODE(DEBUG),.MULTI_TARGET_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(1),
-        .SHOW_RAW_STATS(1),.SHOW_LATENCY(1),.SHOW_CNN(1),
+        .SHOW_COLOR_TARGET(1),.SHOW_CAMERA_STATUS(1),.SHOW_EFFECT_LABEL(0),
+        .SHOW_RAW_STATS(1),.SHOW_LATENCY(0),.SHOW_CNN(1),
         .HANDCNN_DYNAMIC_ROI(1),.FRUIT_CNN(FRUIT),
         .SHOW_RESNET_PROBE(PROBE),.SHOW_RESNET_RUNTIME(RUNTIME)) reference(
         `MIXER_PORTS(want,wde,whs,wvs,wrd,wsof)
@@ -256,11 +260,12 @@ module tb_hdmi_runtime_equivalence #(
         for(i=0;i<13;i=i+1) begin
             begin_frame(i%2,i,1+i%6);
             color=2'(i%3);motion=i[0];
+            // The original effect rectangle now restores background.
             rectangle(191,79,242,18);
         end
 
-        // Existing counter, Logo, latency and target overlays remain on their
-        // original pixel beat while the CNN switch changes in both directions.
+        // Unchanged counter, Logo and target overlays remain on their original
+        // pixel beat while the CNN switch changes in both directions.
         begin_frame(0,12,6);
         rectangle(0,0,160,160);
         rectangle(374,119,202,26);
@@ -270,6 +275,7 @@ module tb_hdmi_runtime_equivalence #(
             latency_valid=i!=0;total_us=i==2 ? 20'd128001 : 20'd123456;
             isp_us=20'd23456;buffer_us=20'd100000;latency_strobe=1;
             blank(100);
+            // Disabled latency leaves its original rectangle as background.
             rectangle(984,16,280,64);
         end
         begin_frame(1,6,3);

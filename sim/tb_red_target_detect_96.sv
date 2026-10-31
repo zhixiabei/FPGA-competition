@@ -12,7 +12,8 @@ module tb_red_target_detect_96 #(
     localparam integer MIN_PIXELS = 128;
     localparam integer MIN_WIDTH = 8;
     localparam integer MIN_HEIGHT = 8;
-    localparam integer RESULT_LATENCY = 9;
+    // Includes the registered primary/secondary color arithmetic stage.
+    localparam integer RESULT_LATENCY = 10;
 
     reg clk = 1'b0;
     reg rst_n = 1'b0;
@@ -79,7 +80,7 @@ module tb_red_target_detect_96 #(
             reference_red = (r >= RED_MIN) &&
                             (r-g >= RED_DELTA) && (r-b >= RED_DELTA) &&
                             (2*r >= 3*other_max) &&
-                            (3*hue_distance <= r-other_min);
+                            (5*hue_distance <= r-other_min);
         end
     endfunction
 
@@ -127,7 +128,9 @@ module tb_red_target_detect_96 #(
         input [23:0] rgb;
         input expected;
         begin
+            @(negedge clk);
             valid = 0; user = 0; data = {4{rgb}};
+            @(posedge clk);
             #1;
             if (reference_red(rgb) !== expected || dut.red_mask !== {4{expected}})
                 $fatal(1, "Color policy mismatch RGB=%h reference=%b mask=%b expected=%b",
@@ -159,10 +162,18 @@ module tb_red_target_detect_96 #(
             check_color(24'h171000, 0); // Below the brightness floor.
             check_color(24'h180806, 1); // Floor with strong red chroma.
             check_color(24'h181717, 0); // Near-black channel noise.
-            check_color(24'hff5500, 1); // Exactly +20 degree hue boundary.
-            check_color(24'hff5600, 0);
-            check_color(24'hff0055, 1); // Exactly -20 degree hue boundary.
-            check_color(24'hff0056, 0);
+            check_color(24'hff3300, 1); // Exactly +12 degrees: 51/255.
+            check_color(24'hff3400, 0); // One channel step beyond +12.
+            check_color(24'hff0033, 1); // Exactly -12 degrees.
+            check_color(24'hff0034, 0);
+            check_color(24'he6461e, 1); // +12 with nonzero secondary floor.
+            check_color(24'he6471e, 0);
+            check_color(24'he61e46, 1); // Symmetric -12 boundary.
+            check_color(24'he61e47, 0);
+            check_color(24'hff5500, 0); // Former +20 boundary is excluded.
+            check_color(24'hff0055, 0); // Former -20 boundary is excluded.
+            check_color(24'hf05a1e, 0); // Camera red-orange witness (240,90,30).
+            check_color(24'hf03c1e, 1); // Nearby red (240,60,30) remains valid.
             // Linear brightness changes preserve the normalized color
             // classification once the noise/brightness floor is reached.
             for (luminance = 8; luminance <= 255; luminance = luminance+1) begin
@@ -173,12 +184,14 @@ module tb_red_target_detect_96 #(
             // pseudo-random jumps exercise extension/overflow boundaries.
             random_state = 32'h712d481f;
             for (n = 0; n < 16384; n = n+1) begin
+                @(negedge clk);
                 for (lane = 0; lane < 4; lane = lane+1) begin
                     random_state = random_state*32'd1664525+32'd1013904223;
                     rgb = random_state[31:8];
                     data[95-lane*24-:24] = rgb;
                     expected_mask[lane] = reference_red(rgb);
                 end
+                @(posedge clk);
                 #1;
                 if (dut.red_mask !== expected_mask)
                     $fatal(1, "Color mask mismatch data=%h got=%b expected=%b",
@@ -382,7 +395,7 @@ module tb_red_target_detect_96 #(
 
         // Two complete frames have no extra SOF and no gap between them.
         build_image(5); queue_reference; drive_frame(0,0);
-        build_image(1); queue_reference; drive_frame(0,0); idle(3);
+        build_image(1); queue_reference; drive_frame(0,0); idle(RESULT_LATENCY+2);
 
         // Reset mid-frame; old mask RAM must never leak into a new frame.
         repeat (5) begin @(negedge clk); valid = 1; data = {4{24'hff0000}}; end
@@ -401,7 +414,7 @@ module tb_red_target_detect_96 #(
     end
 
     initial begin
-        #(W*H*100);
+        #(64'd2000000+64'd100*W*H);
         $fatal(1, "Timeout");
     end
 endmodule

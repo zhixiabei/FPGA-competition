@@ -4,6 +4,11 @@
 module tb_display_effects_mixer;
     localparam integer W = 576;
     localparam integer H = 224;
+    // Narrow frames retain a one-pixel font and put the algorithm at the
+    // bottom left. Coordinates are the display contract, independent of DUT
+    // localparams and address wires.
+    localparam integer EFFECT_X = 16, EFFECT_Y = H-32;
+    localparam integer TARGET_Y = H-56;
     localparam integer MODE_COUNT = 13;
     localparam integer PLAN_FRAMES = MODE_COUNT*3;
     reg src_clk = 0;
@@ -43,6 +48,7 @@ module tb_display_effects_mixer;
     integer mode_status_pixels [0:MODE_COUNT-1];
     integer mode_label_pixels [0:MODE_COUNT-1];
     integer label_checks = 0, label_glyphs = 0;
+    integer target_checks = 0, target_glyphs = 0;
     integer removed_parameter_checks = 0;
 
     camera_diag_cdc #(.WIDTH(12)) config_cdc (
@@ -153,17 +159,27 @@ module tb_display_effects_mixer;
         end
     endfunction
 
+    function automatic [7:0] target_char(input integer column);
+        reg [183:0] text;
+        begin
+            text="MOV:FOUND X:0229 Y:0179";
+            target_char=column>=0 && column<23 ? text[183-8*column -:8] : " ";
+        end
+    endfunction
+
     wire [7:0] reference_label_char =
-        label_char(active_mode,(dut.S_x_2d-192)/16);
-    wire [3:0] reference_label_row = dut.S_y_2d-80;
+        label_char(active_mode,(dut.S_x_2d-EFFECT_X)/16);
+    wire [3:0] reference_label_row = dut.S_y_2d-EFFECT_Y;
     wire [15:0] reference_label_bits;
     osd_char_lib reference_label_font (
         .I_char(reference_label_char), .I_row(reference_label_row),
         .O_row_bits(reference_label_bits)
     );
+    wire [7:0] reference_target_char=target_char((dut.S_x_2d-16)/16);
+    wire [3:0] reference_target_row=dut.S_y_2d-TARGET_Y;
     wire [15:0] reference_target_bits;
     osd_char_lib reference_target_font (
-        .I_char(dut.S_target_char), .I_row(dut.S_target_text_y),
+        .I_char(reference_target_char), .I_row(reference_target_row),
         .O_row_bits(reference_target_bits)
     );
 
@@ -217,7 +233,7 @@ module tb_display_effects_mixer;
         end else begin
             sample_osd = dut.S_osd_hit;
             sample_osd_color = dut.S_osd_color;
-            sample_text = reference_target_bits[15-dut.S_target_text_x[3:0]];
+            sample_text = reference_target_bits[15-((dut.S_x_2d-16)%16)];
             sample_frame_start = frame_start;
             sample_native = dut.S_video_data_2d;
             x = dut.S_x_2d; y = dut.S_y_2d;
@@ -253,7 +269,17 @@ module tb_display_effects_mixer;
             end
             if (sample_frame_start !== (pipe_de[2] && pipe_user[2]))
                 $fatal(1, "Display frame-start event shifted");
-            panel_on=pipe_de[2] && x>=16 && x<384 && y>=H-32 && y<H-16;
+            panel_on=pipe_de[2] && x>=16 && x<384 &&
+                y>=TARGET_Y && y<TARGET_Y+16;
+            if (dut.S_target_panel_on !== panel_on)
+                $fatal(1,"Target-status panel bounds mismatch at %0d,%0d",x,y);
+            if (panel_on) begin
+                if (dut.S_target_char !== reference_target_char)
+                    $fatal(1,"Target-status text changed at %0d,%0d want=%h got=%h",
+                        x,y,reference_target_char,dut.S_target_char);
+                target_checks=target_checks+1;
+                if (sample_text) target_glyphs=target_glyphs+1;
+            end
             box_on=pipe_de[2] && x>=180 && x<=279 && y>=170 && y<=189 &&
                 (x<182 || x>277 || y<172 || y>187);
             cross_on=pipe_de[2] &&
@@ -262,20 +288,22 @@ module tb_display_effects_mixer;
             status_on=pipe_de[2] && y>=16 && y<32 &&
                 ((x>=192 && x<208) || (x>=216 && x<232) ||
                  (x>=240 && x<256) || (x>=264 && x<280));
-            effect_panel=pipe_de[2] && x>=192 && x<432 && y>=80 && y<96;
-            effect_text=reference_label_bits[15-((x-192)%16)];
+            effect_panel=pipe_de[2] && x>=EFFECT_X && x<EFFECT_X+240 &&
+                y>=EFFECT_Y && y<EFFECT_Y+16;
+            effect_text=reference_label_bits[15-((x-EFFECT_X)%16)];
             if (dut.S_effect_panel_on !== effect_panel)
                 $fatal(1,"Effect panel bounds mismatch at %0d,%0d",x,y);
             if (effect_panel) begin
                 if (dut.S_effect_char !== reference_label_char)
                     $fatal(1,"Effect label mismatch mode=%0d param=%0d column=%0d char=%h want=%h",
-                        active_mode,active_param,(x-192)/16,dut.S_effect_char,
+                        active_mode,active_param,(x-EFFECT_X)/16,dut.S_effect_char,
                         reference_label_char);
                 label_checks=label_checks+1;
                 if (effect_text) label_glyphs=label_glyphs+1;
                 mode_label_pixels[active_mode]=mode_label_pixels[active_mode]+1;
             end
-            if (pipe_de[2] && x>=432 && x<544 && y>=80 && y<96) begin
+            if (pipe_de[2] && x>=EFFECT_X+240 && x<EFFECT_X+352 &&
+                y>=EFFECT_Y && y<EFFECT_Y+16) begin
                 if (dut.S_effect_char !== " " || dut.S_effect_panel_on)
                     $fatal(1,"Removed parameter label is still present at %0d,%0d",x,y);
                 removed_parameter_checks=removed_parameter_checks+1;
@@ -404,13 +432,15 @@ module tb_display_effects_mixer;
             snapshots<PLAN_FRAMES-1 || requests!=PLAN_FRAMES+3 ||
             osd_pixels==0 || box_pixels==0 || status_pixels==0 ||
             label_checks!=(PLAN_FRAMES+1)*240*16 || label_glyphs<1000 ||
+            target_checks!=(PLAN_FRAMES+1)*368*16 || target_glyphs<1000 ||
             removed_parameter_checks!=(PLAN_FRAMES+1)*112*16 ||
             changed_pixels<100000)
             $fatal(1, "Incomplete mixer/effect integration coverage: pixels=%0d frames=%0d snapshots=%0d requests=%0d",
                    pixels,frames,snapshots,requests);
-        $display("DISPLAY_EFFECTS_MIXER_PASS modes=13 pixels=%0d frames=%0d first_pixels=%0d ignored_parameter_frames=%0d snapshots=%0d requests=%0d osd=%0d box=%0d status=%0d changed=%0d label=%0d glyphs=%0d removed_parameter=%0d default=COLOR_GAMMA emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1 mask_precomputed=1",
+        $display("DISPLAY_EFFECTS_MIXER_PASS modes=13 pixels=%0d frames=%0d first_pixels=%0d ignored_parameter_frames=%0d snapshots=%0d requests=%0d osd=%0d box=%0d status=%0d changed=%0d label=%0d glyphs=%0d target=%0d target_glyphs=%0d removed_parameter=%0d default=COLOR_GAMMA emboss_precomputed=1 cartoon_precomputed=1 scharr_inverse=1 morph_precomputed=1 mask_precomputed=1",
                  pixels,frames,first_pixels,ignored_parameter_frames,snapshots,requests,
                  osd_pixels,box_pixels,status_pixels,changed_pixels,label_checks,label_glyphs,
+                 target_checks,target_glyphs,
                  removed_parameter_checks);
         $finish;
     end
