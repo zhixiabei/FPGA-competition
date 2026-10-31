@@ -136,11 +136,12 @@ module video_latency_osd #(
     end endgenerate
     reg [7:0] character;
     reg numeric, numeric_valid;
+    reg [2:0] numeric_col;
     reg [23:0] numeric_bcd;
     reg [3:0] decimal_digit;
 
     always @(*) begin
-        character=" "; numeric=0;
+        character=" "; numeric=0; numeric_col=0;
         numeric_bcd=bcd_total; numeric_valid=display_valid;
         case (text_row)
             0: begin
@@ -176,26 +177,26 @@ module video_latency_osd #(
                 endcase
             end
         endcase
-        if (text_col>=NUMERIC_LEFT && text_col<=NUMERIC_LEFT+6)
-            numeric=1;
+        if (text_col>=NUMERIC_LEFT && text_col<=NUMERIC_LEFT+6) begin
+            numeric=1; numeric_col=text_col-NUMERIC_LEFT;
+        end
         if (text_col==MS_COLUMN) character="M";
         if (text_col==MS_COLUMN+1) character="S";
-        // Decode the fixed screen columns in parallel. A column subtraction
-        // before the digit mux extends the coordinate-to-font timing path.
-        decimal_digit=
-            (numeric_bcd[23:20] & {4{text_col==NUMERIC_LEFT}}) |
-            (numeric_bcd[19:16] & {4{text_col==NUMERIC_LEFT+1}}) |
-            (numeric_bcd[15:12] & {4{text_col==NUMERIC_LEFT+2}}) |
-            (numeric_bcd[11:8]  & {4{text_col==NUMERIC_LEFT+4}}) |
-            (numeric_bcd[7:4]   & {4{text_col==NUMERIC_LEFT+5}}) |
-            (numeric_bcd[3:0]   & {4{text_col==NUMERIC_LEFT+6}});
+        decimal_digit=0;
+        case (numeric_col)
+            0: decimal_digit=numeric_bcd[23:20];
+            1: decimal_digit=numeric_bcd[19:16];
+            2: decimal_digit=numeric_bcd[15:12];
+            4: decimal_digit=numeric_bcd[11:8];
+            5: decimal_digit=numeric_bcd[7:4];
+            6: decimal_digit=numeric_bcd[3:0];
+            default: decimal_digit=0;
+        endcase
         if (numeric) begin
             if (numeric_valid)
-                character=text_col==NUMERIC_LEFT+3 ? "." : {4'h3,decimal_digit};
-            else case (text_col)
-                NUMERIC_LEFT: character="N";
-                NUMERIC_LEFT+1: character="/";
-                NUMERIC_LEFT+2: character="A";
+                character=numeric_col==3 ? "." : 8'h30+{4'd0,decimal_digit};
+            else case (numeric_col)
+                0: character="N"; 1: character="/"; 2: character="A";
                 default: character=" ";
             endcase
         end

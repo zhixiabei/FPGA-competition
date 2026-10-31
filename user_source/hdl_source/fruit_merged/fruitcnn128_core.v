@@ -38,7 +38,6 @@ module fruitcnn128_core(
     reg stride_two,pooling_active;
     wire [9:0] cin=descriptor[57:48],cout=descriptor[73:64];
     reg [7:0] iw,ih;
-    reg [12:0] row_width_select;
     wire [7:0] ow=descriptor[103:96],oh=descriptor[111:104];
     reg [15:0] src_plane;
     wire [15:0] dst_plane=descriptor[143:128];
@@ -171,32 +170,6 @@ module fruitcnn128_core(
             default:row_offset=0;
         endcase end
     endfunction
-    // Width is constant for an operation. Decode it at start, then combine
-    // fixed shifts in parallel so the live y coordinate does not traverse a
-    // wide case selector before address addition and cache-hit control.
-    function [15:0] decoded_row_offset;
-        input [7:0] y;
-        input [12:0] select_width;
-        reg [15:0] v,three_v;
-        begin
-            v={8'd0,y};
-            three_v={6'd0,({1'b0,y,1'b0}+{2'b0,y})};
-            decoded_row_offset=
-                (v       & {16{select_width[0]}}) |
-                ((v<<1)  & {16{select_width[1]}}) |
-                ((v<<2)  & {16{select_width[2]}}) |
-                ((v<<3)  & {16{select_width[3]}}) |
-                ((v<<4)  & {16{select_width[4]}}) |
-                ((v<<5)  & {16{select_width[5]}}) |
-                ((v<<6)  & {16{select_width[6]}}) |
-                ((v<<7)  & {16{select_width[7]}}) |
-                ((three_v<<1) & {16{select_width[8]}}) |
-                ((three_v<<2) & {16{select_width[9]}}) |
-                ((three_v<<3) & {16{select_width[10]}}) |
-                ((three_v<<4) & {16{select_width[11]}}) |
-                ((three_v<<5) & {16{select_width[12]}});
-        end
-    endfunction
     function [8:0] row_cache_words;
         input [9:0] channels;
         input [7:0] width;
@@ -232,7 +205,7 @@ module fruitcnn128_core(
     wire signed [10:0] sx=stride_two ? ix : $signed({3'd0,ox})-$signed({7'd0,padding})+$signed({7'd0,kx});
     wire signed [10:0] sy=stride_two ? iy : $signed({3'd0,oy})-$signed({7'd0,padding})+$signed({7'd0,ky});
     wire outside=sx<0 || sy<0 || sx>=iw || sy>=ih;
-    wire [15:0] conv_address=channel_offset+decoded_row_offset(sy[7:0],row_width_select)+sx[7:0];
+    wire [15:0] conv_address=channel_offset+row_offset(sy[7:0],iw)+sx[7:0];
     wire [8:0] row_cache_address=outside ? 9'd0 : cache_channel_offset+
         cache_row_offset(ky,iw)+{1'd0,sx[7:3]};
     wire signed [10:0] prefetch_y=(stride_two ? $signed({2'd0,oy,1'b0}) :
@@ -308,7 +281,6 @@ module fruitcnn128_core(
         if(!rst_n) begin
             state<=IDLE;active_group<=0;done<=0;fault<=0;issued<=0;received<=0;total<=0;
             kernel<=0;padding<=0;stride_two<=0;pooling_active<=0;iw<=0;ih<=0;src_plane<=0;
-            row_width_select<=0;
             first_weight_word<=0;term<=0;terms<=0;ic<=0;kx<=0;ky<=0;
             channel_offset<=0;cache_channel_offset<=0;ox<=0;oy<=0;pos<=0;tile_start<=0;area<=0;lane<=0;coefficient_lane<=0;
             store_lane<=0;pack_index<=0;store_addr<=0;store_word<=0;write_address<=0;
@@ -374,14 +346,6 @@ module fruitcnn128_core(
                     kernel<=descriptor[19:16];padding<=descriptor[35:32];
                     stride_two<=descriptor[27:24]==4'd2;
                     iw<=descriptor[87:80];ih<=descriptor[95:88];src_plane<=descriptor[127:112];
-                    row_width_select<={
-                        descriptor[87:80]==8'd96,descriptor[87:80]==8'd48,
-                        descriptor[87:80]==8'd24,descriptor[87:80]==8'd12,
-                        descriptor[87:80]==8'd6,descriptor[87:80]==8'd128,
-                        descriptor[87:80]==8'd64,descriptor[87:80]==8'd32,
-                        descriptor[87:80]==8'd16,descriptor[87:80]==8'd8,
-                        descriptor[87:80]==8'd4,descriptor[87:80]==8'd2,
-                        descriptor[87:80]==8'd1};
                     active_group<=0;issued<=0;received<=0;terms<=program_terms;area<=program_area;
                     activation_cache_valid<=0;activation_cache_valid_1<=0;
                     activation_cache_valid_2<=0;activation_cache_valid_3<=0;activation_replace<=0;
