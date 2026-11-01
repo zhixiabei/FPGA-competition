@@ -46,7 +46,8 @@ $sources = @(
     (Join-Path $projectRoot 'user_source\hdl_source\isp\rgb_edge_switch_96.v'),
     (Join-Path $PSScriptRoot 'tb_scharr_center_delay_equivalence.sv'),
     (Join-Path $PSScriptRoot 'tb_scharr_morphology_equivalence.sv'),
-    (Join-Path $PSScriptRoot 'tb_scharr_edge_detect_96.sv')
+    (Join-Path $PSScriptRoot 'tb_scharr_edge_detect_96.sv'),
+    (Join-Path $PSScriptRoot 'tb_rgb_selector_local_control.sv')
 )
 $compiledSources = @()
 $hashes = foreach ($source in $sources) {
@@ -92,6 +93,10 @@ $runs = @(
     [pscustomobject]@{
         Name='portable_image'; Library='portable'; ExtraTop=''; Setup=''
         Top='tb_scharr_edge_detect_96'; Pass='SCHARR_EDGE_TEST_PASS size=64x48 gaussian=1'
+    },
+    [pscustomobject]@{
+        Name='portable_selector'; Library='portable'; ExtraTop=''; Setup=''
+        Top='tb_rgb_selector_local_control'; Pass='RGB_SELECTOR_LOCAL_CONTROL_PASS modes=16'
     }
 )
 if ($SkipPortable) { $runs = @() }
@@ -124,6 +129,10 @@ if (-not $SkipVendor) {
         [pscustomobject]@{
             Name='vendor_image'; Library='vendor'; ExtraTop='vendor.PH1P_PHY_GSR'; Setup=''
             Top='tb_scharr_edge_detect_96'; Pass='SCHARR_EDGE_TEST_PASS size=64x48 gaussian=1'
+        },
+        [pscustomobject]@{
+            Name='vendor_selector'; Library='vendor'; ExtraTop='vendor.PH1P_PHY_GSR'; Setup=''
+            Top='tb_rgb_selector_local_control'; Pass='RGB_SELECTOR_LOCAL_CONTROL_PASS modes=16'
         }
     )
 }

@@ -8,6 +8,9 @@ set_false_path -from [get_ports {I_mode_key_n}]
 set_false_path -from [get_ports {I_detect_key_n}]
 set_false_path -from [get_ports {I_effect_key_n}]
 set_false_path -from [get_ports {I_latency_switch}]
+# SW3/SW4 are asynchronous; retain timing from meta to sync and debounce.
+set_false_path -from [get_ports {I_signature_switch}] -to [get_regs {u_signature_control/sw3/meta}]
+set_false_path -from [get_ports {I_signature_pause_switch}] -to [get_regs {u_signature_control/sw4/meta}]
 create_clock -name {mipi_rx_ck_pad} -period 2.415 -waveform {0.000 1.208} [get_nets {IO_rx_clk_pad_p}]
 
 derive_clocks
@@ -86,9 +89,9 @@ set_max_delay -datapath_only -from [get_regs {u_target_frame_bridge/S_read_paylo
 set_false_path -from [get_regs {u_detection_mode_control/O_detection_mode[*]}] -to [get_regs {u_isp_top/u_target_detect_switch/color_meta[*]}]
 # SW1 is sampled by the first HDMI synchronizer; the second stage remains timed.
 set_false_path -from [get_ports {I_latency_switch}] -to [get_regs {u_hdmi_mixer/latency_switch$show_meta}]
-# Appended to candidate SDC by prepare_handfixed_project.py only when CNN is
-# enabled. Base video projects must not constrain nonexistent CNN endpoints.
-set_false_path -from [get_ports {I_resnet_uart_rx}] -to [get_regs -nowarn {*u_handcnn/uart/rx_meta *u_handcnn/flash_model$status_uart/uart/rx_meta}]
+# Production loads the model from Flash with its diagnostic UART disabled.
+# I_resnet_uart_rx has no register fanout in this configuration. The active
+# voice UART first-stage exception is constrained separately below.
 # Exclude only the first asynchronous stages. The always-present key endpoint
 # keeps this collection valid when constant display enable removes enable_meta.
 set_false_path -from [get_ports {I_param_key_n I_fruit_switch}] -to [get_regs -nowarn {*u_handcnn/key_control/key_meta u_hdmi_mixer/cnn_visibility$enable_meta}]

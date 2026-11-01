@@ -93,19 +93,27 @@ module handfixed_preprocess(
                                cache_hit[2] ? 2'd2 : 2'd3;
     wire [7:0] cached_byte;
     wire cache_fill=(state==REQUEST || state==RESPONSE) && mem_rsp_valid;
-    // Four complete DDR beats are stored as 64 addressable bytes. The
-    // asymmetric distributed RAM replaces 512 resettable flip-flops and the
-    // 128-bit four-way data mux; the read remains a single synchronous beat.
-    PH1P_LOGIC_DRAM #(
-        .DATA_WIDTH_W(128),.DATA_WIDTH_R(8),
-        .ADDR_WIDTH_W(2),.ADDR_WIDTH_R(6),
-        .DATA_DEPTH_W(4),.DATA_DEPTH_R(64),
-        .READREG("ENABLE"),.RESETMODE("ASYNC"),
+    // Four DDR beats use block RAM to release distributed-memory sites near
+    // the DDR bridge. NOREG bypasses the optional output stage; the memory
+    // read itself remains synchronous, matching CACHE_GET's existing cycle.
+    PH1P_LOGIC_ERAM #(
+        .DATA_WIDTH_A(128),.DATA_WIDTH_B(8),
+        .ADDR_WIDTH_A(2),.ADDR_WIDTH_B(6),
+        .DATA_DEPTH_A(4),.DATA_DEPTH_B(64),
+        .MODE("PDPW"),.REGMODE_A("NOREG"),.REGMODE_B("NOREG"),
+        .WRITEMODE_A("NORMAL"),.WRITEMODE_B("NORMAL"),
+        .IMPLEMENT("20K(FAST)"),.CLKMODE("SYNC"),
+        .RESETMODE_B("ASYNC"),.OREGSET_B("RESET"),
+        .ASYNC_RESET_RELEASE_B("ASYNC"),
+        .ECC_ENCODE("DISABLE"),.ECC_DECODE("DISABLE"),
         .INIT_FILE("NONE"),.FILL_ALL("NONE")
     ) cache_memory(
-        .di(mem_rsp_data),.waddr(cache_next),.we(cache_fill),.wclk(clk),
-        .raddr({cache_hit_line,4'd15-sample_address[3:0]}),
-        .rclk(clk),.rrst(!rst_n),.rce(1'b1),.rdo(),.rdoq(cached_byte)
+        .clka(clk),.clkb(clk),.cea(cache_fill),.ceb(1'b1),
+        .ocea(1'b0),.oceb(1'b0),.wea(cache_fill),.web(1'b0),
+        .rsta(1'b0),.rstb(!rst_n),.bea(1'b0),.beb(1'b0),
+        .addra(cache_next),.addrb({cache_hit_line,4'd15-sample_address[3:0]}),
+        .dia(mem_rsp_data),.dib(8'd0),.doa(),.dob(cached_byte),
+        .ecc_sbiterr(),.ecc_dbiterr(),.ecc_sbiterrinj(1'b0),.ecc_dbiterrinj(1'b0)
     );
     wire [127:0] store_word;
     // The three 128-bit DDR write beats are assembled from 24 normalized

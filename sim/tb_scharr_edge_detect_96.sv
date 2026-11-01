@@ -243,8 +243,14 @@ module tb_scharr_edge_detect_96 #(
                input integer f,input integer offset);
         integer i,x,y,index,pair_index;
         reg [95:0] selected;
+        reg [6:0] selector_meta;
         begin
             @(negedge clk);valid=v;user=u;last=l;data=d;
+            selector_meta={qv[LAT-1],qu[LAT-1],ql[LAT-1],qm[LAT-1]};
+            selected=(qm[LAT-1]==4'd2 || qm[LAT-1]==4'd7) ? qs[LAT-1] :
+                     qm[LAT-1]==4'd4 ? qb[LAT-1] :
+                     qm[LAT-1]==4'd6 ? qcs[LAT-1] :
+                     qm[LAT-1]==4'd8 ? qg[LAT-1] : qr[LAT-1];
             for(i=LAT-1;i>0;i=i-1)begin
                 qv[i]=qv[i-1];qu[i]=qu[i-1];ql[i]=ql[i-1];qm[i]=qm[i-1];
                 qe[i]=qe[i-1];qr[i]=qr[i-1];qs[i]=qs[i-1];qb[i]=qb[i-1];
@@ -267,7 +273,7 @@ module tb_scharr_edge_detect_96 #(
             if(l)sent_lines=sent_lines+1;
             @(posedge clk);#1;
             if({ev,eu,el,sv,su,sl}!==
-                {qv[LAT-1],qu[LAT-1],ql[LAT-1],qv[LAT-1],qu[LAT-1],ql[LAT-1]})
+                {qv[LAT-1],qu[LAT-1],ql[LAT-1],selector_meta[6:4]})
                 $fatal(1,"Marker mismatch cycle=%0d",checked);
             if(edge_data!==qe[LAT-1])
                 $fatal(1,"Pixel mismatch frame=%0d endpoint=(%0d,%0d) expected=%h actual=%h",
@@ -281,19 +287,17 @@ module tb_scharr_edge_detect_96 #(
             if(morph_data!==qg[LAT-1])
                 $fatal(1,"Morphology mismatch frame=%0d endpoint=(%0d,%0d) expected=%h actual=%h",
                     qf[LAT-1],qo[LAT-1]%W,qo[LAT-1]/W,qg[LAT-1],morph_data);
-            selected=(qm[LAT-1]==4'd2 || qm[LAT-1]==4'd7) ? qs[LAT-1] :
-                     qm[LAT-1]==4'd4 ? qb[LAT-1] :
-                     qm[LAT-1]==4'd6 ? qcs[LAT-1] :
-                     qm[LAT-1]==4'd8 ? qg[LAT-1] : qr[LAT-1];
-            if(mode!==(qm[LAT-1]==4'd2) ||
-                switch_config!=={qm[LAT-1],8'd0} ||
+            if(mode!==(selector_meta[3:0]==4'd2) ||
+                switch_config!=={selector_meta[3:0],8'd0} ||
                 switch_data!==selected)
                 $fatal(1,"RGB/mode mismatch cycle=%0d",checked);
+            if(sv)begin
+                modes_seen[selector_meta[3:0]]=1'b1;
+                if(selector_meta[3:0]==4'd7)inverse_selector_pixels=inverse_selector_pixels+4;
+                if(selector_meta[3:0]==4'd8)morph_selector_pixels=morph_selector_pixels+4;
+            end
             if(ev)begin
                 pixels=pixels+4;
-                modes_seen[qm[LAT-1]]=1'b1;
-                if(qm[LAT-1]==4'd7)inverse_selector_pixels=inverse_selector_pixels+4;
-                if(qm[LAT-1]==4'd8)morph_selector_pixels=morph_selector_pixels+4;
                 for(i=0;i<4;i=i+1)begin
                     if(edge_data[95-i*24 -:24]==24'hffffff)
                         whites[qf[LAT-1]]=whites[qf[LAT-1]]+1;

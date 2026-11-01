@@ -78,6 +78,7 @@ def main():
         parameters, dependencies = {}, []
         if case == 'pen':
             top = 'pen_minimal'
+            parameters = {'CANVAS_SHIFT': 2, 'SMOOTH_ENABLE': 0}
         elif case == 'control':
             top = 'signature_control'
         elif case in {'reader_before', 'reader_after'}:
@@ -87,7 +88,8 @@ def main():
         elif case in {'mixer_before', 'mixer_after'}:
             top = 'hdmi_mixer'
             parameters = {'H_OFFSET': 0, 'V_OFFSET': 0, 'SHOW_COLOR_TARGET': 1,
-                          'MULTI_TARGET_ENABLE': 1, 'TARGET_SLOTS': 1,
+                          'MULTI_TARGET_ENABLE': 0, 'SINGLE_SHAPE_ENABLE': 1,
+                          'TARGET_SLOTS': 1,
                           'SHOW_LATENCY': 1, 'LATENCY_SWITCH_ENABLE': 1, 'SHOW_EFFECT_LABEL': 1,
                           'SHOW_CNN': 1, 'HANDCNN_DYNAMIC_ROI': 1, 'FRUIT_CNN': 1,
                           'CNN_RESULT_TIMEOUT_FRAMES': 0, 'SIGNATURE_ENABLE': int(case.endswith('after'))}

@@ -11,6 +11,7 @@ module tb_signature_mixer;
     wire ode,ohs,ovs,rd;
     wire [23:0] orgb;
     integer f,xx=0,yy=0,j,tx,slot,checks=0,pixels=0,restored_pixels=0;
+    localparam integer SIGNATURE_SHIFT=2;
     reg cells[0:79];
     reg [2:0] ed=0,eh=0,ev=0;
     reg [23:0] ec0=0,ec1=0,ec2=0;
@@ -28,7 +29,8 @@ module tb_signature_mixer;
         camera={channel(x,corrected),channel(y,corrected),channel(x+y,corrected)};
     endfunction
     hdmi_mixer #(.IMG_WIDTH(W),.IMG_HEIGHT(H),.SIGNATURE_ENABLE(1),
-        .SHOW_COLOR_TARGET(1),.MULTI_TARGET_ENABLE(1),.TARGET_SLOTS(1),
+        .SHOW_COLOR_TARGET(1),.MULTI_TARGET_ENABLE(0),.SINGLE_SHAPE_ENABLE(1),
+        .TARGET_SLOTS(1),
         .SHOW_EFFECT_LABEL(1),.SHOW_CNN(1),.FRUIT_CNN(1)) dut (
         .I_clk(clk),.I_rst_n(rst),.I_video_vsync(vs),.I_video_hsync(hs),
         .I_video_de(de),.I_video_user(user),.I_video_last(last),
@@ -50,7 +52,7 @@ module tb_signature_mixer;
         if(!rst) begin ed=0;eh=0;ev=0;ec0=0;ec1=0;ec2=0;end
         else begin
             ec2=ec1;ec1=ec0;
-            ec0=!de ? 0 : (yy>=80 && yy<84 && cells[xx/4]) ? 24'hff3030 : camera(xx,yy,1);
+            ec0=!de ? 0 : (yy>=80 && yy<84 && cells[xx>>SIGNATURE_SHIFT]) ? 24'hff3030 : camera(xx,yy,1);
             ed={ed[1:0],de};eh={eh[1:0],hs};ev={ev[1:0],vs};
             #1;
             if(rd!==de || ode!==ed[2] || ohs!==eh[2] || ovs!==ev[2])
@@ -71,15 +73,15 @@ module tb_signature_mixer;
             tx=80;slot=0;
             case(f)
                 1: begin tx=80;cells[20]=1;end
-                2: begin tx=112;for(j=20;j<=24;j++) cells[j]=1;end
+                2: begin tx=112;for(j=20;j<=28;j++) cells[j]=1;end
                 3: tx=144;
                 4: begin tx=176;cells[44]=1;end
-                5: begin tx=208;hold=1;end
-                6: begin tx=224;cells[56]=1;end
+                5: begin tx=208;hold=1;for(j=44;j<=52;j++) cells[j]=1;end
+                6: begin tx=224;for(j=44;j<=56;j++) cells[j]=1;end
                 7: valid=0;
                 8: begin tx=256;cells[64]=1;end
                 9: tx=288;
-                10: begin tx=288;valid=3;end
+                10: begin tx=288;valid=3;cells[72]=1;end
                 11: tx=288;
                 12: for(j=0;j<80;j++) cells[j]=0;
                 14: begin tx=40;cells[10]=1;end

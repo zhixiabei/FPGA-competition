@@ -20,6 +20,12 @@ module tb_target_frame_bridge_single_payload;
 
     wire [297:0] full_tuple, single_tuple;
     wire full_mirror,single_mirror;
+    wire write_complete;
+    video_ddr_write_progress #(.FRAME_WORDS(4)) write_progress (
+        .I_clk(ddr_clk), .I_rst_n(rst_n), .I_write_start(write_start),
+        .I_write_word(write_word), .O_bridge_complete(write_complete),
+        .O_latency_complete()
+    );
 
 `define BRIDGE_INPUTS \
         .I_csi_clk(csi_clk), .I_ddr_clk(ddr_clk), .I_hdmi_clk(hdmi_clk), \
@@ -35,7 +41,7 @@ module tb_target_frame_bridge_single_payload;
         .I_multi_boxes(multi_boxes), .I_multi_shapes(multi_shapes), \
         .I_multi_overflow(multi_overflow), .I_write_start(write_start), \
         .I_write_slot(write_slot), .I_write_word(write_word), \
-        .I_read_start(read_start), .I_read_slot(read_slot), .I_write_complete(1'b0)
+        .I_read_start(read_start), .I_read_slot(read_slot), .I_write_complete(write_complete)
 
 `define BRIDGE_OUTPUTS(T) \
         .O_ready(T[297]), .O_effect_config(T[296:285]), \
@@ -52,10 +58,40 @@ module tb_target_frame_bridge_single_payload;
     );
     target_frame_bridge #(
         .FRAME_WORDS(4), .COMPACT_MODE_PAYLOAD(1), .SINGLE_TARGET_ONLY(1),
+        .USE_EXTERNAL_WRITE_PROGRESS(1),
         .RESULT_PENDING_ENABLE(0), .READ_PENDING_ENABLE(0)
     ) single (
         `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(single_tuple),.O_read_mirror(single_mirror)
     );
+
+`ifdef BRIDGE_ROUTING_REFERENCE
+    wire [297:0] reference_tuple;
+    wire reference_mirror;
+    integer cycle_checks=0, stress_frame;
+    target_frame_bridge_reference #(
+        .FRAME_WORDS(4), .COMPACT_MODE_PAYLOAD(1), .SINGLE_TARGET_ONLY(1),
+        .USE_EXTERNAL_WRITE_PROGRESS(1),
+        .RESULT_PENDING_ENABLE(0), .READ_PENDING_ENABLE(0)
+    ) reference (
+        `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(reference_tuple),.O_read_mirror(reference_mirror)
+    );
+    always @(posedge ddr_clk) begin
+        #1;
+        if (rst_n) begin
+            if (single_mirror !== reference_mirror ||
+                single.S_read_payload !== reference.S_read_payload ||
+                single.S_result_ack !== reference.S_result_ack ||
+                single.S_slot_result_valid !== reference.S_slot_result_valid)
+                $fatal(1,"Bridge routing changed DDR data/control at %t",$time);
+            cycle_checks=cycle_checks+1;
+        end
+    end
+    always @(posedge hdmi_clk) begin
+        #1;
+        if (rst_n && single_tuple !== reference_tuple)
+            $fatal(1,"Bridge routing changed HDMI data/latency at %t",$time);
+    end
+`endif
 
 `undef BRIDGE_INPUTS
 `undef BRIDGE_OUTPUTS
@@ -240,6 +276,36 @@ module tb_target_frame_bridge_single_payload;
         if(single_mirror!==0 || full_mirror!==0 || single_tuple[296:285]!==12'h900)
             $fatal(1,"Binary display must restore forward read order");
 
+`ifdef BRIDGE_ROUTING_REFERENCE
+        // Reused/duplicate slots, ID wrap, all effects and reads while a
+        // result is crossing exercise the physical storage substitution.
+        for (stress_frame=0; stress_frame<64; stress_frame=stress_frame+1) begin
+            start_frame(10'(1000+stress_frame),12'(stress_frame<<8),0,2);
+            if (stress_frame%3==0) begin
+                publish_color_result(10'(1000+stress_frame));
+                repeat (24) @(negedge csi_clk);
+            end
+            start_write_slot(2'(stress_frame));
+            if (stress_frame%4==0)
+                start_write_slot(2'(stress_frame+1));
+            select_frame_slot(2'(stress_frame));
+            complete_frame_write();
+            fork
+                publish_color_result(10'(1000+stress_frame));
+                begin
+                    repeat (3) @(negedge ddr_clk);
+                    select_frame_slot(2'(stress_frame));
+                end
+            join
+            select_frame_slot(2'(stress_frame+1));
+            if (stress_frame==31) begin
+                @(negedge csi_clk); rst_n=0;
+                repeat (8) @(negedge csi_clk);
+                rst_n=1;
+            end
+        end
+        $display("TARGET_FRAME_BRIDGE_ROUTING_EQUIVALENCE_PASS cycles=%0d frames=64 reset=1 external_progress=1 latency_delta=0",cycle_checks);
+`endif
         $display("TARGET_FRAME_BRIDGE_SINGLE_PAYLOAD_PASS body_bits=%0d result_bits=%0d read_bits=%0d slots=4 geometry=color+motion freeze=1 signature=1 queues=0",
             $bits(single.S_slot_result_ram),$bits(single.S_result_payload),
             $bits(single.S_read_payload));

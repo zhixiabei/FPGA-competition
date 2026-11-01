@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 module tb_pen_minimal;
     parameter integer SHIFT=2;
-    parameter integer SMOOTH=1;
+    parameter integer SMOOTH=0;
     localparam integer JUMP=96>>SHIFT;
     localparam integer W=1280,H=720,CW=W>>SHIFT,CH=H>>SHIFT,DEPTH=CW*CH;
     reg clk=0;

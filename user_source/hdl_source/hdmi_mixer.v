@@ -22,6 +22,7 @@ module hdmi_mixer #(
     parameter integer SHOW_RESNET_RUNTIME = 0,
     parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60,
     parameter integer MULTI_TARGET_ENABLE = 0,
+    parameter integer SINGLE_SHAPE_ENABLE = 0,
     // Limit retained target state and replicated box/label rendering.
     parameter integer TARGET_SLOTS = 4,
     parameter integer SIGNATURE_ENABLE = 0
@@ -184,19 +185,19 @@ module hdmi_mixer #(
     wire S_signature_active = SIGNATURE_ENABLE != 0 && S_effect_mode == 4'd13;
     wire S_signature_ink_2d;
     generate if(SIGNATURE_ENABLE != 0) begin: signature
-        // Reuse the frame-aligned primary center; no extra box bus or detector.
+        // Reuse the frame-aligned primary center. Handwriting only needs a
+        // current red target; slot/overflow metadata must not suppress ink.
         wire [10:0] mirrored_x = (IMG_WIDTH-1)-I_target_center_x[10:0];
         wire pen_valid = I_target_result_ready && I_target_found &&
             !I_target_motion_mode && I_target_color_mode==0 &&
-            !I_target_multi_overflow && I_target_multi_valid==4'b0001 &&
             I_target_center_x<IMG_WIDTH && I_target_center_y<IMG_HEIGHT;
         wire ink;
         reg ink_2d;
         pen_minimal #(.IMG_WIDTH(IMG_WIDTH),.IMG_HEIGHT(IMG_HEIGHT),
-            .CANVAS_SHIFT(2),.SMOOTH_ENABLE(1)) u_pen (
+            .CANVAS_SHIFT(2),.SMOOTH_ENABLE(0)) u_pen (
             .I_clk(I_clk),.I_rst_n(I_rst_n),.I_frame_start(I_video_user),
             .I_enable(I_effect_mode==4'd13),.I_pause(I_effect_param[0]),.I_clear(1'b0),
-            .I_pen_valid(pen_valid),.I_pen_hold(I_target_multi_hold[0]),
+            .I_pen_valid(pen_valid),.I_pen_hold(1'b0),
             .I_pen_x(mirrored_x),.I_pen_y(I_target_center_y[9:0]),
             .I_de(I_video_de),.I_x(S_logo_input_x[10:0]),.I_y(S_logo_input_y[9:0]),
             .O_ink(ink),.O_busy(),.O_clearing()
@@ -893,7 +894,10 @@ module hdmi_mixer #(
         assign S_multi_overflow = 1'b0;
         assign S_multi_box_on = 1'b0;
         assign S_multi_box_color = 24'd0;
-        assign S_target_primary_shape = 2'd0;
+        // The single-target detector publishes its shape in the low two bits
+        // of the compatibility result bus. No slot layout logic is required.
+        assign S_target_primary_shape = SINGLE_SHAPE_ENABLE != 0 ?
+            I_target_multi_shapes[1:0] : 2'd0;
         assign S_follow_panel_on = 1'b0;
         assign S_follow_color = 24'd0;
         assign S_follow_char = 8'h20;
@@ -925,7 +929,8 @@ module hdmi_mixer #(
     wire [15:0] S_target_char_bits;
     always @(*) begin
         S_target_char = 8'h20;
-        if (MULTI_TARGET_ENABLE != 0 && TARGET_SLOTS <= 1) begin
+        if ((MULTI_TARGET_ENABLE != 0 && TARGET_SLOTS <= 1) ||
+            SINGLE_SHAPE_ENABLE != 0) begin
             case (S_target_char_index)
                 0: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,0);
                 1: S_target_char = F_target_mode_char(S_target_motion_mode,S_target_color_mode,1);

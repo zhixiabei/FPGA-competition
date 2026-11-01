@@ -78,6 +78,21 @@ module fruitcnn128_core(
     (* ram_style="bram" *) reg [191:0] weight_cache[0:511];
     reg [9:0] term,terms,ic;
     reg [127:0] first_weight_word;
+    // Each 32-bit bank gets a local copy of the existing return-valid stage.
+    // Preserve the copies so mapping cannot recreate the 128-load enable.
+    // Data is initialized by the first beat before any paired RAM write.
+    genvar first_bank;
+    generate for(first_bank=0;first_bank<4;first_bank=first_bank+1) begin: first_weight_banks
+        (* preserve=1 *) reg return_valid;
+        always @(posedge clk or negedge rst_n) begin
+            if(!rst_n) return_valid<=0;
+            else return_valid<=mem_rsp_valid;
+        end
+        always @(posedge clk) begin
+            if(state==WEIGHTS && return_valid && !received[0])
+                first_weight_word[first_bank*32+:32]<=response_data[first_bank*32+:32];
+        end
+    end endgenerate
     // Cache/DDR consumers use one A12 value per cycle. Select it before
     // the existing register instead of carrying an entire eight-value word.
     reg [11:0] input_sample;
@@ -326,7 +341,7 @@ module fruitcnn128_core(
         if(!rst_n) begin
             state<=IDLE;active_group<=0;done<=0;fault<=0;issued<=0;received<=0;total<=0;
             kernel<=0;padding<=0;stride_two<=0;pooling_active<=0;iw<=0;ih<=0;src_plane<=0;
-            first_weight_word<=0;term<=0;terms<=0;ic<=0;kx<=0;ky<=0;
+            term<=0;terms<=0;ic<=0;kx<=0;ky<=0;
             channel_offset<=0;cache_channel_offset<=0;ox<=0;oy<=0;pos<=0;tile_start<=0;area<=0;lane<=0;coefficient_lane<=0;
             store_lane<=0;pack_index<=0;store_addr<=0;store_word<=0;write_address<=0;
             pipe_valid<=0;pipe_first<=0;pipe_padding<=0;pipe_offset<=0;
@@ -406,7 +421,6 @@ module fruitcnn128_core(
                     end
                 end
                 WEIGHTS:begin
-                    if(response_valid && !received[0]) first_weight_word<=response_data;
                     if(response_valid && received==total-1) begin
                         issued<=0;received<=0;total<=12;state<=COEFF;
                     end

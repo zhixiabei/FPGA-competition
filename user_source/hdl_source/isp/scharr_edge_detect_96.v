@@ -481,6 +481,7 @@ module scharr_window_4 #(
     wire enable=rst_n&&valid;
     wire [B-1:0] top,middle;
     reg vd,ud,ld;
+    (* preserve=1 *) reg vd_bottom,vd_top_tail,vd_middle_tail,vd_bottom_tail;
 `ifdef SCHARR_PORTABLE_RAM
     reg [B-1:0] rows[0:DEPTH-1];
     reg [B-1:0] top_read,middle_read;
@@ -532,11 +533,14 @@ module scharr_window_4 #(
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
             x<=0;y<=0;xd<=0;yd<=0;vd<=0;ud<=0;ld<=0;bottom<=0;
+            vd_bottom<=0;vd_top_tail<=0;vd_middle_tail<=0;vd_bottom_tail<=0;
             bottom_output<=0;
             out_valid<=0;out_user<=0;out_last<=0;ok<=0;
             out_x<=0;out_y<=0;top_tail<=0;middle_tail<=0;bottom_tail<=0;
         end else begin
             vd<=valid;ud<=user;ld<=last;
+            vd_bottom<=valid;vd_top_tail<=valid;
+            vd_middle_tail<=valid;vd_bottom_tail<=valid;
             if(user) begin x<=0;y<=0;end
             if(valid) begin
                 xd<=rx;yd<=ry;bottom<=word;
@@ -552,15 +556,15 @@ module scharr_window_4 #(
             out_valid<=vd;out_user<=ud;out_last<=ld;ok<=0;
             if(vd) begin
                 out_x<=xd;out_y<=yd;
-                bottom_output<=bottom;
-                // These capture the OLD registered RAM outputs while the
-                // RAM outputs advance to the current group at this edge.
-                top_tail<=top[2*DATA_WIDTH-1:0];
-                middle_tail<=middle[2*DATA_WIDTH-1:0];
-                bottom_tail<=bottom_output[2*DATA_WIDTH-1:0];
                 for(k=0;k<4;k=k+1) if(yd>=2&&(xd!=0||k>=2))
                     ok[3-k]<=1'b1;
             end
+            // Same-cycle enables keep the wide data groups local. Tails
+            // still sample the OLD RAM outputs, and hold across bubbles.
+            if(vd_bottom) bottom_output<=bottom;
+            if(vd_top_tail) top_tail<=top[2*DATA_WIDTH-1:0];
+            if(vd_middle_tail) middle_tail<=middle[2*DATA_WIDTH-1:0];
+            if(vd_bottom_tail) bottom_tail<=bottom_output[2*DATA_WIDTH-1:0];
         end
     end
     // Row-start tails are intentionally unspecified; the final six-column

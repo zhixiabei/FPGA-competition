@@ -478,6 +478,22 @@ module target_frame_bridge #(
         S_last_result_payload[BODY_WIDTH-1:0] :
         S_result_payload[BODY_WIDTH-1:0];
 
+    reg [4*BODY_WIDTH-1:0] S_slot_result_storage;
+    genvar record_bank;
+    generate if (SINGLE_TARGET_ONLY) begin : g_slot_registers
+        // Four shallow records can sit beside their consumers instead of
+        // routing the whole mailbox to a distributed-RAM column. Preserve
+        // the RAM write mask and asynchronous read, including same-edge reads.
+        for (record_bank=0; record_bank<4; record_bank=record_bank+1) begin : g_record
+            always @(posedge I_ddr_clk) begin
+                if (S_ram_write_mask[record_bank])
+                    S_slot_result_storage[record_bank*BODY_WIDTH +: BODY_WIDTH] <=
+                        S_ram_write_data;
+            end
+        end
+        assign S_slot_result_ram =
+            S_slot_result_storage[I_read_slot*BODY_WIDTH +: BODY_WIDTH];
+    end else begin : g_slot_ram
     PH1P_LOGIC_DRAM #(
         .DATA_WIDTH_W(BODY_WIDTH),.DATA_WIDTH_R(BODY_WIDTH),
         .ADDR_WIDTH_W(2),.ADDR_WIDTH_R(2),
@@ -490,6 +506,7 @@ module target_frame_bridge #(
         .raddr(I_read_slot),.rclk(I_ddr_clk),.rrst(!I_rst_n),.rce(1'b1),
         .rdo(S_slot_result_ram),.rdoq()
     );
+    end endgenerate
 
     // synthesis translate_off
     reg [BODY_WIDTH-1:0] S_slot_result [0:3];

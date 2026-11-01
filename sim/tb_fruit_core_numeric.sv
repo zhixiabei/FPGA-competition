@@ -406,7 +406,13 @@ module tb_fruit_core_numeric;
         begin_operation(); finish_operation();
         configure(703, 4, 2, 1, 1, 0, 2, 5, 0, 0, 2, 1);
         begin_operation(); finish_operation();
-        $display("FRUIT_CORE_NUMERIC_PASS cases=%0d reset_pending_response=1 signed_A12_W8 saturation_relu=1 weight_tail=1 multigroup=1 restart_geometry=4",
+        // The 64-wide layer fills all 288 row-cache words. Exercise its last
+        // channel/word/sample and the 128-wide input's 16 words per row.
+        configure(800, 64, 3, 3, 1, 1, 12, 2, 0, 0, 2, 1);
+        begin_operation(); finish_operation();
+        configure(801, 128, 3, 3, 2, 1, 3, 2, 0, 1, 2, 1);
+        begin_operation(); finish_operation();
+        $display("FRUIT_CORE_NUMERIC_PASS cases=%0d reset_pending_response=1 signed_A12_W8 saturation_relu=1 weight_tail=1 multigroup=1 restart_geometry=6 full_row_cache=1 width128=1",
                  cases_passed);
         $finish;
     end

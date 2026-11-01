@@ -1532,7 +1532,8 @@ end endgenerate
         .DEBUG_MODE ( 0    ),
         .SHOW_CAMERA_STATUS ( 0 ), // Hide camera verification dots and fault-code overlay.
         .SHOW_COLOR_TARGET  ( 1 ),
-        .MULTI_TARGET_ENABLE( FRAME_ALIGNED_TARGET_ENABLE ),
+        .MULTI_TARGET_ENABLE( RED_MULTI_ENABLE ),
+        .SINGLE_SHAPE_ENABLE( SINGLE_SHAPE_ENABLE ),
         .TARGET_SLOTS( RED_MULTI_ENABLE ? 4 : 1 ),
         .SIGNATURE_ENABLE(1),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.

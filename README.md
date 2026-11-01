@@ -2,7 +2,7 @@
 
 当前主工程为 [anlogic_edge_osd.al](td_project/anlogic_edge_osd.al)，顶层 `design_top_wrapper`，器件 PH1P35MDG324。工程状态见 [当前工程说明](td_project/当前工程说明.md)。
 
-2026-11-01 已融合 GitHub `71ce808` 与本地单目标形状修复，使用新的 RGB 背景比较、连续扫描确认和确认空框后清除标签逻辑。形状分支修复了内部小孔导致轮廓截断的问题。当前源码尚未完成最终布局布线验收，目录中的旧 bit 不代表当前源码。
+2026-11-01 已融合 GitHub `71ce808`、单目标形状修复和镜头签名功能。当前版本已完成整机重新综合、布局、布线和 bit 生成：41101 条网络全部布通，open net 为 0，Setup WNS `+0.100 ns`，Hold WNS `+0.020 ns`。
 
 ## 操作
 
@@ -21,7 +21,7 @@
 
 镜头签名移植自 `Signature_Smooth_4x4` 的 `pen_minimal` 核心。开启 SW3 后，以画面中明显的红色标记中心书写，画面水平镜像，笔迹为红色；使用现有红色目标检测，标记需要满足其面积和连续确认条件。暂停、目标丢失或坐标大幅跳变时断笔，画布坐标的跳变门限约为 96 像素。签名时隐藏目标框和水果面板，SW1 延迟面板仍可用；SW2 的计算、称重与语音控制保持原样。签名使用内部模式 13，K1 原来的 0–12 模式保持不变，退出后检测恢复 K2 所选模式。
 
-画布为 320×180 单色位图，每格对应 4×4 像素，不占 DDR 视频带宽。镜像复用原来的读地址与像素拆包，不增加彩色帧缓存；新增笔迹在 HDMI 时钟域完成。局部综合对照显示叠加部分增加 327 Slice、4 ERAM、0 DSP，开关控制独立综合为 88 Slice。此为局部综合估计，不是整机最终占用或布通保证。当前源码没有生成新的 bit，也未操作板上权重。
+画布为 320×180 单色位图，每格对应 4×4 像素，不占 DDR 视频带宽。镜像复用原来的读地址与像素拆包，不增加彩色帧缓存；新增笔迹在 HDMI 时钟域完成。最终整机占用为 20123/21216 Slice、104/108 ERAM、39/40 DSP。本次只生成 bit，没有操作板卡，也不会覆盖 U30 中已经烧入的新权重。
 
 单价依次为 8、6、12、5、20 元/kg。总价四舍五入到分，无有效识别、未校准、传感器故障或金额超过 99.99 元时不显示有效价格。HX711 接线、去皮、校准和自动播报见 [接线与语音说明](docs/CX_SP5T_MAIN_INTEGRATION.md)。
 
@@ -34,9 +34,9 @@
 | `sim/`、`verification/` | 测试台、回归脚本、静态检查 |
 | `fruitcnn128_retrained_20261031/` | 最佳模型检查点和少量归档信息，不参与主工程编译 |
 | `docs/reference/`、`docs/proposals/` | 硬件资料、开题 Word/PDF 及生成源 |
-| `build/` | 当前形状修复、融合及清理记录，不进入 Git |
+| `build/release/` | 当前通过版的布局布线、时序和构建清单 |
 
-`build_firmware.cmd` 只构建当前统一工程，兼容 `-Fruit` 参数。旧手势及备用工程入口已撤下。构建会启动 FPGA 工具；检查源码无需运行它。
+TD GUI 可直接打开 `td_project/anlogic_edge_osd.al`。工程已固定为 `CongestionHigh`、Place seed `1` 和压缩 bit；开始运行前应关闭旧 TD 窗口后重新打开工程，确保加载更新后的配置。`build_firmware.cmd` 保留为命令行验收入口。
 
 ## 模型与验证
 
@@ -48,7 +48,7 @@
 python -B verification/check_merge_readiness.py
 ```
 
-局部测试命令见 [仿真入口](sim/README.md)。本次融合已完成的结果见 [融合记录](verification/github_merge_20261101.md) 和 [形状修复记录](verification/single_shape_contour_20261101.md)；仿真通过不能代替物理时序和上板验收。
+局部测试位于 `sim/`，整机构建验收由 `verification/run_image_quality_build.ps1` 完成。固定发布 bit 位于 `td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。
 
 ## 文档入口
 
@@ -59,6 +59,4 @@ python -B verification/check_merge_readiness.py
 - [RAW 诊断](docs/RAW_STATS_GUIDE.md)
 - [参考资料导航](docs/参考资料导航.md)
 
-旧实验基准及配套脚本、备用工程、旧手势流程、训练图片与训练入口已清理。完整 RTL/IP、约束、当前回归和硬件资料保留；TD 正在使用的输出目录保留。
-
-删除清单在 `verification/workspace_cleanup_20261101.json`，本机清理与输入哈希记录在 `build/cleanup_current_20261101/`。精简不改变现有硬件逻辑，也不代表此前的物理拥塞已解决。
+旧实验构建、历史 TD 日志和旧 `syn_1/phy_1` 已清理。完整 RTL/IP、约束、当前回归、硬件资料、`build/release` 和通过版 `best_result` 保留。

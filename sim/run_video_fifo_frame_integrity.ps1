@@ -21,7 +21,8 @@ $sources = @(
     'user_source\hdl_source\video_out.v',
     'user_source\ip_source\w128_d512_fifo\w128_d512_fifo.v',
     'user_source\ip_source\w128_d512_fifo\soft_fifo_al_4057d6b76aa6.v',
-    'sim\tb_video_fifo_frame_integrity.sv'
+    'sim\tb_video_fifo_frame_integrity.sv',
+    'sim\tb_video_packer_pipeline.sv'
 )
 if($RawSource) {
     $sources += @(
@@ -65,6 +66,10 @@ onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
 vlog -sv $tclSources
+vsim -t ps work.tb_video_packer_pipeline
+onfinish stop
+run -all
+quit -sim
 foreach phase {0.3 4.3 9.3 14.3} {
     vsim -t ps -gH=32 -gRAW_SOURCE=$rawParameter -gDDR_PHASE=`$phase work.tb_video_fifo_frame_integrity work.PH1P_PHY_GSR
     onfinish stop
@@ -102,6 +107,9 @@ try {
     if ($console -match '(?im)^\s*(?:#\s*)?\*\*\s+(?:Fatal|Error)\b') {
         throw "Video FIFO simulation reported a fatal/error; see $simulationDir\console.log"
     }
+    $packerPass=Select-String -LiteralPath console.log -Pattern '^# VIDEO_PACKER_PIPELINE_PASS'
+    if(-not $packerPass) {throw "Packer pipeline test did not pass: $simulationDir/console.log"}
+    $packerPass.Line -replace '^#\s*', ''
     $writerPasses = [regex]::Matches($console,
         '(?m)^\s*(?:#\s*)?FIFO_FRAME_INTEGRITY_PASS H=(?<height>\d+) phase=(?<phase>[\d.]+) frames=(?<frames>\d+) bytes=(?<bytes>\d+)\s*$')
     $readerPasses = [regex]::Matches($console,

@@ -1,11 +1,17 @@
 param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute,
       [switch] $GenerateBit, [string] $OutputDirectory='',
-      [hashtable] $ResourceLimits=@{}, [int] $PlaceSeed=1)
+      [hashtable] $ResourceLimits=@{}, [int] $PlaceSeed=1,
+      [ValidateSet('','CongestionHigh','CongestionMedium')]
+      [string] $PhysicalStrategy='', [string] $ResumeGateSnapshot='',
+      [string] $ResumePlaceSnapshot='', [string] $CoreRtlOverride='')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($GenerateBit -and $SkipRoute) {throw 'Bit generation requires final routed timing checks'}
 if($ResourceLimits.Count -and $SkipRoute) {throw 'Resource limits require final routing'}
 if($PlaceSeed -lt -1) {throw 'Place seed must be -1 (tool default) or a non-negative integer'}
+if($ResumeGateSnapshot -and $ResumePlaceSnapshot) {throw 'Choose one resume stage'}
+if($ResumePlaceSnapshot -and $SkipRoute) {throw 'Placed snapshot resume requires routing'}
+if($CoreRtlOverride -and $GenerateBit) {throw 'Diagnostic RTL overrides cannot publish a release'}
 foreach($resource in @($ResourceLimits.Keys)) {
     $limit=0
     if($resource -notin @('slice','lut6','reg','eram','dsp') -or
@@ -112,6 +118,86 @@ function Publish-ReleaseFiles([object[]] $Files,[string] $BackupDirectory) {
             }
         }
     }
+}
+
+function Assert-RouteCompletion([string] $StatusPath,[string] $ConsoleText) {
+    $status=[IO.File]::ReadAllText($StatusPath)
+    $total=[regex]::Match($status,'(?m)^#Total Routed Net\s+(\d+)\s*$')
+    if(-not $total.Success -or [int]$total.Groups[1].Value -le 0) {
+        throw "Missing routed-net count: $StatusPath"
+    }
+    $known=@('Total Routed Net','Gnd Net','Local Net','Net Drivers Same Slice',
+             'Net Drivers Same PLB Slice','Other Net')
+    foreach($row in [regex]::Matches($status,'(?m)^\s*#(.+?)\s+(\d+)\s*$')) {
+        if($row.Groups[1].Value -notin $known) {
+            throw "Unrecognized route status; review before release: $($row.Value.Trim())"
+        }
+    }
+    $reportStart=$ConsoleText.LastIndexOf('start command "report_route_status',
+        [StringComparison]::Ordinal)
+    if($reportStart -lt 0) {throw 'Final route status was not queried'}
+    $reportConsole=$ConsoleText.Substring($reportStart)
+    $openNets=[regex]::Matches($reportConsole,'eco open net\s*=\s*(\d+)')
+    if($openNets.Count -ne 1 -or [int]$openNets[0].Groups[1].Value -ne 0) {
+        throw 'Final route database has open nets or missing coverage'
+    }
+    $drcStart=$ConsoleText.LastIndexOf('Stage 5 | Routing DRC',
+        [StringComparison]::Ordinal)
+    foreach($required in @('PHY-1003 : Routed, final wirelength =',
+                           'End Stage 5 | Routing DRC',
+                           'No multi-drive.','No abnormal timing path.')) {
+        if(-not $ConsoleText.Contains($required)) {
+            throw "Missing completed-route check: $required"
+        }
+    }
+    if($drcStart -gt $reportStart) {throw 'Route status precedes final routing DRC'}
+    return [ordered]@{status='passed';routed_nets=[int]$total.Groups[1].Value;open_nets=0}
+}
+
+function Assert-FinalTiming([string] $TimingPath,[string] $QorPath) {
+    $timing=[IO.File]::ReadAllText($TimingPath)
+    if($timing -notmatch '(?m)^Confidence\s*:\s*Routed\s*$' -or
+       $timing -notmatch '(?m)^Check Corner\s*:\s*Both \(Slow and Fast\)\s*$') {
+        throw "Final timing must use routed delays at both corners: $TimingPath"
+    }
+    foreach($corner in @('Slow','Fast')) {
+        if($timing -notmatch ('(?m)^'+$corner+'\s*\|\s*yes\s+yes\s*$')) {
+            throw "Missing setup/hold checks at $corner corner: $TimingPath"
+        }
+    }
+    $values=[ordered]@{}
+    foreach($kind in @('SWNS','STNS','HWNS','HTNS','Period Check WNS')) {
+        $matches=[regex]::Matches($timing,[regex]::Escape($kind)+':\s*(-?\d+(?:\.\d+)?)ns')
+        if($matches.Count -ne 1) {throw "Missing or ambiguous final ${kind}: $TimingPath"}
+        $value=[double]::Parse($matches[0].Groups[1].Value,
+            [Globalization.CultureInfo]::InvariantCulture)
+        if($value -lt 0 -or ($kind -in @('STNS','HTNS') -and $value -ne 0)) {
+            throw "Final $kind timing did not pass: $TimingPath"
+        }
+        $values[$kind]=$value
+    }
+    # Rounded WNS can hide a tiny violation; check endpoint counts as well.
+    foreach($type in @('Max','Min')) {
+        $rows=[regex]::Matches($timing,'(?m)^'+$type+'\s*:\s*[^\r\n]*?\b(\d+) Viol Endpoints\b')
+        if($rows.Count -eq 0) {throw "Missing $type endpoint statistics: $TimingPath"}
+        foreach($row in $rows) {
+            if([int]$row.Groups[1].Value -ne 0) {
+                throw "Final timing has failing endpoints: $($row.Value)"
+            }
+        }
+    }
+    $qor=[IO.File]::ReadAllText($QorPath)
+    foreach($kind in @('Setup WNS','Setup TNS','Hold WNS','Hold TNS',
+                       'Num of violated S-EP','Num of violated H-EP')) {
+        $rows=[regex]::Matches($qor,'(?m)^\|\s*'+[regex]::Escape($kind)+'\s*\|\s*(-?\d+(?:\.\d+)?)\s*\|\s*$')
+        if($rows.Count -ne 1) {throw "Missing or ambiguous route QoR ${kind}: $QorPath"}
+        $value=[double]::Parse($rows[0].Groups[1].Value,
+            [Globalization.CultureInfo]::InvariantCulture)
+        if($value -lt 0 -or ($kind -notlike '*WNS' -and $value -ne 0)) {
+            throw "Final route QoR $kind did not pass: $QorPath"
+        }
+    }
+    return $values
 }
 
 function Assert-DisplayEffectConstraintHealth([string] $Path) {
@@ -239,6 +325,9 @@ $startedAtUtc=[datetime]::UtcNow.ToString('o')
 $work=Join-Path $env:TEMP ('anlogic_image_quality_' + $buildId)
 New-Item -ItemType Directory -Path $work | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'user_source') -Destination $work -Recurse
+if($CoreRtlOverride) {
+    Copy-Item -LiteralPath $CoreRtlOverride -Destination (Join-Path $work 'user_source/hdl_source/fruit_merged/fruitcnn128_core.v')
+}
 New-Item -ItemType Directory -Path (Join-Path $work 'td_project') | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'td_project\anlogic_edge_osd.sdc') -Destination (Join-Path $work 'td_project')
 Copy-Item -LiteralPath (Join-Path $root 'td_project\anlogic_edge_osd.al') -Destination (Join-Path $work 'td_project')
@@ -284,6 +373,28 @@ try {
     $fingerprintHasher.Dispose()
 }
 $version='src-'+$sourceFingerprint.Substring(0,12).ToLowerInvariant()
+$resumeGate=$false
+$resumePlace=[bool]$ResumePlaceSnapshot
+$resumeSource=if($resumePlace) {$ResumePlaceSnapshot} else {$ResumeGateSnapshot}
+if($resumeSource) {
+    $resumeRoot=(Resolve-Path -LiteralPath $resumeSource).Path
+    $resumeHashes=Import-Csv -LiteralPath (Join-Path $resumeRoot 'source_sha256.csv')
+    $resumeFingerprintText=($resumeHashes | Sort-Object Path |
+        ForEach-Object {$_.Hash+'  '+$_.Path}) -join "`n"
+    if($resumeFingerprintText -cne $fingerprintText) {
+        throw 'Cannot resume snapshot: source/project/constraint hashes differ'
+    }
+    if($resumePlace) {
+        foreach($name in @('system_place.db','system_place.area','system_place.timing','place.qor')) {
+            Copy-Item -LiteralPath (Join-Path $resumeRoot $name) -Destination (Join-Path $work $name)
+        }
+    }
+    foreach($name in @('system_gate.db','system_gate.v','system_gate.area',
+                       'system_gate.timing','system_rtl.area')) {
+        Copy-Item -LiteralPath (Join-Path $resumeRoot $name) -Destination (Join-Path $work $name)
+    }
+    $resumeGate=$true
+}
 $route=''
 if(-not $SkipRoute) {
     $route=@'
@@ -293,13 +404,19 @@ PLACE_SEED_COMMAND
     place
     update_timing -mode manhattan
     report_timing_summary -file system_place.timing
+    report_area -file system_place.area
+    report_qor -step place -file place.qor
+    export_db system_place.db
     commit_param -step route
     route
     update_timing -mode final
     report_timing_summary -file system_pr.timing
+    report_qor -step route -file route.qor
     report_area -io_info -file system_phy.area
     report_timing_status -file system_phy.ts
+    report_route_status -file system_route.status
     check_timing -verbose -file constraint_health.timing
+    verify_fifo_cdc constraint_health.timing
     export_db system_pr.db
     puts "IMAGE_QUALITY_ROUTE_PASS"
 '@
@@ -309,6 +426,12 @@ PLACE_SEED_COMMAND
         ''
     }
     $route=$route.Replace('PLACE_SEED_COMMAND',$placeSeedCommand)
+    if($resumePlace) {
+        $placeStart=$route.IndexOf('    commit_param -step place')
+        $routeStart=$route.IndexOf('    commit_param -step route')
+        if($placeStart -lt 0 -or $routeStart -le $placeStart) {throw 'Cannot isolate placement resume'}
+        $route=$route.Substring(0,$placeStart)+$route.Substring($routeStart)
+    }
 }
 $resourceGate=''
 if($ResourceLimits.Count) {
@@ -345,6 +468,8 @@ if($GenerateBit) {
         error "Final hold timing failed"
     }
     commit_param -step bitgen
+    # Selecting a physical strategy replaces its bitgen property group.
+    set_param bitgen compress on
     bitgen -bit image_quality.bit
     puts "IMAGE_QUALITY_BITGEN_PASS"
 '@
@@ -352,9 +477,45 @@ if($GenerateBit) {
 $script=@'
 set root [file dirname [file normalize [info script]]]
 cd $root
+proc verify_fifo_cdc {report {stage final}} {
+    set fd [open $report r]
+    set health [read $fd]
+    close $fd
+    if {![string match {*There are 0 invalid constraints.*} $health] ||
+        ![string match {*There are 0 constraints that have no timing paths.*} $health]} {
+        error "Invalid timing constraint coverage: $report"
+    }
+    set camera_paths 0
+    set display_paths 0
+    foreach line [split $health \n] {
+        if {![regexp {^\s*([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+set_max_delay.*primary_addr_gray_reg.*sync_r1.*\s([0-9.]+)\s*$} $line unused total effective shadowed ignored limit]} {continue}
+        if {$ignored != 0} {error "FIFO Gray-bus constraint ignored: $line"}
+        if {$effective == 0} {continue}
+        if {abs($limit-9.360) < 0.0001} {
+            incr camera_paths $effective
+        } elseif {abs($limit-13.033) < 0.0001} {
+            incr display_paths $effective
+        } else {error "Unexpected effective FIFO Gray-bus bound: $line"}
+    }
+    # In-session mapping counts these paths twice; importing the identical
+    # gate DB reports them once. Verify actual endpoint coverage independently.
+    set sources [llength [get_regs {*/primary_addr_gray_reg[*]}]]
+    set destinations [llength [get_regs {*/sync_r1[*]}]]
+    if {$sources != 54 || $destinations != 54} {
+        error "FIFO Gray endpoint coverage incomplete: sources=$sources destinations=$destinations"
+    }
+    set factor [expr {$stage eq "gate" && $display_paths == 36 ? 2 : 1}]
+    set expected_camera [expr {36*$factor}]
+    set expected_display [expr {18*$factor}]
+    if {$camera_paths != $expected_camera || $display_paths != $expected_display} {
+        error "FIFO CDC coverage incomplete: camera=$camera_paths/$expected_camera display=$display_paths/$expected_display stage=$stage"
+    }
+    puts "FIFO_CDC_CONSTRAINT_PASS camera_paths=$camera_paths camera_ns=9.360 display_paths=$display_paths display_ns=13.033 stage=$stage report=$report"
+}
 if {[catch {
     import_device ph1_35p.db -package PH1P35MDG324 -speed 3
     open_project project.al -single_run
+PHYSICAL_STRATEGY_COMMAND
     load_run_param -run syn_1
     commit_param -step design
     elaborate -top design_top_wrapper
@@ -373,6 +534,8 @@ if {[catch {
     report_timing_summary -file system_gate.timing
     write_verilog system_gate.v
     export_db system_gate.db
+    check_timing -verbose -file constraint_health_gate.timing
+    verify_fifo_cdc constraint_health_gate.timing gate
     puts "IMAGE_QUALITY_SYNTHESIS_PASS"
 ROUTE_COMMANDS
 RESOURCE_GATE_COMMANDS
@@ -384,11 +547,35 @@ BITGEN_COMMANDS
 exit 0
 '@
 $script=$script.Replace('ROUTE_COMMANDS',$route)
+$strategyCommand=if($PhysicalStrategy) {"    set_strategy -run phy_1 $PhysicalStrategy"} else {''}
+$script=$script.Replace('PHYSICAL_STRATEGY_COMMAND',$strategyCommand)
 $script=$script.Replace('RESOURCE_GATE_COMMANDS',$resourceGate)
 $script=$script.Replace('BITGEN_COMMANDS',$bitgen)
+if($resumeGate) {
+    $gateStart=$script.IndexOf('    load_run_param -run syn_1')
+    $gateEnd=$script.IndexOf('    puts "IMAGE_QUALITY_SYNTHESIS_PASS"',$gateStart)
+    if($gateStart -lt 0 -or $gateEnd -le $gateStart) {throw 'Cannot isolate synthesis for gate resume'}
+    $resumeCommands=@'
+    import_db system_gate.db
+    update_timing
+    check_timing -verbose -file constraint_health_gate.timing
+    verify_fifo_cdc constraint_health_gate.timing gate
+
+'@
+    if($resumePlace) {
+        $resumeCommands=$resumeCommands.Replace('import_db system_gate.db','import_db system_place.db')
+        $resumeCommands=$resumeCommands.Replace('    update_timing','    update_timing -mode manhattan')
+    }
+    $script=$script.Substring(0,$gateStart)+$resumeCommands+$script.Substring($gateEnd)
+}
 [IO.File]::WriteAllText((Join-Path $work 'build.tcl'),$script,[Text.UTF8Encoding]::new($false))
 Write-Output "Build output: $work"
 Write-Output "Source version: $version"
+if($PhysicalStrategy) {Write-Output "Physical strategy: $PhysicalStrategy"}
+if($resumeGate) {
+    $resumeStage=if($resumePlace) {'placed'} else {'gate'}
+    Write-Output "Resuming verified source-matched $resumeStage snapshot: $resumeRoot"
+}
 Push-Location $work
 try {
     & $tdCommand build.tcl *> console.log
@@ -403,18 +590,15 @@ try {
     $displayEffectConstraint=$null
     $targetFrameConstraint=$null
     $aeConstraint=$null
+    $routeCompletion=$null
     if(-not $SkipRoute) {
-        $timing=[IO.File]::ReadAllText((Join-Path $work 'system_pr.timing'))
+        $routeCompletion=Assert-RouteCompletion (Join-Path $work 'system_route.status') $text
+        Write-Output "FINAL_ROUTE_COMPLETION_PASS routed_nets=$($routeCompletion.routed_nets) open_nets=0"
+        $slacks=Assert-FinalTiming (Join-Path $work 'system_pr.timing') (Join-Path $work 'route.qor')
         foreach($kind in @('SWNS','HWNS')) {
-            $slack=[regex]::Match($timing,$kind + ':\s*(-?\d+(?:\.\d+)?)ns')
-            if(-not $slack.Success -or
-                [double]::Parse($slack.Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture) -lt 0) {
-                throw "Final $kind timing did not pass: $work\system_pr.timing"
-            }
-            $slacks[$kind]=[double]::Parse($slack.Groups[1].Value,
-                [Globalization.CultureInfo]::InvariantCulture)
-            Write-Output $slack.Value
+            Write-Output "${kind}: $($slacks[$kind])ns"
         }
+        Write-Output 'FINAL_TIMING_ENDPOINTS_PASS setup=0 hold=0 corners=slow,fast confidence=routed'
         $displayEffectConstraint=Assert-DisplayEffectConstraintHealth (Join-Path $work 'constraint_health.timing')
         Write-Output "DISPLAY_EFFECT_CDC_CONSTRAINT_PASS paths=$($displayEffectConstraint.payload_paths) max_delay_ns=$($displayEffectConstraint.max_delay_ns)"
         $targetFrameConstraint=Assert-TargetFrameConstraintHealth (Join-Path $work 'constraint_health.timing')
@@ -438,8 +622,8 @@ try {
             throw "Compressed bitstream or instance report is missing: $work"
         }
         $reportNames=@('system_rtl.area','system_gate.area','system_gate.timing',
-            'system_place.timing','system_pr.timing','system_phy.area','system_phy.ts',
-            'constraint_health.timing','source_sha256.csv','console.log','build.tcl')
+            'system_place.timing','system_pr.timing','route.qor','system_phy.area','system_phy.ts',
+            'constraint_health.timing','constraint_health_gate.timing','system_route.status','source_sha256.csv','console.log','build.tcl')
         foreach($name in $reportNames) {
             if(-not (Test-Path -LiteralPath (Join-Path $work $name) -PathType Leaf)) {
                 throw "Release report is missing: $work\$name"
@@ -497,15 +681,33 @@ try {
                 mode='final_routed'
                 setup_slack_ns=$slacks['SWNS']
                 hold_slack_ns=$slacks['HWNS']
+                setup_tns_ns=$slacks['STNS']
+                hold_tns_ns=$slacks['HTNS']
+                setup_violated_endpoints=0
+                hold_violated_endpoints=0
+                period_check_slack_ns=$slacks['Period Check WNS']
+                corners=@('slow','fast')
                 display_effect_cdc=$displayEffectConstraint
                 target_frame_cdc=$targetFrameConstraint
                 ae_stats_cdc=$aeConstraint
+                fifo_gray_cdc=[ordered]@{
+                    status='passed'
+                    camera_paths=36
+                    camera_max_delay_ns=9.360
+                    display_paths=18
+                    display_max_delay_ns=13.033
+                }
             }
+            routing=$routeCompletion
             build=[ordered]@{
                 started_at_utc=$startedAtUtc
                 snapshot_directory=$work
                 td_bin=[IO.Path]::GetFullPath($TdBin)
                 driver='verification/run_image_quality_build.ps1'
+                physical_strategy=$PhysicalStrategy
+                place_seed=$PlaceSeed
+                resumed_gate_snapshot=$ResumeGateSnapshot
+                resumed_place_snapshot=$ResumePlaceSnapshot
                 report_directory=$reportDirectory.Substring($root.Length+1).Replace('\','/')
             }
             reports=$reportNames

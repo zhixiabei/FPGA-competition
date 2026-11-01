@@ -163,6 +163,110 @@ def check_scharr_center_scope(expected, actual):
     return True
 
 
+def check_video_routing_scope(relative, expected, actual):
+    """Allow only reviewed local control copies; equivalence is simulated separately."""
+    compact = lambda text: re.sub(r'\s+', '', uncomment(text))
+    candidate = compact(actual)
+    if relative == 'isp/scharr_edge_detect_96.v':
+        declaration = '(*preserve=1*)regvd_bottom,vd_top_tail,vd_middle_tail,vd_bottom_tail;'
+        if declaration not in candidate:
+            return actual, False
+        replacements = [
+            (declaration, ''),
+            ('vd_bottom<=0;vd_top_tail<=0;vd_middle_tail<=0;vd_bottom_tail<=0;', ''),
+            ('vd_bottom<=valid;vd_top_tail<=valid;vd_middle_tail<=valid;vd_bottom_tail<=valid;', ''),
+            ('if(vd_bottom)bottom_output<=bottom;'
+             'if(vd_top_tail)top_tail<=top[2*DATA_WIDTH-1:0];'
+             'if(vd_middle_tail)middle_tail<=middle[2*DATA_WIDTH-1:0];'
+             'if(vd_bottom_tail)bottom_tail<=bottom_output[2*DATA_WIDTH-1:0];', ''),
+            ('out_x<=xd;out_y<=yd;',
+             'out_x<=xd;out_y<=yd;bottom_output<=bottom;'
+             'top_tail<=top[2*DATA_WIDTH-1:0];'
+             'middle_tail<=middle[2*DATA_WIDTH-1:0];'
+             'bottom_tail<=bottom_output[2*DATA_WIDTH-1:0];'),
+        ]
+        # Preserve token boundaries for the existing module-level scope check.
+        restored = actual
+        for before, after in replacements:
+            require(candidate.count(before) == 1, 'Unexpected Scharr control-bank edit')
+            pattern = r'\s*'.join(re.escape(char) for char in before)
+            if after:
+                after = ('out_x<=xd; out_y<=yd; bottom_output<=bottom; '
+                         'top_tail<=top[2*DATA_WIDTH-1:0]; '
+                         'middle_tail<=middle[2*DATA_WIDTH-1:0]; '
+                         'bottom_tail<=bottom_output[2*DATA_WIDTH-1:0];')
+            restored, count = re.subn(pattern, lambda _: after, restored)
+            require(count == 1, 'Could not isolate Scharr control-bank edit')
+            candidate = candidate.replace(before, compact(after), 1)
+        return restored, True
+    if '(*shifter_style="reg_shifter_reg"*)reg[95:0]rgb_delay' in candidate:
+        reference_delay = re.search(
+            r'`ifdef\s+SCHARR_PORTABLE_RAM\s+(.*?)`else.*?`endif',
+            expected, re.S)
+        require(reference_delay is not None, 'Missing reference RGB delay block')
+        portable_delay = reference_delay.group(1)
+        register_delay = portable_delay.replace(
+            'reg [95:0] rgb_delay',
+            '(* shifter_style="reg_shifter_reg" *) reg [95:0] rgb_delay')
+        require(candidate.count(compact(register_delay)) == 1,
+                'RGB delay differs from the eleven-cycle reference shift chain')
+        candidate = candidate.replace(compact(register_delay),
+                                      compact(reference_delay.group(0)), 1)
+        print('RGB_DELAY_SHIFT_MEMORY_SCOPE_PASS (same eleven clocks; no reset or enable)')
+    if 'reg[95:0]output_data;' in candidate:
+        stage = '''
+            always @(posedge I_clk) output_data<=selected_data;
+            always @(posedge I_clk or negedge I_rst_n) begin
+                if(!I_rst_n) begin
+                    output_markers<=0;
+                    output_config<=DEFAULT_CONFIG;
+                end else begin
+                    output_markers<={selected_valid,selected_user,selected_last};
+                    output_config<=config_delay[LATENCY-1];
+                end
+            end
+            assign O_tdata=output_data;
+            assign {O_tvalid,O_tuser,O_tlast}=output_markers;
+            assign O_effect_config=output_config;
+        '''
+        changes = [
+            ('''wire selected_last, selected_user, selected_valid;
+                wire [95:0] selected_data;
+                reg [95:0] output_data;
+                reg [2:0] output_markers;
+                reg [11:0] output_config;''', ''),
+            ('.O_tlast(selected_last),.O_tuser(selected_user),.O_tdata(edge_data)',
+             '.O_tlast(O_tlast),.O_tuser(O_tuser),.O_tdata(edge_data)'),
+            ('.O_tvalid(selected_valid),.O_tready()', '.O_tvalid(O_tvalid),.O_tready()'),
+            (stage, 'assign O_effect_config=config_delay[LATENCY-1];'),
+        ]
+        for before, after in changes:
+            require(candidate.count(compact(before)) == 1,
+                    'Unexpected selector output-register scope')
+            candidate = candidate.replace(compact(before), compact(after), 1)
+        print('VIDEO_OUTPUT_REGISTER_SCOPE_PASS '
+              '(pixels, markers and config delayed together by one clock)')
+    declaration = 'reg[LATENCY-2:0]select_valid_delay;'
+    if declaration not in candidate:
+        require(candidate == compact(expected), 'Unexpected selector edit')
+        return actual, False
+    for addition in (declaration, 'select_valid_delay<=0;',
+                     'select_valid_delay<={select_valid_delay[LATENCY-3:0],I_tvalid};'):
+        require(candidate.count(addition) == 1, 'Unexpected selector control-pipeline edit')
+        candidate = candidate.replace(addition, '', 1)
+    reference = compact(expected)
+    old_start = 'assignO_tdata='
+    new_start = 'function[5:0]decode_effect;'
+    end = 'assignO_effect_config='
+    require(reference.count(old_start) == candidate.count(new_start) == 1 and
+            reference.count(end) == candidate.count(end) == 1,
+            'Selector output scope anchors changed')
+    reference = reference[:reference.index(old_start)] + reference[reference.index(end):]
+    candidate = candidate[:candidate.index(new_start)] + candidate[candidate.index(end):]
+    require(candidate == reference, 'Selector changed outside its final selection controls')
+    return actual, True
+
+
 def parentheses(text, start):
     require(text[start] == '(', 'Expected opening parenthesis')
     depth = 0
@@ -358,6 +462,34 @@ def check_signature_scope(relative, expected, actual):
     if actual == expected:
         return False
     if relative == 'target_frame_bridge.v':
+        storage_prefix = '''    reg [4*BODY_WIDTH-1:0] S_slot_result_storage;
+    genvar record_bank;
+    generate if (SINGLE_TARGET_ONLY) begin : g_slot_registers
+        // Four shallow records can sit beside their consumers instead of
+        // routing the whole mailbox to a distributed-RAM column. Preserve
+        // the RAM write mask and asynchronous read, including same-edge reads.
+        for (record_bank=0; record_bank<4; record_bank=record_bank+1) begin : g_record
+            always @(posedge I_ddr_clk) begin
+                if (S_ram_write_mask[record_bank])
+                    S_slot_result_storage[record_bank*BODY_WIDTH +: BODY_WIDTH] <=
+                        S_ram_write_data;
+            end
+        end
+        assign S_slot_result_ram =
+            S_slot_result_storage[I_read_slot*BODY_WIDTH +: BODY_WIDTH];
+    end else begin : g_slot_ram
+'''
+        if storage_prefix in actual:
+            require(actual.count(storage_prefix) == 1, 'Duplicate bridge storage substitution')
+            actual = actual.replace(storage_prefix, '', 1)
+            storage_end = '        .rdo(S_slot_result_ram),.rdoq()\n    );\n    end endgenerate\n'
+            require(actual.count(storage_end) == 1, 'Unexpected bridge storage scope')
+            actual = actual.replace(storage_end,
+                                    '        .rdo(S_slot_result_ram),.rdoq()\n    );\n', 1)
+            print('BRIDGE_STORAGE_CHANGE_SCOPE_PASS '
+                  '(run bridge routing equivalence separately)')
+            if actual == expected:
+                return True
         additions = [
             '    // DDR-domain selection, sampled by video_out at the same read-start edge.\n'
             '    output wire O_read_mirror,\n',
@@ -397,10 +529,21 @@ def main():
     optimized = 0
     detector_optimized = 0
     signature_changed = 0
+    routing_changed = 0
+    unchanged = 0
     for relative in preserved:
         path = 'user_source/hdl_source/'+relative
         expected = git('show', f'{args.main_ref}:{path}').decode('utf-8')
         actual = (ROOT/path).read_text(encoding='utf-8')
+        unchanged += actual == expected
+        if relative in {'isp/scharr_edge_detect_96.v', 'isp/rgb_edge_switch_96.v'}:
+            actual, changed = check_video_routing_scope(relative, expected, actual)
+            routing_changed += changed
+            if changed:
+                print(f'VIDEO_ROUTING_CHANGE_SCOPE_PASS {relative} '
+                      '(run pixel/control equivalence simulations separately)')
+            if relative == 'isp/rgb_edge_switch_96.v':
+                continue
         if relative == 'isp/scharr_edge_detect_96.v':
             optimized += check_scharr_center_scope(expected, actual)
         elif relative == 'isp/red_target_detect_96.v':
@@ -411,10 +554,11 @@ def main():
             require(actual == expected, f'Main logic changed: {path}')
     print(f'MAIN_FILES_PRESERVED_PASS {len(main_files)-retired_count} present; '
           f'{retired_count} reviewed obsolete files removed; '
-          f'{len(preserved)-optimized-detector_optimized-signature_changed} core modules match main; '
+          f'{unchanged} core modules match main; '
           f'{optimized} reviewed centre-only substitution; '
           f'{detector_optimized} reviewed single-target detector change; '
-          f'{signature_changed} reviewed signature integration changes')
+          f'{signature_changed} reviewed signature integration changes; '
+          f'{routing_changed} reviewed local video-control changes')
     for path in (ROOT/'verification').glob('*.py'):
         ast.parse(path.read_text(encoding='utf-8-sig'), filename=str(path))
     print('PYTHON_SOURCE_PARSE_PASS')

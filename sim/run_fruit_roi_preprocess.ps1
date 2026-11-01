@@ -1,6 +1,7 @@
 param(
     [string] $OutputDir='',
-    [string] $ModelSimBin='C:\altera\14.1\modelsim_ase\win32aloem'
+    [string] $ModelSimBin='C:\altera\14.1\modelsim_ase\win32aloem',
+    [string] $TdSimLib='D:\TD\sim_release\ph1p'
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -15,12 +16,14 @@ $sources=@(
     'user_source/hdl_source/fruit_merged/handcnn_normalize.v',
     'user_source/hdl_source/fruit_merged/handfixed_background.v',
     'user_source/hdl_source/cnn/cnn_eram_byte_dp.v',
-    'sim/reference/ph1p_logic_dram_asym_sim.v',
-    'sim/reference/ph1p_logic_eram_sync_sim.v',
+    (Join-Path $TdSimLib 'ph1p_logic_dram.v'),
+    (Join-Path $TdSimLib 'ph1p_logic_eram.v'),
+    (Join-Path $TdSimLib 'ph1p_phy_gsr.v'),
     'sim/tb_fruit_roi_preprocess.sv'
 )
 foreach($source in $sources) {
-    Copy-Item -LiteralPath (Join-Path $projectRoot $source) -Destination $simulationDir
+    $sourcePath=if([IO.Path]::IsPathRooted($source)) {$source} else {Join-Path $projectRoot $source}
+    Copy-Item -LiteralPath $sourcePath -Destination $simulationDir
 }
 $sourceNames=@($sources | ForEach-Object {Split-Path -Leaf $_})
 $hashes=foreach($sourceName in $sourceNames) {
@@ -36,7 +39,7 @@ onerror {quit -code 1 -force}
 onbreak {quit -code 1 -force}
 vlib work
 vlog -sv $compile
-vsim -onfinish exit -t ps work.tb_fruit_roi_preprocess
+vsim -onfinish exit -t ps work.tb_fruit_roi_preprocess work.PH1P_PHY_GSR
 run -all
 quit -code 0 -force
 "@

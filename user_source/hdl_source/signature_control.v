@@ -18,16 +18,15 @@ endmodule
 module signature_switch_level #(parameter integer CYCLES=1000000)(
     input wire clk,rst_n,switch_in,output reg level
 );
-    localparam integer CW=CYCLES>1 ? $clog2(CYCLES) : 1;
     (* async_reg="true" *) reg meta,sync;
-    reg [CW-1:0] count;
     always @(posedge clk or negedge rst_n) begin
-        if(!rst_n) begin meta<=0;sync<=0;level<=0;count<=0;end
+        if(!rst_n) begin meta<=0;sync<=0;level<=0;end
         else begin
             meta<=switch_in;sync<=meta;
-            if(sync==level) count<=0;
-            else if(count==CYCLES-1) begin count<=0;level<=sync;end
-            else count<=count+1'b1;
+            // SW3/SW4 are maintained level switches. Synchronization is
+            // sufficient here; frame-boundary configuration absorbs contact
+            // bounce without two wide debounce counters in the routing fabric.
+            level<=sync;
         end
     end
 endmodule
