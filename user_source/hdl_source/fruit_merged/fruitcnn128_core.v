@@ -22,6 +22,16 @@ module fruitcnn128_core(
         SELECT_SUM=19,ADD_BIAS=20,SHIFT_SUM=21,
         ACT_REQUEST=22,ACT_WAIT=23,ACT_RUN=24,COEFF_READ=25,ROW_LOAD=26;
     reg [4:0] state;
+    // Terminate the shared DDR return bus before its cache/RAM fanout.
+    // Free-running data registers avoid another 128-load clock enable;
+    // valid travels through the same stage and reset discards pending data.
+    reg [127:0] response_data;
+    (* max_fanout=24 *) reg response_valid;
+    always @(posedge clk) response_data<=mem_rsp_data;
+    always @(posedge clk or negedge rst_n) begin
+        if(!rst_n) response_valid<=0;
+        else response_valid<=mem_rsp_valid;
+    end
     reg [2:0] active_group;
     // The model ROM is indexed by group. Do not feed the high-fanout state
     // decode back through that ROM into the address/cache-hit datapath.
@@ -93,8 +103,8 @@ module fruitcnn128_core(
     // NOREG still reads synchronously in one clock; OUTREG would add a
     // cycle. As with weight_cache, storage need not reset: pipe_valid is
     // cleared on reset and every operation reloads weights before use.
-    wire weight_tail_write=state==WEIGHTS && mem_rsp_valid && received[0] && received[10];
-    wire [199:0] weight_tail_input={8'd0,mem_rsp_data[63:0],first_weight_word};
+    wire weight_tail_write=state==WEIGHTS && response_valid && received[0] && received[10];
+    wire [199:0] weight_tail_input={8'd0,response_data[63:0],first_weight_word};
     wire [199:0] weight_tail_output;
     assign weight_tail_q=weight_tail_output[191:0];
     genvar weight_bank;
@@ -117,8 +127,17 @@ module fruitcnn128_core(
             .ecc_sbiterr(),.ecc_dbiterr(),.ecc_sbiterrinj(1'b0),.ecc_dbiterrinj(1'b0)
         );
     end endgenerate
-    reg weight_select_tail;
-    wire [191:0] weight_q=weight_select_tail ? weight_tail_q : weight_main_q;
+    wire [191:0] weight_q;
+    // Keep one same-cycle selector per physical tail bank. A single select
+    // otherwise fans across all 192 weight bits between ERAM and DSP columns.
+    genvar select_bank;
+    generate for(select_bank=0;select_bank<5;select_bank=select_bank+1) begin: weight_select_banks
+        localparam BANK_WIDTH=select_bank==4 ? 32 : 40;
+        (* preserve=1 *) reg select_tail;
+        always @(posedge clk) select_tail<=term[9];
+        assign weight_q[select_bank*40+:BANK_WIDTH]=select_tail ?
+            weight_tail_q[select_bank*40+:BANK_WIDTH] : weight_main_q[select_bank*40+:BANK_WIDTH];
+    end endgenerate
     reg [4:0] lane,store_lane,coefficient_lane;
     wire [45:0] coefficient_q;
     // Bias and shift coefficients are loaded once per output group. Keeping
@@ -133,14 +152,14 @@ module fruitcnn128_core(
         .ECC_ENCODE("DISABLE"),.ECC_DECODE("DISABLE"),
         .INIT_FILE("NONE"),.FILL_ALL("NONE")
     ) coefficient_memory(
-        .clka(clk),.clkb(clk),.cea(state==COEFF && mem_rsp_valid),.ceb(1'b1),
+        .clka(clk),.clkb(clk),.cea(state==COEFF && response_valid),.ceb(1'b1),
         .ocea(1'b0),.oceb(1'b0),
-        .wea(state==COEFF && mem_rsp_valid),.web(state==COEFF && mem_rsp_valid),
+        .wea(state==COEFF && response_valid),.web(state==COEFF && response_valid),
         .rsta(1'b0),.rstb(1'b0),.bea(1'b0),.beb(1'b0),
         .addra({received[3:0],1'b0}),
         .addrb(state==COEFF ? {received[3:0],1'b1} : coefficient_lane),
-        .dia({mem_rsp_data[45:40],mem_rsp_data[39:0]}),
-        .dib({mem_rsp_data[109:104],mem_rsp_data[103:64]}),
+        .dia({response_data[45:40],response_data[39:0]}),
+        .dib({response_data[109:104],response_data[103:64]}),
         .doa(),.dob(coefficient_q),.ecc_sbiterr(),.ecc_dbiterr(),
         .ecc_sbiterrinj(1'b0),.ecc_dbiterrinj(1'b0)
     );
@@ -293,13 +312,12 @@ module fruitcnn128_core(
         end
     endfunction
     always @(posedge clk) begin
-        if(state==ROW_LOAD && mem_rsp_valid)
-            row_cache[received[8:0]]<=pack_activations(mem_rsp_data);
-        if(state==WEIGHTS && mem_rsp_valid && received[0]) begin
-            if(!received[10]) weight_cache[received[9:1]]<={mem_rsp_data[63:0],first_weight_word};
+        if(state==ROW_LOAD && response_valid)
+            row_cache[received[8:0]]<=pack_activations(response_data);
+        if(state==WEIGHTS && response_valid && received[0]) begin
+            if(!received[10]) weight_cache[received[9:1]]<={response_data[63:0],first_weight_word};
         end
         weight_main_q<=weight_cache[term[8:0]];
-        weight_select_tail<=term[9];
         if(state==RUN && kernel==3) row_cache_q<=row_cache[row_cache_address];
         if(post_s2_valid) output_cache[{post_s2_lane,pos[2:0]}]<=saturated;
         output_q<=output_cache[{store_lane,pack_index}];
@@ -331,7 +349,7 @@ module fruitcnn128_core(
             if(mac_enable) mac_cycles<=mac_cycles+1'b1;
             if(mem_valid && !mem_ready) wait_cycles<=wait_cycles+1'b1;
             if(can_read && mem_ready) issued<=issued+1'b1;
-            if(burst && mem_rsp_valid) received<=received+1'b1;
+            if(burst && response_valid) received<=received+1'b1;
             if(state==ROW_LOAD && can_read && mem_ready) begin
                 if(prefetch_word==prefetch_words_per_row-1'b1) begin
                     prefetch_word<=0;
@@ -342,16 +360,16 @@ module fruitcnn128_core(
                     end else prefetch_row<=prefetch_row+1'b1;
                 end else prefetch_word<=prefetch_word+1'b1;
             end
-            if((state==ACT_REQUEST && mem_ready && mem_rsp_valid) ||
-               (state==ACT_WAIT && mem_rsp_valid)) begin
+            if((state==ACT_REQUEST && mem_ready && response_valid) ||
+               (state==ACT_WAIT && response_valid)) begin
                 case(activation_replace)
-                    0:begin activation_cache<=pack_activations(mem_rsp_data);
+                    0:begin activation_cache<=pack_activations(response_data);
                         activation_cache_word<=activation_request_word;activation_cache_valid<=1;end
-                    1:begin activation_cache_1<=pack_activations(mem_rsp_data);
+                    1:begin activation_cache_1<=pack_activations(response_data);
                         activation_cache_word_1<=activation_request_word;activation_cache_valid_1<=1;end
-                    2:begin activation_cache_2<=pack_activations(mem_rsp_data);
+                    2:begin activation_cache_2<=pack_activations(response_data);
                         activation_cache_word_2<=activation_request_word;activation_cache_valid_2<=1;end
-                    default:begin activation_cache_3<=pack_activations(mem_rsp_data);
+                    default:begin activation_cache_3<=pack_activations(response_data);
                         activation_cache_word_3<=activation_request_word;activation_cache_valid_3<=1;end
                 endcase
                 activation_replace<=activation_replace+1'b1;
@@ -388,12 +406,12 @@ module fruitcnn128_core(
                     end
                 end
                 WEIGHTS:begin
-                    if(mem_rsp_valid && !received[0]) first_weight_word<=mem_rsp_data;
-                    if(mem_rsp_valid && received==total-1) begin
+                    if(response_valid && !received[0]) first_weight_word<=response_data;
+                    if(response_valid && received==total-1) begin
                         issued<=0;received<=0;total<=12;state<=COEFF;
                     end
                 end
-                COEFF:if(mem_rsp_valid) begin
+                COEFF:if(response_valid) begin
                     if(received==11) begin
                         ox<=0;oy<=0;pos<=0;tile_start<=0;
                         if(kernel==3) begin
@@ -403,7 +421,7 @@ module fruitcnn128_core(
                         end else state<=SETUP;
                     end
                 end
-                ROW_LOAD:if(mem_rsp_valid && received==total-1) state<=SETUP;
+                ROW_LOAD:if(response_valid && received==total-1) state<=SETUP;
                 SETUP:begin
                     term<=0;ic<=0;kx<=0;ky<=0;channel_offset<=0;
                     cache_channel_offset<=0;pipe_valid<=0;state<=RUN;
@@ -425,13 +443,13 @@ module fruitcnn128_core(
                     end
                 end
                 ACT_REQUEST:if(mem_ready) begin
-                    if(mem_rsp_valid) begin
-                        input_sample<=mem_rsp_data[activation_offset*16+:12];
+                    if(response_valid) begin
+                        input_sample<=response_data[activation_offset*16+:12];
                         state<=activation_return_state;
                     end else state<=ACT_WAIT;
                 end
-                ACT_WAIT:if(mem_rsp_valid) begin
-                    input_sample<=mem_rsp_data[activation_offset*16+:12];
+                ACT_WAIT:if(response_valid) begin
+                    input_sample<=response_data[activation_offset*16+:12];
                     state<=activation_return_state;
                 end
                 ACT_RUN:begin
