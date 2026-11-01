@@ -50,6 +50,8 @@ module target_frame_bridge #(
     input wire I_write_word,
     input wire I_read_start,
     input wire [1:0] I_read_slot,
+    // DDR-domain selection, sampled by video_out at the same read-start edge.
+    output wire O_read_mirror,
     output reg O_ready,
     output reg [11:0] O_effect_config,
     output reg O_motion_mode,
@@ -371,6 +373,8 @@ module target_frame_bridge #(
     reg [NONCE_WIDTH-1:0] S_slot_nonce [0:3];
     reg [9:0] S_slot_frame_id [0:3];
     reg [11:0] S_slot_effect_config [0:3];
+    // Mirror belongs to the stored video even when its target result is absent.
+    assign O_read_mirror = S_slot_effect_config[I_read_slot][11:8] == 4'd13;
     reg [3:0] S_slot_motion_mode, S_slot_started, S_slot_complete, S_slot_result_valid;
     reg [1:0] S_slot_color_mode [0:3];
     reg [3:0] S_slot_write_pending;

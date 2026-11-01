@@ -19,6 +19,7 @@ module tb_target_frame_bridge_single_payload;
     reg [1:0] write_slot=0, read_slot=0;
 
     wire [297:0] full_tuple, single_tuple;
+    wire full_mirror,single_mirror;
 
 `define BRIDGE_INPUTS \
         .I_csi_clk(csi_clk), .I_ddr_clk(ddr_clk), .I_hdmi_clk(hdmi_clk), \
@@ -47,12 +48,13 @@ module tb_target_frame_bridge_single_payload;
         .O_multi_overflow(T[0])
 
     target_frame_bridge #(.FRAME_WORDS(4)) full (
-        `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(full_tuple)
+        `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(full_tuple),.O_read_mirror(full_mirror)
     );
     target_frame_bridge #(
-        .FRAME_WORDS(4), .COMPACT_MODE_PAYLOAD(1), .SINGLE_TARGET_ONLY(1)
+        .FRAME_WORDS(4), .COMPACT_MODE_PAYLOAD(1), .SINGLE_TARGET_ONLY(1),
+        .RESULT_PENDING_ENABLE(0), .READ_PENDING_ENABLE(0)
     ) single (
-        `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(single_tuple)
+        `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(single_tuple),.O_read_mirror(single_mirror)
     );
 
 `undef BRIDGE_INPUTS
@@ -91,14 +93,14 @@ module tb_target_frame_bridge_single_payload;
         end
     endtask
 
-    task automatic publish_color_result(input [9:0] id);
+    task automatic publish_color_result(input [9:0] id,input [1:0] color=2);
         begin
             @(negedge csi_clk);
             result_ready=1;
             result_frame_id=id;
             result_found=1;
             result_motion_mode=0;
-            result_color_mode=2;
+            result_color_mode=color;
             xmin=12'd1277; xmax=12'd4090;
             ymin=12'd718; ymax=12'd4090;
             center_x=12'd1278; center_y=12'd718;
@@ -179,7 +181,7 @@ module tb_target_frame_bridge_single_payload;
         repeat (8) @(negedge csi_clk);
         if ($bits(single.S_result_payload)!=93 ||
             $bits(single.S_read_payload)!=84 ||
-            $bits(single.S_slot_result[0])!=71)
+            $bits(single.S_slot_result_ram)!=71)
             $fatal(1,"single-target payload widths are not 93/84/71 bits");
         rst_n=1;
 
@@ -220,8 +222,26 @@ module tb_target_frame_bridge_single_payload;
         if (single_tuple !== frozen_color_tuple)
             $fatal(1,"re-reading a completed DDR slot did not restore its frozen target");
 
-        $display("TARGET_FRAME_BRIDGE_SINGLE_PAYLOAD_PASS body_bits=%0d result_bits=%0d read_bits=%0d slots=4 geometry=color+motion freeze=1",
-            $bits(single.S_slot_result[0]),$bits(single.S_result_payload),
+        start_frame(12,12'hd01,0,0); start_write_slot(3); complete_frame_write();
+        repeat (24) @(negedge csi_clk); select_frame_slot(3);
+        if(single_tuple[297:282]!=={1'b0,12'hd01,1'b0,2'd0} ||
+           single_mirror!==1 || full_mirror!==1)
+            $fatal(1,"Missing target disabled signature mirror/pause in compact payload");
+        publish_color_result(12,0);
+        repeat (24) @(negedge csi_clk); select_frame_slot(3);
+        check_single_payload(3,0);
+        if(single_tuple[232:209]!=={12'd1278,12'd718})
+            $fatal(1,"Signature center acquired a spatial offset");
+        start_frame(13,12'h900,0,0); start_write_slot(0); complete_frame_write();
+        select_frame_slot(3);
+        if(single_mirror!==1 || single_tuple[296:285]!==12'hd01)
+            $fatal(1,"New request changed an older signature frame");
+        select_frame_slot(0);
+        if(single_mirror!==0 || full_mirror!==0 || single_tuple[296:285]!==12'h900)
+            $fatal(1,"Binary display must restore forward read order");
+
+        $display("TARGET_FRAME_BRIDGE_SINGLE_PAYLOAD_PASS body_bits=%0d result_bits=%0d read_bits=%0d slots=4 geometry=color+motion freeze=1 signature=1 queues=0",
+            $bits(single.S_slot_result_ram),$bits(single.S_result_payload),
             $bits(single.S_read_payload));
         $finish;
     end

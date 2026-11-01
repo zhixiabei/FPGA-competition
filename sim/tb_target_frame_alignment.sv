@@ -60,7 +60,8 @@ module tb_target_frame_alignment;
         .SINGLE_SHAPE_ENABLE(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
-        .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1)
+        .I_effect_key_n(1'b1), .I_latency_switch(1'b0), .I_param_key_n(1'b1),
+        .I_signature_switch(1'b0),.I_signature_pause_switch(1'b0)
     );
 
     function automatic integer slot_of_base(input [24:0] address);

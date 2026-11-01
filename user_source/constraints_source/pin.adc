@@ -19,6 +19,9 @@ set_pin_assignment { I_effect_key_n } { LOCATION = B9; IOSTANDARD = LVCMOS33; PU
 set_pin_assignment { I_latency_switch } { LOCATION = A4; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
 # HX1P35B pin allocation table: SW2=B4. High enables fruit recognition.
 set_pin_assignment { I_fruit_switch } { LOCATION = B4; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
+# SW3 selects camera handwriting; SW4 pauses ink while keeping the canvas.
+set_pin_assignment { I_signature_switch } { LOCATION = E11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
+set_pin_assignment { I_signature_pause_switch } { LOCATION = D11; IOSTANDARD = LVCMOS33; PULLTYPE = PULLDOWN; }
 set_pin_assignment { I_param_key_n } { LOCATION = C7; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
 
 # On-board USB-UART used by the optional CNN model loader/status link.

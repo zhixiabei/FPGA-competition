@@ -2,7 +2,8 @@
 
 
 module video_out #(
-    parameter integer FRAME_STRIDE_NATIVE=7000000
+    parameter integer FRAME_STRIDE_NATIVE=7000000,
+    parameter integer MIRROR_ENABLE=0
 )(
     input wire        I_rst_n,
 
@@ -10,6 +11,7 @@ module video_out #(
     output wire       O_video_out_rd_busy,  
     input wire        I_video_in_wr_busy,   
     input wire[1:0]   I_video_out_rp,
+    input wire        I_mirror,
     output reg[1:0]  O_read_frame_slot, // Metadata only: slot selected for this frame.
     output wire       O_read_frame_start,
     output wire       O_ddr_user_rd_en,
@@ -45,6 +47,22 @@ module video_out #(
     reg[3:0]    S_fifo_rd_cnt_1d;     
     reg[127:0]  S_fifo_rd_data_1d;    
 	wire        S_fifo_emtpy;     
+    wire S_mirror_request = MIRROR_ENABLE != 0 && I_mirror;
+    reg S_mirror_frame;
+    (* async_reg="true" *) reg S_mirror_meta, S_mirror_sync;
+    // Slot config is frozen at read-start, well before the active picture.
+    always @(posedge I_ddr_clk or negedge I_rst_n) begin
+        if(!I_rst_n) S_mirror_frame<=1'b0;
+        else if(S_video_frame_start) S_mirror_frame<=S_mirror_request;
+    end
+    always @(posedge I_dsi_clk or negedge I_rst_n) begin
+        if(!I_rst_n) begin S_mirror_meta<=0;S_mirror_sync<=0;end
+        else begin S_mirror_meta<=S_mirror_frame;S_mirror_sync<=S_mirror_meta;end
+    end
+    // 1280 RGB pixels = 240 words per row. Reverse words within each row.
+    // A single address adder handles +8, -8 and the next mirrored row (+3832).
+    wire [24:0] S_address_step = S_mirror_frame ?
+        (S_ddr_rd_cnt==239 ? 25'd3832 : -25'd8) : 25'd8;
 
     // Each FIFO port releases its internal reset after two local clocks.
     // Leave a third clock before issuing reads or accepting returned words.
@@ -179,14 +197,14 @@ module video_out #(
             if(S_video_frame_start)
                 begin
                     case(I_video_out_rp)
-                        'd0: O_ddr_user_addr <= IMAGE_BASE_ADDR_0;
-                        'd1: O_ddr_user_addr <= IMAGE_BASE_ADDR_1;
-                        'd2: O_ddr_user_addr <= IMAGE_BASE_ADDR_2;
-                        'd3: O_ddr_user_addr <= IMAGE_BASE_ADDR_3;
+                        'd0: O_ddr_user_addr <= S_mirror_request ? IMAGE_BASE_ADDR_0+1912 : IMAGE_BASE_ADDR_0;
+                        'd1: O_ddr_user_addr <= S_mirror_request ? IMAGE_BASE_ADDR_1+1912 : IMAGE_BASE_ADDR_1;
+                        'd2: O_ddr_user_addr <= S_mirror_request ? IMAGE_BASE_ADDR_2+1912 : IMAGE_BASE_ADDR_2;
+                        'd3: O_ddr_user_addr <= S_mirror_request ? IMAGE_BASE_ADDR_3+1912 : IMAGE_BASE_ADDR_3;
                     endcase
                 end
             else if(O_ddr_user_rd_en)
-                O_ddr_user_addr <= O_ddr_user_addr + 'd8;
+                O_ddr_user_addr <= O_ddr_user_addr + S_address_step;
             else    
                 O_ddr_user_addr <= O_ddr_user_addr;
     end
@@ -243,23 +261,30 @@ module video_out #(
        S_fifo_rd_data_1d <= S_fifo_rd_data;
    end
 
+   // Reverse the 16-pixel unpack phase, leaving the shared DDR data bus and
+   // FIFO write port untouched. Only the two split-word pixels need a mux.
+   wire [3:0] S_unpack_phase = S_fifo_rd_cnt_1d ^ {4{S_mirror_sync}};
    always @(posedge I_dsi_clk or posedge S_fifo_reset) begin
        if(S_fifo_reset)
            O_vdieo_data <= 24'd0;
        else if(S_video_rd_en_1d)
            begin
-               case(S_fifo_rd_cnt_1d)
+               case(S_unpack_phase)
                    'd0: O_vdieo_data  <= S_fifo_rd_data[127:104];
                    'd1: O_vdieo_data  <= S_fifo_rd_data[103:80];
                    'd2: O_vdieo_data  <= S_fifo_rd_data[79:56];
                    'd3: O_vdieo_data  <= S_fifo_rd_data[55:32];
                    'd4: O_vdieo_data  <= S_fifo_rd_data[31:8];
-                   'd5: O_vdieo_data  <= {S_fifo_rd_data_1d[7:0],S_fifo_rd_data[127:112]};
+                   'd5: O_vdieo_data  <= S_mirror_sync ?
+                       {S_fifo_rd_data[7:0],S_fifo_rd_data_1d[127:112]} :
+                       {S_fifo_rd_data_1d[7:0],S_fifo_rd_data[127:112]};
                    'd6: O_vdieo_data  <= S_fifo_rd_data[111:88];
                    'd7: O_vdieo_data  <= S_fifo_rd_data[87:64];
                    'd8: O_vdieo_data  <= S_fifo_rd_data[63:40];
                    'd9: O_vdieo_data  <= S_fifo_rd_data[39:16];
-                   'd10: O_vdieo_data <= {S_fifo_rd_data_1d[15:0],S_fifo_rd_data[127:120]};
+                   'd10: O_vdieo_data <= S_mirror_sync ?
+                       {S_fifo_rd_data[15:0],S_fifo_rd_data_1d[127:120]} :
+                       {S_fifo_rd_data_1d[15:0],S_fifo_rd_data[127:120]};
                    'd11: O_vdieo_data <= S_fifo_rd_data[119:96];
                    'd12: O_vdieo_data <= S_fifo_rd_data[95:72];
                    'd13: O_vdieo_data <= S_fifo_rd_data[71:48];

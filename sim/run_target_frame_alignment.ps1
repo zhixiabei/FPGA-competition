@@ -18,6 +18,8 @@ $sources = @(
     'user_source\hdl_source\gamma_lut_rgb888.v',
     'user_source\hdl_source\display_effects_rgb888.v',
     'user_source\hdl_source\display_effect_control.v',
+    'user_source\hdl_source\signature_control.v',
+    'user_source\hdl_source\pen_minimal.v',
     'user_source\hdl_source\anlogic_logo_rom.v',
     'user_source\hdl_source\osd_char_lib.v',
     'sim\tb_target_frame_alignment.sv'

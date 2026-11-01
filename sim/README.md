@@ -27,6 +27,7 @@
 | K1 十三模式控制 | `& './sim/run_display_effect_control.ps1'` |
 | RGB 特效 | `& './sim/run_display_effects_rgb888.ps1'` |
 | 显示模式与像素 | `& './sim/run_display_effects_mixer.ps1'` |
+| 镜头签名、暂停清空、帧配置和 720p 镜像 | `& './sim/run_signature.ps1'` |
 | 自动曝光 | `& './sim/run_auto_exposure.ps1'` |
 | RAW 直方图 | `& './sim/run_ae_histogram.ps1'` |
 | 白平衡可信度 | `& './sim/run_awb_confidence.ps1'` |

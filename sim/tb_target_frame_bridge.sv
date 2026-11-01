@@ -20,6 +20,7 @@ module tb_target_frame_bridge;
     reg production_word = 0;
     reg [1:0] write_slot = 0, read_slot = 0;
     wire ready, found, out_motion, out_overflow, production_ready;
+    wire read_mirror;
     wire [1:0] out_color;
     wire [11:0] out_config, out_xmin, out_xmax, out_ymin, out_ymax, out_cx, out_cy;
     wire [3:0] out_valid, out_hold;
@@ -44,6 +45,7 @@ module tb_target_frame_bridge;
         .I_multi_shapes(shapes),
         .I_write_start(write_start), .I_write_slot(write_slot), .I_write_word(write_word),
         .I_read_start(read_start), .I_read_slot(read_slot),
+        .O_read_mirror(read_mirror),
         .O_ready(ready), .O_effect_config(out_config), .O_motion_mode(out_motion),
         .O_color_mode(out_color),
         .O_found(found), .O_xmin(out_xmin), .O_xmax(out_xmax),
@@ -378,6 +380,19 @@ module tb_target_frame_bridge;
                 "color-mask preview preserves shape tuple and spatial clipping");
             shift_checks=shift_checks+1;
         end
+
+        source_frame(700,12'hd01,0); start_write(2); words(4); select_read(2);
+        check_output(0,12'hd01,0,0,0,0,0,0,"mirror/pause config survives missing detector result");
+        if(read_mirror!==1) $fatal(1,"Signature frame without target was not mirrored");
+        send_result(700,0,120,1,1,0,0); drain(); select_read(2);
+        check_output(1,12'hd01,0,120,1,1,0,0,"signature coordinates have no spatial offset");
+        source_frame(701,12'h900,0); start_write(0); words(4);
+        select_read(2);
+        if(read_mirror!==1 || out_config!==12'hd01)
+            $fatal(1,"A newer camera mode changed the selected signature slot");
+        select_read(0);
+        if(read_mirror!==0 || out_config!==12'h900)
+            $fatal(1,"Binary mode incorrectly enabled mirror");
 
         source_frame(610,12'h800,0); start_write(3);
         send_result(610,0,200,1,3,0,0); drain();

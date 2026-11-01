@@ -336,6 +336,10 @@ def check_project(project):
                     f'{project.name}: missing or disabled voice source {name}.v')
         print(f'VOICE_PROJECT_SOURCES_PASS {project.name}: 5 enabled modules')
     count = rtl_interfaces(files)
+    if any(path.name == 'design_top_wrapper.v' for path in files):
+        for name in ('pen_minimal.v', 'signature_control.v'):
+            require((ROOT / 'user_source/hdl_source' / name).resolve() in enabled_files,
+                    f'{project.name}: missing or disabled signature source {name}')
     inventory = project.parent/'sources.json'
     if inventory.is_file():
         for row in json.loads(inventory.read_text(encoding='utf-8')):
@@ -343,6 +347,40 @@ def check_project(project):
             require(path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == row['sha256'],
                     f'Changed snapshot: {path}')
     print(f'PROJECT_PATHS_AND_NAMED_INTERFACES_PASS {project.name}: {len(files)} files, {count} instances')
+
+
+def check_signature_scope(relative, expected, actual):
+    """Allow only the mode-13 red override and selected-slot mirror output.
+
+    All original detector, frame ownership and CDC logic must still match.
+    Behavior is covered separately by the signature/single-switch regressions.
+    """
+    if actual == expected:
+        return False
+    if relative == 'target_frame_bridge.v':
+        additions = [
+            '    // DDR-domain selection, sampled by video_out at the same read-start edge.\n'
+            '    output wire O_read_mirror,\n',
+            '    // Mirror belongs to the stored video even when its target result is absent.\n'
+            '    assign O_read_mirror = S_slot_effect_config[I_read_slot][11:8] == 4\'d13;\n',
+        ]
+        for addition in additions:
+            require(actual.count(addition) == 1, 'Unexpected signature bridge edit')
+            actual = actual.replace(addition, '', 1)
+    else:
+        new_mode = ("    wire signature_requested = I_effect_config[11:8] == 4'd13;\n"
+                    "    wire signature_active = active_mask_view_mode == 4'd13;\n"
+                    "    wire [1:0] frame_mode = signature_requested ? 2'b00 :\n"
+                    '        (color_sync == color_sync_d ? color_sync : active_mode);')
+        old_mode = '    wire [1:0] frame_mode = color_sync == color_sync_d ? color_sync : active_mode;'
+        new_clear = ('            ((signature_requested != signature_active) ||\n'
+                     "             ((frame_mode == 2'b11) != active_motion) ||")
+        old_clear = "            (((frame_mode == 2'b11) != active_motion) ||"
+        for new, old in [(new_mode, old_mode), (new_clear, old_clear)]:
+            require(actual.count(new) == 1, 'Unexpected signature detector edit')
+            actual = actual.replace(new, old, 1)
+    require(actual == expected, f'Unreviewed changes beyond signature integration: {relative}')
+    return True
 
 
 def main():
@@ -358,6 +396,7 @@ def main():
                   'scharr_edge_detect_96.v', 'target_detect_switch_96.v']]
     optimized = 0
     detector_optimized = 0
+    signature_changed = 0
     for relative in preserved:
         path = 'user_source/hdl_source/'+relative
         expected = git('show', f'{args.main_ref}:{path}').decode('utf-8')
@@ -366,13 +405,16 @@ def main():
             optimized += check_scharr_center_scope(expected, actual)
         elif relative == 'isp/red_target_detect_96.v':
             detector_optimized += check_red_single_scope(expected, actual)
+        elif relative in {'target_frame_bridge.v', 'isp/target_detect_switch_96.v'}:
+            signature_changed += check_signature_scope(relative, expected, actual)
         else:
             require(actual == expected, f'Main logic changed: {path}')
     print(f'MAIN_FILES_PRESERVED_PASS {len(main_files)-retired_count} present; '
           f'{retired_count} reviewed obsolete files removed; '
-          f'{len(preserved)-optimized-detector_optimized} core modules match main; '
+          f'{len(preserved)-optimized-detector_optimized-signature_changed} core modules match main; '
           f'{optimized} reviewed centre-only substitution; '
-          f'{detector_optimized} reviewed single-target detector change')
+          f'{detector_optimized} reviewed single-target detector change; '
+          f'{signature_changed} reviewed signature integration changes')
     for path in (ROOT/'verification').glob('*.py'):
         ast.parse(path.read_text(encoding='utf-8-sig'), filename=str(path))
     print('PYTHON_SOURCE_PARSE_PASS')
@@ -380,9 +422,11 @@ def main():
     assignments = re.findall(r'set_pin_assignment\s*\{\s*(\S+)\s*\}\s*\{[^}]*LOCATION\s*=\s*(\w+)', pins)
     require(dict(assignments).get('I_fruit_switch') == 'B4', 'SW2 must be assigned to B4')
     require(dict(assignments).get('I_latency_switch') == 'A4', 'SW1 must remain A4')
+    require(dict(assignments).get('I_signature_switch') == 'E11', 'SW3 must be E11')
+    require(dict(assignments).get('I_signature_pause_switch') == 'D11', 'SW4 must be D11')
     locations = [p for _, p in assignments]
     require(len(locations) == len(set(locations)), 'Duplicate FPGA pin assignment')
-    print('SW1_A4_SW2_B4_PIN_ASSIGNMENTS_PASS')
+    print('SW1_A4_SW2_B4_SW3_E11_SW4_D11_PIN_ASSIGNMENTS_PASS')
     for project in [ROOT/'td_project/anlogic_edge_osd.al', *args.project]:
         check_project(project.resolve())
     print('MERGE_SOURCE_STATIC_CHECK_PASS (no compilation, simulation or programming)')

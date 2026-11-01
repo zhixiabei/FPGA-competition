@@ -55,7 +55,10 @@ module target_detect_switch_96 #(
     reg [COUNT_BITS-1:0] beat_count;
     wire frame_marker = I_tuser && !user_d;
     wire [1:0] active_mode = active_motion ? 2'b11 : active_color;
-    wire [1:0] frame_mode = color_sync == color_sync_d ? color_sync : active_mode;
+    wire signature_requested = I_effect_config[11:8] == 4'd13;
+    wire signature_active = active_mask_view_mode == 4'd13;
+    wire [1:0] frame_mode = signature_requested ? 2'b00 :
+        (color_sync == color_sync_d ? color_sync : active_mode);
     wire first_beat = frame_marker || frame_pending;
     wire accept_beat = I_tvalid && (frame_open || first_beat);
     wire final_beat = !first_beat && beat_count == FRAME_BEATS-1;
@@ -117,7 +120,8 @@ module target_detect_switch_96 #(
         .O_frame_toggle(red_toggle),
         .I_frame_id(I_frame_id),
         .I_multi_clear(frame_marker &&
-            (((frame_mode == 2'b11) != active_motion) ||
+            ((signature_requested != signature_active) ||
+             ((frame_mode == 2'b11) != active_motion) ||
              ((frame_mode == 2'b11 ? 2'b00 : frame_mode) != active_color))),
         .O_multi_ready(multi_ready), .O_multi_valid(multi_valid),
         .O_multi_hold(multi_hold), .O_multi_boxes(multi_boxes),

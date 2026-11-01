@@ -5,6 +5,7 @@ module tb_single_target_switch;
     localparam integer W=256,H=128,GROUPS=W/4;
     reg clk=0,rst_n=0,user=0,last=0,valid=0;
     reg [1:0] request_mode=0;
+    reg [11:0] effect_config=0;
     reg [9:0] frame_id=0;
     reg [95:0] data=0;
     wire ready,found,toggle,result_motion,active_motion,overflow;
@@ -27,7 +28,7 @@ module tb_single_target_switch;
         .RED_MULTI_ENABLE(0),.SINGLE_SHAPE_ENABLE(1)
     ) dut (
         .I_clk(clk),.I_rst_n(rst_n),.I_motion_mode_async(request_mode==3),
-        .I_color_mode_async(request_mode),.I_effect_config(12'd0),
+        .I_color_mode_async(request_mode),.I_effect_config(effect_config),
         .I_tuser(user),.I_tlast(last),.I_tvalid(valid),.I_tdata(data),
         .I_frame_id(frame_id),.O_result_ready(ready),.O_found(found),
         .O_xmin(xmin),.O_xmax(xmax),.O_ymin(ymin),.O_ymax(ymax),
@@ -172,7 +173,24 @@ module tb_single_target_switch;
         frame(22,1,0,0,-1);expect_result(22,1,1,1);
         frame(23,1,0,0,-1);expect_result(23,1,1,1);
         frame(24,1,0,0,-1);expect_result(24,0,0,0);
-        $display("SINGLE_TARGET_SWITCH_PASS results=%0d checks=%0d rgb_modes=3 motion_found=%0d sof_commit=1 tail_clear=1 partial_clear=1 hold=2",
+        // Signature overrides blue/motion only at SOF, and clears old tracks.
+        select_mode(2);effect_config=12'hd00;
+        frame(25,0,1,0,3);expect_result(25,0,0,0);
+        frame(26,0,1,0,-1);expect_result(26,1,0,1);
+        effect_config=12'hd01;
+        frame(27,0,1,0,-1);expect_result(27,1,0,1);
+        effect_config=12'h000;
+        frame(28,3,0,0,-1);expect_result(28,-1,0,0);
+        select_mode(0);
+        frame(29,0,1,0,-1);expect_result(29,0,0,0);
+        frame(30,0,1,0,-1);expect_result(30,1,0,1);
+        effect_config=12'hd00;
+        frame(31,0,1,0,-1);expect_result(31,0,0,0);
+        frame(32,0,1,0,-1);expect_result(32,1,0,1);
+        effect_config=12'h900;
+        frame(33,0,1,0,-1);expect_result(33,0,0,0);
+        frame(34,0,1,0,-1);expect_result(34,1,0,1);
+        $display("SINGLE_TARGET_SWITCH_PASS results=%0d checks=%0d rgb_modes=3 motion_found=%0d sof_commit=1 tail_clear=1 partial_clear=1 hold=2 signature_red_override_restore=PASS",
             results,checks,motion_found_count);
         $finish;
     end

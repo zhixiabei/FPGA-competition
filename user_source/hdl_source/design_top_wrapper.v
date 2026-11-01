@@ -24,6 +24,8 @@ module design_top_wrapper #(
     output wire [7:0] O_seg_n,
     output wire [7:0] O_seg_sel_n,
     input wire        I_fruit_switch, // Board SW2 (B4), high runs fruit recognition.
+    input wire        I_signature_switch, // Board SW3 (E11), mirrored handwriting.
+    input wire        I_signature_pause_switch, // Board SW4 (D11), retain ink and pause.
       
     output wire       O_cam_scl,
     inout  wire       IO_cam_sda,
@@ -771,6 +773,16 @@ module design_top_wrapper #(
     wire [3:0] S_effect_mode_requested;
     wire [7:0] S_effect_param_requested;
     wire [11:0] S_effect_config_csi;
+    wire [11:0] S_effect_config_requested;
+    wire S_read_mirror;
+    signature_control u_signature_control (
+        .I_clk(I_sys_clk), .I_rst_n(S_rst_n),
+        .I_write_switch(I_signature_switch),
+        .I_pause_switch(I_signature_pause_switch),
+        .I_effect_mode(S_effect_mode_requested),
+        .I_effect_param(S_effect_param_requested),
+        .O_effect_config(S_effect_config_requested)
+    );
     display_effect_control #(
         .DEBOUNCE_CYCLES(1000000),
         .DEFAULT_MODE(DEFAULT_EFFECT_MODE)
@@ -790,7 +802,7 @@ module design_top_wrapper #(
         .I_src_clk(I_sys_clk),
         .I_dst_clk(S_csi_rx_clk),
         .I_rst_n(S_rst_n),
-        .I_src_data({S_effect_mode_requested, S_effect_param_requested}),
+        .I_src_data(S_effect_config_requested),
         .O_dst_data(S_effect_config_csi)
     );
 
@@ -1111,6 +1123,7 @@ end endgenerate
         .I_write_start(S_write_frame_start), .I_write_slot(S_write_start_slot),
         .I_write_word(S_vi_ddr_wr_en),
         .I_read_start(S_read_frame_start), .I_read_slot(S_video_out_rp),
+        .O_read_mirror(S_read_mirror),
         .O_ready(S_bridge_ready), .O_effect_config(S_bridge_effect_config),
         .O_motion_mode(S_bridge_motion), .O_color_mode(S_bridge_color_mode),
         .O_found(S_bridge_found),
@@ -1354,13 +1367,15 @@ end endgenerate
 
     assign S_video_out_rst_n = S_video_ddr_rst_n;
 
-    video_out #(.FRAME_STRIDE_NATIVE(ENABLE_HANDCNN != 0 ? 1572864 : 7000000)) u_video_out(
+    video_out #(.FRAME_STRIDE_NATIVE(ENABLE_HANDCNN != 0 ? 1572864 : 7000000),
+                .MIRROR_ENABLE(1)) u_video_out(
         .I_rst_n             ( S_video_out_rst_n    ),
         .I_ddr_clk           ( S_ddr_clk            ),
  
         .O_video_out_rd_busy ( S_video_out_rd_busy  ),
         .I_video_in_wr_busy  ( S_video_in_wr_busy   ),
         .I_video_out_rp      ( S_video_out_rp       ),
+        .I_mirror            ( S_read_mirror        ),
         .O_read_frame_slot   ( S_read_frame_slot    ),
         .O_read_frame_start  ( S_read_frame_start   ),
  
@@ -1519,6 +1534,7 @@ end endgenerate
         .SHOW_COLOR_TARGET  ( 1 ),
         .MULTI_TARGET_ENABLE( FRAME_ALIGNED_TARGET_ENABLE ),
         .TARGET_SLOTS( RED_MULTI_ENABLE ? 4 : 1 ),
+        .SIGNATURE_ENABLE(1),
         .SHOW_RED_MASK      ( 0 ), // Front-end metadata carries no per-pixel mask.
         .SHOW_LATENCY       ( ENABLE_LATENCY_DIAGNOSTICS ),
         .LATENCY_SWITCH_ENABLE( ENABLE_LATENCY_DIAGNOSTICS ),

@@ -23,7 +23,8 @@ module hdmi_mixer #(
     parameter integer CNN_RESULT_TIMEOUT_FRAMES = 60,
     parameter integer MULTI_TARGET_ENABLE = 0,
     // Limit retained target state and replicated box/label rendering.
-    parameter integer TARGET_SLOTS = 4
+    parameter integer TARGET_SLOTS = 4,
+    parameter integer SIGNATURE_ENABLE = 0
 )(
     input wire        I_clk,
     input wire        I_rst_n,
@@ -180,6 +181,34 @@ module hdmi_mixer #(
     reg [11:0] S_logo_red_x_end;
     wire [11:0] S_logo_input_x = I_video_user ? 12'd0 : S_x;
     wire [11:0] S_logo_input_y = I_video_user ? 12'd0 : S_y;
+    wire S_signature_active = SIGNATURE_ENABLE != 0 && S_effect_mode == 4'd13;
+    wire S_signature_ink_2d;
+    generate if(SIGNATURE_ENABLE != 0) begin: signature
+        // Reuse the frame-aligned primary center; no extra box bus or detector.
+        wire [10:0] mirrored_x = (IMG_WIDTH-1)-I_target_center_x[10:0];
+        wire pen_valid = I_target_result_ready && I_target_found &&
+            !I_target_motion_mode && I_target_color_mode==0 &&
+            !I_target_multi_overflow && I_target_multi_valid==4'b0001 &&
+            I_target_center_x<IMG_WIDTH && I_target_center_y<IMG_HEIGHT;
+        wire ink;
+        reg ink_2d;
+        pen_minimal #(.IMG_WIDTH(IMG_WIDTH),.IMG_HEIGHT(IMG_HEIGHT),
+            .CANVAS_SHIFT(2),.SMOOTH_ENABLE(1)) u_pen (
+            .I_clk(I_clk),.I_rst_n(I_rst_n),.I_frame_start(I_video_user),
+            .I_enable(I_effect_mode==4'd13),.I_pause(I_effect_param[0]),.I_clear(1'b0),
+            .I_pen_valid(pen_valid),.I_pen_hold(I_target_multi_hold[0]),
+            .I_pen_x(mirrored_x),.I_pen_y(I_target_center_y[9:0]),
+            .I_de(I_video_de),.I_x(S_logo_input_x[10:0]),.I_y(S_logo_input_y[9:0]),
+            .O_ink(ink),.O_busy(),.O_clearing()
+        );
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if(!I_rst_n) ink_2d<=1'b0;
+            else ink_2d<=ink;
+        end
+        assign S_signature_ink_2d=ink_2d;
+    end else begin: no_signature
+        assign S_signature_ink_2d=1'b0;
+    end endgenerate
     // The index and palette ROMs each take one clock. Read from the input
     // coordinates so their result still matches S_x_2d/S_y_2d.
     wire [14:0] S_logo_addr;
@@ -2086,6 +2115,14 @@ module hdmi_mixer #(
                 S_rgb_next = 24'd0;
             end
         end else begin
+            // Keep the signature picture free of unmirrored boxes and panels.
+            // SW1 retains its optional latency readout; no extra video stage.
+            if(S_signature_active) begin
+                if(!S_video_de_2d) S_rgb_next=24'd0;
+                else if(S_latency_panel) S_rgb_next=S_latency_text ?
+                    (S_latency_alert ? 24'hffb040 : 24'hffffff) : 24'h101418;
+                else if(S_signature_ink_2d) S_rgb_next=24'hff3030;
+            end else
             // Four 16x16 status blocks at (192,16), with 8-pixel gaps.
             // Keep the existing priority over the opaque font panels.
             if(SHOW_CAMERA_STATUS && S_video_de_2d &&
