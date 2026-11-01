@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Project Version="3" Minor="2" Path="E:/aaa/FPGA-competition-main/FPGA-competition-main/td_project">
+<Project Version="3" Minor="2" Path="D:/vivado_work/anlogic_edge_osd/td_project">
     <Project_Created_Time></Project_Created_Time>
     <TD_Encoding>UTF-8</TD_Encoding>
     <TD_Version>6.2.168116</TD_Version>
@@ -840,7 +840,7 @@
             </File>
         </ADC_FILE>
         <SDC_FILE>
-            <File Path="../td_project/anlogic_edge_osd.sdc">
+            <File Path="anlogic_edge_osd.sdc">
                 <FileInfo>
                     <Attr Name="UsedInSyn" Val="true"/>
                     <Attr Name="UsedInP&R" Val="true"/>

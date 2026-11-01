@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--modelsim', type=Path, default=Path('E:/modelsim/modelsim_ase/win32aloem'))
+    parser.add_argument('--modelsim', type=Path, default=Path('C:/altera/14.1/modelsim_ase/win32aloem'))
     args = parser.parse_args()
     out = ROOT / 'build/scale_voice_tests'
     out.mkdir(parents=True, exist_ok=True)

@@ -6,6 +6,11 @@
 # Simulation outputs. Keep new testbench source outside out and out_*.
 /sim/out/
 /sim/out_*/
+/sim/*_work/
+/sim/modelsim.ini
+/modelsim.ini
+transcript
+/.codex_doc_work/
 xsim.dir/
 .Xil/
 

@@ -1,12 +1,6 @@
 # 总工程 CX-SP5T 自动播报
 
-2026-10-30 本机修复：主工程五个语音源文件条目已恢复，语音 RTL 已压缩资源，功能与接线保持本页约定。若 TD 仍打开旧工程，关闭后重新打开 `td_project/anlogic_edge_osd.al` 再综合。最新同配置综合对比和回归见 [语音修复与资源优化](reports/CX_SP5T_RESOURCE_FIX.md)；本轮没有布局布线或生成新 bit。
-
-本次以 GitHub `main` 的 `dc9a2b1`（修复时序）为基线，在 `td_project/anlogic_edge_osd.al` 中加入语音。保留图像处理、HDMI、五类水果识别、HX711、计价、DDR 及 U30 Flash 模型启动；没有替换模型或重写原有计价算法。视频入口 `anlogic_sc520_capture.al` 不启用识别和语音，TX 保持高电平。
-
-2026-10-30 再次从 GitHub 拉取并确认 `origin/main` 为 `dc9a2b1`，随后将语音改动合入当前工作区主目录，分支为 `codex/voice-latest-main`。原本地 `main` 的 `a3385d6` 提交保留；它基于更早版本，不作为本次总工程的基线。本次只修改 17 个语音相关的源码、工程配置、测试和说明文件，保留远端 DDR、时序及图像处理修复。
-
-后续远端更新时，在本语音分支合并或变基最新 `origin/main`，解决冲突后重跑本页回归，再提交合并请求；不要用旧工程目录整体覆盖新源码。
+统一工程包含 HX711 称重、五类水果计价及 CX-SP5T 自动播报。当前入口与模型依赖见 [首页](../README.md)。
 
 ## 播报行为
 
@@ -55,7 +49,7 @@ TF 卡使用 FAT32、容量不超过 32GB，根目录建立大写 `ZH` 文件夹
 ## 上板测试
 
 1. 打开本目录中的 `td_project/anlogic_edge_osd.al`，使用包含本次语音代码且通过物理验证的 bit。不要误用此前的“仅水果+称重+语音”精简工程 bit。
-2. 按上表接线、准备 TF 卡，拔掉语音模块数据线，上电。保留总工程原有的 U30 Flash 模型启动配置；语音集成本身不需要重新加载权重。
+2. 按上表接线、准备 TF 卡，拔掉语音模块数据线，上电。确认 U30 权重与当前模型配置匹配，详见 [Flash 模型说明](FRUIT_FLASH_BOOT.md)。
 3. SW2 ON。空秤约 2 秒自动去皮，也可以按 K2（A9）去皮。放上 **227 g** 参考物，按 K3（B9）标定；标定参数掉电不保存。
 4. 放上可识别水果，确认 HDMI 重量和金额有效，等待稳定后播报。相同读数继续放置应不重复播报。
 5. 取走并等待空秤稳定，再放回相同物品，应再次播报。SW2 OFF 时不应启动新播报。
@@ -80,12 +74,4 @@ python -B verification/test_voice_project_sources.py
 
 回归覆盖五类价格、105 组十进制组合、串口原始波形/校验、音量 30、返回状态、播放超时、稳定/漂移/去重，并用实际计价 RTL 和生产用语音适配模块验证 SW2、故障、重新计算间隙、精确零空秤复位及陈旧 valid 信号。
 
-如需自行命令行构建（不会下载到板卡）：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File verification/run_image_quality_build.ps1 `
-  -TdBin E:/TD_6.2.1_Engineer_6.2.168.116/bin -GenerateBit `
-  -OutputDirectory build/voice-main-release
-```
-
-只有最终布线 setup/hold 均通过，构建脚本才发布新的 bit。本轮修复已通过仿真、静态检查和总工程综合；布局布线和烧录由用户进行。优化后 Slice 综合估算为 23374 / 21216，最终物理占用仍需布局确认。最新结果见 [资源优化记录](reports/CX_SP5T_RESOURCE_FIX.md)，首次集成历史见 [验证记录](reports/CX_SP5T_MAIN_BUILD.md)。
+当前源码尚未完成最终物理验收。历史语音综合结果不代表此次融合后的资源占用和时序。

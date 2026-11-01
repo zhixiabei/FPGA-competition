@@ -1,57 +1,58 @@
 # PH1P35 图像处理与水果识别
 
-本次将 `main` 的图像处理链路与 `master` 的 RGB128 水果识别整合。保留 main 的曝光、白平衡、RAW 直方图、十三种显示模式、颜色与形状单目标检测、运动检测及延迟面板。多目标检测因资源不足保持关闭，待资源允许后再恢复。
+当前主工程为 [anlogic_edge_osd.al](td_project/anlogic_edge_osd.al)，顶层 `design_top_wrapper`，器件 PH1P35MDG324。工程状态见 [当前工程说明](td_project/当前工程说明.md)。
 
-水果识别使用 **SW2（B4）直接启停**。总工程已加入 HX711 称重、五类水果计价、HDMI 重量/金额显示和 **CX-SP5T 自动语音播报**。识别、重量和金额有效并稳定后，播报 `x.xxx 千克、xx.xx 元`，音量为 30；同一结果只播一次，空秤后可重新播报。接线、音频编号、标定和测试见 [语音播报说明](docs/CX_SP5T_MAIN_INTEGRATION.md)。旧 bit 不包含本次语音修改，编译验证结果见该说明。
+2026-11-01 已融合 GitHub `71ce808` 与本地单目标形状修复，使用新的 RGB 背景比较、连续扫描确认和确认空框后清除标签逻辑。形状分支修复了内部小孔导致轮廓截断的问题。当前源码尚未完成最终布局布线验收，目录中的旧 bit 不代表当前源码。
 
-## 控制方式
+## 操作
 
 | 控件 | 功能 |
 |---|---|
-| K1（D5） | 循环 main 的十三种显示模式 |
-| K2（A9） | SW2 ON：称重去皮；SW2 OFF：红色、绿色、蓝色、运动检测循环 |
-| K3（B9） | SW2 ON：使用 227 g 参考物校准；SW2 OFF：保留 |
-| SW1（A4） | 延迟面板显示/隐藏 |
-| SW2（B4） | ON：五类水果识别、称重和计价；OFF：恢复 main 检测显示并停止计价 |
-| K4（C7） | 水果工程无需按 K4；独立手势工程仍使用 K4 启停 |
+| K1（D5） | 循环十三种显示模式 |
+| K2（A9） | SW2 ON：去皮；SW2 OFF：红、绿、蓝、运动检测循环 |
+| K3（B9） | SW2 ON：使用 227 g 参考物校准 |
+| SW1（A4） | 显示或隐藏延迟面板 |
+| SW2（B4） | 开启或关闭水果识别、称重和计价 |
+| K4（C7） | 统一水果工程不使用此键启停 |
 
-水果五分类为苹果、香蕉、葡萄、橘子、草莓；低置信度输出 `UNKNOWN`，草莓标签为 `STRAWBR`。输入来自显示特效处理前的彩色 ISP 流，使用中央 480×480 固定框。切换显示在 HDMI 帧边界生效；关闭识别后，已开始的 DDR 工作完成后丢弃旧结果，不复位共享 DDR。
+水果分类为苹果、香蕉、葡萄、橘子、草莓。ROI 起点为 `x=240, y=120`，大小为 `480×480`；图像来自显示特效前的彩色 ISP 流。低置信度显示 `UNKNOWN`，草莓显示 `STRAWBR`。当前多目标检测关闭。
 
-HDMI 显示净重量 `x.xxx kg` 和总价 `xx.xx 元`；当前工程关闭板载数码管扫描。单价分别为苹果 8、香蕉 6、葡萄 12、橘子 5、草莓 20 元/kg；总价按 `重量(g) × 单价(分/kg) ÷ 1000` 四舍五入到分。无有效识别、未校准、传感器故障或总价超过 99.99 元时，价格显示 `----`。
+单价依次为 8、6、12、5、20 元/kg。总价四舍五入到分，无有效识别、未校准、传感器故障或金额超过 99.99 元时不显示有效价格。HX711 接线、去皮、校准和自动播报见 [接线与语音说明](docs/CX_SP5T_MAIN_INTEGRATION.md)。
 
-HX711 接到 J2：DOUT 接第 1 脚（V2），SCK 接第 2 脚（V1）。上电空秤约两秒后自动去皮；SW2 ON 时可用 K2 重新去皮，再放置 227 g 参考物并按 K3 校准。校准数据只保存在运行寄存器中，复位或断电后需重新校准。
+## 工程与目录
 
-## 工程入口
-
-| 工程 | 内容 |
+| 位置 | 用途 |
 |---|---|
-| `td_project/anlogic_edge_osd.al` | main 图像功能、五类水果识别、HX711 称重计价和 CX-SP5T 语音 |
-| `td_project/anlogic_sc520_capture.al` | 视频与称重入口，不启用水果识别，因而不显示价格 |
-| `build/fruit/td_main_sw2/handfixed_candidate.al` | 本次新生成的 main + RGB128 水果 + SW2 工程，尚未编译 |
-| `build/fruit/td/handfixed_candidate.al` | 先前冻结的水果工程与报告，原有 KEY4 版本 |
-| `build/gesture/td/handfixed_candidate.al` | 先前冻结的独立手势工程与报告 |
+| `user_source/` | RTL、IP 和引脚约束 |
+| `td_project/anlogic_edge_osd.al` | 当前统一工程 |
+| `sim/`、`verification/` | 测试台、回归脚本、静态检查 |
+| `fruitcnn128_retrained_20261031/` | 最佳模型检查点和少量归档信息，不参与主工程编译 |
+| `docs/reference/`、`docs/proposals/` | 硬件资料、开题 Word/PDF 及生成源 |
+| `build/` | 当前形状修复、融合及清理记录，不进入 Git |
 
-`build/` 不进入 Git。新电脑需另行复制 `build/fruit/weights/` 模型包，再运行以下**仅生成文件**的命令。输出目录必须尚不存在，避免覆盖冻结工程：
+`build_firmware.cmd` 只构建当前统一工程，兼容 `-Fruit` 参数。旧手势及备用工程入口已撤下。构建会启动 FPGA 工具；检查源码无需运行它。
+
+## 模型与验证
+
+用户已确认新权重烧入板上 U30；当前配置要求 CRC32 `3a37bea7`。主工程上电只读取和校验权重，修改形状逻辑无需重复烧权重。本机旧权重和旧烧写入口已清理；模型检查点不等于定点 Flash 导出包。本次未操作板卡。详见 [Flash 模型说明](docs/FRUIT_FLASH_BOOT.md)。
+
+仅检查源码、路径和接口：
 
 ```powershell
-python -B verification/prepare_fruit128_project.py --model build/fruit/weights --output build/fruit/td_main_sw2
+python -B verification/check_merge_readiness.py
 ```
 
-该入口只复制源码、转换 RGB128 模块并生成 `.al`、约束快照及清单，不调用 FPGA 工具。新工程同时包含 main 和水果逻辑，资源与时序尚未验证，不能沿用任一旧工程的物理验收结果。
+局部测试命令见 [仿真入口](sim/README.md)。本次融合已完成的结果见 [融合记录](verification/github_merge_20261101.md) 和 [形状修复记录](verification/single_shape_contour_20261101.md)；仿真通过不能代替物理时序和上板验收。
 
-仅做静态检查：
+## 文档入口
 
-```powershell
-python -B verification/check_merge_readiness.py --project build/fruit/td_main_sw2/handfixed_candidate.al
-```
+- [代码导航](docs/CODE_MAP.md)
+- [单目标形状识别](docs/SINGLE_TARGET_COLOR_SHAPE.md)
+- [运动检测](docs/MOTION_DETECTION.md)
+- [延迟显示](docs/LATENCY_VISUALIZATION.md)
+- [RAW 诊断](docs/RAW_STATS_GUIDE.md)
+- [参考资料导航](docs/参考资料导航.md)
 
-未来单独获准构建时，`build_firmware.cmd` 默认使用 main 图像工程；`-Fruit` 指向新的 `td_main_sw2`，`-Gesture` 指向旧手势工程。此次未执行这些构建入口。
+旧实验基准及配套脚本、备用工程、旧手势流程、训练图片与训练入口已清理。完整 RTL/IP、约束、当前回归和硬件资料保留；TD 正在使用的输出目录保留。
 
-## 模型与历史制品
-
-- 水果模型：`build/fruit/training/model.pt`，配套量化包：`build/fruit/weights/`。
-- 原水果 bit：`td_project/anlogic_edge_osd_Runs/best_result/fruitfixed_candidate.bit`。
-- 原手势 bit：`td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit`。
-- 旧 bit、权重和物理报告的对应关系见 [水果历史说明](docs/FRUITCNN128_FPGA.md) 与 [手势说明](docs/HANDCNN_FIXED_ROI_BACKGROUND.md)。旧 bit 的开关行为仍以旧版说明为准。
-
-源码和 Git 合并准备说明见 [main/master 整合记录](docs/MASTER_MAIN_MERGE.md)，main 原有功能详见 [代码导航](docs/CODE_MAP.md)、[显示模式](docs/VIDEO_MODE_SWITCH.md)、[颜色与形状](docs/COLOR_SHAPE.md)。main 合并前首页保存在 [历史文档](docs/history/MAIN_BEFORE_FRUIT_MERGE.md)。
+删除清单在 `verification/workspace_cleanup_20261101.json`，本机清理与输入哈希记录在 `build/cleanup_current_20261101/`。精简不改变现有硬件逻辑，也不代表此前的物理拥塞已解决。

@@ -43,6 +43,7 @@ module tb_fruit_roi_system;
     defparam dut.snapshot.BEATS=4;
 
     integer checks=0,guide_checks=0,flat_checks=0,decision_checks=0;
+    integer empty_checks=0;
     integer stop_checks=0,stalled_read_cycles=0,stalled_write_cycles=0;
     integer snapshot_writes=0;
     reg snapshot_scoreboard=0;
@@ -130,6 +131,28 @@ module tb_fruit_roi_system;
         end
     endtask
 
+    // Foreground is the completed background gate decision, already confirmed
+    // across scans. It must clear a retained class even when texture remains.
+    task publish_empty(input bit texture_present,input [15:0] source_frame);
+        begin
+            @(negedge clk);
+            dut.state=3'd4;dut.background_job=0;dut.read_frame=source_frame;
+            force dut.pp_done=1'b1;
+            force dut.has_texture=texture_present;
+            force dut.foreground=1'b0;
+            tick();
+            expect_box("CLASS_PREP confirmed empty",3'd1,source_frame);
+            check(dut.state===3'd0 && dut.core_start===1'b0 &&
+                  dut.result_filter.stable_class===3'd1,
+                "Confirmed empty scene retained a class or launched CNN");
+            empty_checks=empty_checks+1;
+            @(negedge clk);
+            release dut.pp_done;
+            release dut.has_texture;
+            force dut.foreground=1'b1;
+        end
+    endtask
+
     // Static task: ModelSim permits forcing a hierarchical wire to its inputs.
     task publish_decision(
         input [2:0] raw_class,input [2:0] expected_class,input [15:0] source_frame
@@ -177,6 +200,7 @@ module tb_fruit_roi_system;
         // regression. Keep all real DDR client state machines in circuit.
         force dut.key_enabled=run_override;
         force dut.background_ready=1'b1;
+        force dut.foreground=1'b1;
         force dut.model_ready=1'b1;
 
         reset_and_guide();
@@ -187,7 +211,13 @@ module tb_fruit_roi_system;
         publish_flat(3'd2,16'd203);
         publish_flat(3'd2,16'd204);
         publish_flat(3'd1,16'd205);
-        stop_and_expect(16'd205);
+        publish_decision(3'd2,3'd1,16'd206);
+        publish_decision(3'd2,3'd2,16'd207);
+        publish_empty(1'b1,16'd208);
+        publish_decision(3'd2,3'd1,16'd209);
+        publish_decision(3'd2,3'd2,16'd210);
+        publish_empty(1'b0,16'd211);
+        stop_and_expect(16'd211);
         tick();
         check(!result_valid && box_valid,"Stopped guide did not remain stable");
 
@@ -323,12 +353,12 @@ module tb_fruit_roi_system;
         @(negedge clk);release dut.core_fault;
         reset_and_guide();
 
-        check(guide_checks==6 && flat_checks==4 && decision_checks==2 &&
+        check(guide_checks==6 && flat_checks==4 && decision_checks==6 && empty_checks==2 &&
               stop_checks==3 && stalled_read_cycles==9 &&
               stalled_write_cycles==5 && snapshot_writes==4,
             "Incomplete ROI publication/transaction coverage");
-        $display("FRUIT_ROI_SYSTEM_PASS checks=%0d guide=%0d flat_none=%0d decision=%0d stop=%0d read_stall_cycles=%0d write_stall_cycles=%0d snapshot_writes=%0d roi=240,120,480,480 inclusive=719,599",
-            checks,guide_checks,flat_checks,decision_checks,stop_checks,
+        $display("FRUIT_ROI_SYSTEM_PASS checks=%0d guide=%0d flat_none=%0d decision=%0d confirmed_empty=%0d stop=%0d read_stall_cycles=%0d write_stall_cycles=%0d snapshot_writes=%0d roi=240,120,480,480 inclusive=719,599",
+            checks,guide_checks,flat_checks,decision_checks,empty_checks,stop_checks,
             stalled_read_cycles,stalled_write_cycles,snapshot_writes);
         $finish;
     end

@@ -24,6 +24,81 @@ def git(*args):
     return subprocess.check_output(['git', '-c', 'core.quotepath=false', *args], cwd=ROOT)
 
 
+def approved_cleanup_removals(policy):
+    """Permit only reviewed obsolete documents and disposable simulator files."""
+    require(policy.get('schema_version') == 1, 'Unknown cleanup manifest version')
+    simulator_files = {'modelsim.ini', 'transcript', 'sim/normalize_work/transcript'} | {
+        prefix + name for prefix in (
+            'sim/fruit_core_work/', 'sim/core_compile_work/work/',
+            'sim/normalize_work/work/', 'sim/preprocess_compile_work/work/'
+        ) for name in
+        ('_info', '_lib.qdb', '_lib1_0.qdb', '_lib1_0.qpg', '_lib1_0.qtl', '_vmake')
+    }
+    allowed = {}
+    critical_tools = {'check_merge_readiness.py', 'run_image_quality_build.ps1',
+                      'run_scale_voice_tests.py', 'test_voice_project_sources.py',
+                      'read_flash_model_status.ps1', 'refresh_osd_font.py',
+                      'check_color_mask_equivalence.ps1', 'fruitcnn128.py', 'handcnn_model.py'}
+    for row in policy['removed_tracked_files']:
+        path, category, blob = row['path'], row['category'], row['git_blob']
+        require('..' not in path.split('/') and '\\' not in path,
+                f'Invalid cleanup path: {path}')
+        valid = (
+            category == 'obsolete_document' and path.endswith('.md') and
+            path.startswith(('docs/', 'verification/', 'firmware/'))
+        ) or (
+            category == 'generated_simulation_file' and path in simulator_files
+        ) or (
+            category == 'retired_launcher' and path == 'load_fruits128_weights.cmd'
+        ) or (
+            category == 'retired_training' and (
+                path.startswith('fruits5_selected_20261031/') or
+                path.startswith('fruitcnn128_retrained_20261031/') and
+                path not in {
+                    'fruitcnn128_retrained_20261031/README.md',
+                    'fruitcnn128_retrained_20261031/summary.json',
+                    'fruitcnn128_retrained_20261031/training/model.pt',
+                    'fruitcnn128_retrained_20261031/training/run_config.json',
+                    'fruitcnn128_retrained_20261031/training/evaluation.json',
+                    'fruitcnn128_retrained_20261031/training/fpga_requirements.json',
+                }
+            )
+        ) or (
+            category == 'retired_project' and path in {
+                'td_project/anlogic_edge_osd_voice_optimized.al',
+                'td_project/anlogic_sc520_capture.al', 'td_project/anlogic_sc520_capture.sdc'}
+        ) or (
+            category == 'retired_workflow' and (
+                path.startswith('verification/') and Path(path).name not in critical_tools and
+                Path(path).suffix in {'.py', '.ps1', '.tcl', '.json', '.cs', '.adc', '.sdc', '.txt'} or
+                path.startswith('sim/') and Path(path).suffix in {'.ps1', '.sv', '.hex'} or
+                path.startswith('.run/') and path.endswith('.xml') or
+                path in {'firmware/handcnn_manifest.json', 'run_handfixed_desktop.cmd'}
+            )
+        )
+        require(valid, f'Cleanup cannot authorize source/data removal: {path}')
+        require(path not in allowed and re.fullmatch(r'[0-9a-f]{40}', blob),
+                f'Duplicate cleanup path or invalid Git identity: {path}')
+        allowed[path] = blob
+    return allowed
+
+
+def check_main_inventory(main_ref):
+    tree = {}
+    for entry in git('ls-tree', '-r', '-z', main_ref).decode().split('\0'):
+        if entry:
+            metadata, path = entry.split('\t', 1)
+            tree[path] = metadata.split()[2]
+    manifest = ROOT/'verification/workspace_cleanup_20261101.json'
+    allowed = (approved_cleanup_removals(json.loads(manifest.read_text(encoding='utf-8')))
+               if manifest.is_file() else {})
+    missing = [path for path in tree if not (ROOT/path).is_file()]
+    unexpected = [path for path in missing if allowed.get(path) != tree[path]]
+    require(not unexpected, 'Unreviewed main files removed or upstream version changed: ' +
+            ', '.join(unexpected))
+    return tree, len(missing)
+
+
 def uncomment(text):
     return re.sub(r'//[^\n]*|/\*.*?\*/', '', text, flags=re.S)
 
@@ -275,8 +350,7 @@ def main():
     parser.add_argument('--main-ref', default='origin/main')
     parser.add_argument('--project', action='append', type=Path, default=[])
     args = parser.parse_args()
-    main_files = git('ls-tree', '-r', '--name-only', args.main_ref).decode().splitlines()
-    require(all((ROOT/p).is_file() for p in main_files), 'A main file was removed')
+    main_files, retired_count = check_main_inventory(args.main_ref)
     preserved = ['auto_exposure_control.v', 'awb.v', 'display_effect_control.v',
                  'display_effects_rgb888.v', 'target_frame_bridge.v', 'video_latency_monitor.v']
     preserved += ['isp/'+p for p in ['ae_frame_stats_raw10_4x.v', 'iq_diagnostic_stats.v',
@@ -294,7 +368,8 @@ def main():
             detector_optimized += check_red_single_scope(expected, actual)
         else:
             require(actual == expected, f'Main logic changed: {path}')
-    print(f'MAIN_FILES_PRESERVED_PASS {len(main_files)} files; '
+    print(f'MAIN_FILES_PRESERVED_PASS {len(main_files)-retired_count} present; '
+          f'{retired_count} reviewed obsolete files removed; '
           f'{len(preserved)-optimized-detector_optimized} core modules match main; '
           f'{optimized} reviewed centre-only substitution; '
           f'{detector_optimized} reviewed single-target detector change')
@@ -308,62 +383,8 @@ def main():
     locations = [p for _, p in assignments]
     require(len(locations) == len(set(locations)), 'Duplicate FPGA pin assignment')
     print('SW1_A4_SW2_B4_PIN_ASSIGNMENTS_PASS')
-    for project in [ROOT/'td_project/anlogic_edge_osd.al', ROOT/'td_project/anlogic_sc520_capture.al', *args.project]:
+    for project in [ROOT/'td_project/anlogic_edge_osd.al', *args.project]:
         check_project(project.resolve())
-    for project in args.project:
-        config = json.loads((project.parent/'candidate_config.json').read_text())
-        if config.get('design') != 'five_fruit_fixed_roi':
-            continue
-        require(config.get('switch_control') and not config['key4_control'], 'Fruit must follow SW2 directly')
-        require(config['switch_pin'] == 'B4' and config['switch_active_high'], 'Wrong SW2 configuration')
-        top = (project.parent/'sources/user_source/hdl_source/design_top_wrapper.v').read_text()
-        require('parameter integer ENABLE_HANDCNN = 1,' in top and
-                'parameter integer FRUIT_SWITCH_CONTROL = 1,' in top, 'Fruit controls disabled')
-        require('.run_switch(I_fruit_switch)' in top, 'SW2 not connected to classifier')
-        # Verify the prepared candidate reflects current repository sources.
-        from prepare_fruitfixed_project import make_display, make_system, replace_once
-        from prepare_fruit128_project import background128, core128, preprocess128
-        original_top = (ROOT/'user_source/hdl_source/design_top_wrapper.v').read_text(encoding='utf-8')
-        expected_top = replace_once(original_top, 'parameter integer ENABLE_HANDCNN = 0,',
-                                    'parameter integer ENABLE_HANDCNN = 1,')
-        expected_top = replace_once(expected_top, 'parameter integer FRUIT_SWITCH_CONTROL = 0,',
-                                    'parameter integer FRUIT_SWITCH_CONTROL = 1,')
-        expected_top = replace_once(expected_top, 'handfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),',
-                                    'fruitfixed_system #(.KEY4_CONTROL(1),.BACKGROUND_CONTROL(1),')
-        expected_top = replace_once(expected_top, '.HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),',
-                                    '.HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),\n        .FRUIT_CNN(1),')
-        expected_top = replace_once(expected_top, '.SHOW_RESNET_RUNTIME ( ENABLE_HANDCNN != 0 ? 1 : 0 ),',
-                                    '.SHOW_RESNET_RUNTIME ( 0 ),')
-        require(top == expected_top, 'Prepared fruit top is older than repository sources')
-        candidate = project.parent/'sources/candidate'
-        for name, relative, convert in [
-            ('fruitcnn128_core.v', 'handcnn/handcnn_core.v', core128),
-            ('handfixed_preprocess.v', 'handfixed/handfixed_preprocess.v', preprocess128),
-            ('handfixed_background.v', 'handfixed/handfixed_background.v', background128),
-            ('handfixed_key_control.v', 'handfixed/handfixed_key_control.v', lambda value: value),
-            ('fruitfixed_system.v', 'handfixed/handfixed_system.v',
-             lambda value: replace_once(make_system(value), 'handcnn_core core(', 'fruitcnn128_core core(')),
-        ]:
-            expected = convert((ROOT/'user_source/hdl_source'/relative).read_text(encoding='utf-8'))
-            require((candidate/name).read_text(encoding='utf-8') == expected, f'Candidate outdated: {name}')
-        expected_display = make_display((ROOT/'user_source/hdl_source/hdmi_mixer.v').read_text(encoding='utf-8'),
-                                        config['display_labels'])
-        require((project.parent/'sources/user_source/hdl_source/hdmi_mixer.v').read_text(encoding='utf-8') == expected_display,
-                'Candidate display outdated')
-        for relative in ['td_project/anlogic_edge_osd.sdc', 'user_source/constraints_source/pin.adc']:
-            expected = (ROOT/relative).read_bytes()
-            if relative.endswith('anlogic_edge_osd.sdc'):
-                expected += b'\n' + (ROOT/'user_source/constraints_source/cnn_optional.sdc').read_bytes()
-            require((project.parent/'sources'/relative).read_bytes() == expected,
-                    f'Candidate constraint outdated: {relative}')
-        print('FRUIT_CANDIDATE_SOURCE_FRESHNESS_PASS')
-        data = (Path(config['model_directory'])/'model.bin').read_bytes()
-        require(hashlib.sha256(data).hexdigest() == config['model_sha256'], 'Model bundle mismatch')
-        # Four display slots (native addresses count 16-bit words) end at C00000.
-        require(1572864*2*4 == 0xc00000 and 1280*720*3 <= 1572864*2, 'Video slot overlap')
-        require(0xc00000+len(data) <= 0xe00000 and 0xe00000+1280*720*3 <= 0x1100000,
-                'Model/snapshot memory overlap')
-        print('FRUIT_SW2_MODEL_AND_MEMORY_MAP_PASS')
     print('MERGE_SOURCE_STATIC_CHECK_PASS (no compilation, simulation or programming)')
 
 

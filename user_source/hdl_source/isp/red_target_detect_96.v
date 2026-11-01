@@ -807,7 +807,8 @@ module red_single_shape_engine #(
     // Gating individual beats by the previous xmin cuts shallow rotated edges
     // and large circles before their run reaches the previous interval.
     // An unrelated run is discarded at its end, allowing the next run to try.
-    // Once a linked run ends, another connected run still marks a hole as bad.
+    // Rejoin a short interior gap only when the preceding row supports both
+    // sides. Row/frame budgets below distinguish small holes from split shapes.
     reg source_open, source_continue, source_first_row, row_open, row_hit;
     reg row_stopped, row_bad, row_clipped;
     reg row_dropped;
@@ -831,14 +832,17 @@ module red_single_shape_engine #(
     wire discard_run=row_gap && !row_connected;
     wire retain_run=row_present && !discard_run;
     wire row_ended=(!fresh_row && row_stopped) || (row_gap && row_connected);
-    wire take_hit=selected_hit && !row_ended;
+    wire repair_join=row_ended && selected_hit && previous_row &&
+        row_xmax >= r0_xmin && I_xmin <= r0_xmax &&
+        {1'b0,I_xmin} <= {1'b0,row_xmax}+17;
+    wire take_hit=selected_hit && (!row_ended || repair_join);
     wire [X_BITS:0] beat_span={1'b0,I_xmax}-{1'b0,I_xmin}+1'b1;
-    wire split_run=row_ended && selected_hit && previous_row &&
+    wire split_run=row_ended && selected_hit && !repair_join && previous_row &&
         I_xmin <= r0_xmax && I_xmax >= r0_xmin;
     // A second branch can start separately and merge later (a U silhouette,
     // for example). Keep only its first x for one row, as an ambiguity guard;
     // it has no area/moments/track and cannot become a second candidate.
-    wire drop_hit=row_present && row_ended && selected_hit;
+    wire drop_hit=row_present && row_ended && selected_hit && !repair_join;
     wire next_row_dropped=(!fresh_row && row_dropped) || drop_hit;
     wire [X_BITS-1:0] next_drop_min=drop_hit && (fresh_row || !row_dropped) ?
         I_xmin : row_drop_min;
@@ -846,15 +850,20 @@ module red_single_shape_engine #(
         I_xmax >= r0_drop_min;
     wire next_row_hit=retain_run || take_hit;
     wire next_row_bad=(!fresh_row && !discard_run && row_bad) || split_run || merge_dropped ||
-        (take_hit && I_pixels != beat_span);
+        (take_hit && (I_pixels > beat_span || (I_pixels != beat_span &&
+            (!previous_row || I_xmin < r0_xmin || I_xmax > r0_xmax))));
     wire next_row_clipped=(!fresh_row && !discard_run && row_clipped) || (take_hit && beat_clipped);
     wire [X_BITS:0] next_row_pixels=(retain_run ? row_pixels : 0)+
         (take_hit ? I_pixels : 3'd0);
     wire [X_BITS-1:0] next_row_xmin=retain_run ? row_xmin : I_xmin;
     wire [X_BITS-1:0] next_row_xmax=take_hit ? I_xmax : row_xmax;
+    // Test existing and incoming intervals before the endpoint muxes. A
+    // disconnected run is discarded at a gap; a retained run is contiguous,
+    // so its union connects exactly when either interval connects.
+    wire beat_connected={1'b0,I_xmax}+1'b1 >= {1'b0,r0_xmin} &&
+        {1'b0,I_xmin} <= {1'b0,r0_xmax}+1'b1;
     wire next_row_connected=!previous_row ||
-        ({1'b0,next_row_xmax}+1'b1 >= {1'b0,r0_xmin} &&
-         {1'b0,next_row_xmin} <= {1'b0,r0_xmax}+1'b1);
+        (retain_run && row_connected) || (take_hit && beat_connected);
     reg r0_valid, r0_first, r0_last, r0_bad, r0_clipped;
     reg [9:0] r0_id;
     reg [X_BITS:0] r0_pixels;
@@ -896,7 +905,7 @@ module red_single_shape_engine #(
                     window_ymax<=window_bottom < IMG_HEIGHT ? window_bottom : IMG_HEIGHT-1;
                 end
                 row_open<=1;
-                row_hit<=next_row_hit; row_stopped<=row_ended;
+                row_hit<=next_row_hit; row_stopped<=row_ended && !repair_join;
                 row_bad<=next_row_bad; row_clipped<=next_row_clipped;
                 row_dropped<=next_row_dropped; row_drop_min<=next_drop_min;
                 row_pixels<=next_row_pixels;
@@ -919,14 +928,17 @@ module red_single_shape_engine #(
 
     wire [X_BITS:0] r0_span =
         {1'b0,r0_xmax}-{1'b0,r0_xmin}+1'b1;
+    wire [X_BITS:0] r0_missing=r0_span-r0_pixels;
+    wire [X_BITS:0] row_repair_limit=(r0_span>>2) > 16 ? 16 :
+        (r0_span>>2) < 2 ? 2 : (r0_span>>2);
     wire [COORD_BITS-1:0] r0_xsum =
         {1'b0,r0_xmin}+{1'b0,r0_xmax};
     wire [COORD_BITS-1:0] r0_y2 = {r0_y,1'b0};
     reg r1_valid, r1_first, r1_last, r1_hit, r1_bad, r1_clipped;
-    reg r1_work_qualified;
+    reg r1_work_qualified, r1_linked;
     wire work_qualified;
     reg [9:0] r1_id;
-    reg [X_BITS:0] r1_pixels, r1_span;
+    reg [X_BITS:0] r1_pixels, r1_span, r1_missing;
     reg [X_BITS-1:0] r1_xmin, r1_xmax;
     reg [Y_BITS-1:0] r1_y;
     reg [MOM_BITS-1:0] r1_mx2, r1_my2;
@@ -934,12 +946,12 @@ module red_single_shape_engine #(
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             r1_valid<=0; r1_first<=0; r1_last<=0; r1_hit<=0; r1_bad<=0;
-            r1_clipped<=0; r1_work_qualified<=0;
-            r1_id<=0; r1_pixels<=0; r1_span<=0;
+            r1_clipped<=0; r1_work_qualified<=0; r1_linked<=0;
+            r1_id<=0; r1_pixels<=0; r1_span<=0; r1_missing<=0;
             r1_xmin<=0; r1_xmax<=0; r1_y<=0; r1_mx2<=0; r1_my2<=0;
             r1_umin<=0; r1_umax<=0; r1_vmin<=0; r1_vmax<=0;
         end else if (I_clear) begin
-            r1_valid<=0; r1_work_qualified<=0;
+            r1_valid<=0; r1_work_qualified<=0; r1_linked<=0;
         end else begin
             r1_valid<=r0_valid;
             if (r0_valid) begin
@@ -948,13 +960,23 @@ module red_single_shape_engine #(
                 // its size qualification alongside the next row's metadata.
                 // This breaks bbox subtraction -> restart -> feature muxes.
                 r1_work_qualified<=work_qualified;
+                // Capture connectivity here too, before its high-fanout
+                // component controls and the reconstruction checks.
+                r1_linked<=!r0_first && work_seen &&
+                    {1'b0,r0_y} == {1'b0,prev_y}+1'b1 &&
+                    {1'b0,r0_xmin} <= {1'b0,prev_xmax}+1'b1 &&
+                    {1'b0,r0_xmax}+1'b1 >= {1'b0,prev_xmin};
                 r1_first<=r0_first; r1_last<=r0_last; r1_hit<=r0_hit;
                 r1_id<=r0_id; r1_pixels<=r0_pixels; r1_span<=r0_span;
+                r1_missing<=r0_missing;
                 r1_xmin<=r0_xmin; r1_xmax<=r0_xmax; r1_y<=r0_y;
-                r1_bad<=r0_bad || (r0_hit && (r0_pixels != r0_span ||
+                r1_bad<=r0_bad || (r0_hit && (r0_pixels > r0_span ||
+                    r0_missing > row_repair_limit ||
                     r0_xmin > r0_xmax || r0_xmax >= IMG_WIDTH || r0_y >= IMG_HEIGHT));
                 r1_clipped<=r0_clipped;
-                r1_mx2<=r0_pixels*r0_xsum; r1_my2<=r0_pixels*r0_y2;
+                // Geometry describes the repaired silhouette. Raw color
+                // support remains separate for target qualification.
+                r1_mx2<=r0_span*r0_xsum; r1_my2<=r0_span*r0_y2;
                 r1_umin<={1'b0,r0_xmin}+r0_y;
                 r1_umax<={1'b0,r0_xmax}+r0_y;
                 r1_vmin<={1'b0,r0_xmin}+IMG_HEIGHT-r0_y;
@@ -967,6 +989,8 @@ module red_single_shape_engine #(
     // interval on each occupied row: axial steps cost 8 and diagonals 11.
     reg work_bad, work_clipped, work_complete;
     reg [COUNT_BITS-1:0] work_area;
+    reg [COUNT_BITS-1:0] work_missing;
+    reg [4:0] work_repair_rows;
     reg [15:0] work_perimeter;
     reg [X_BITS-1:0] work_xmin, work_xmax;
     reg [Y_BITS-1:0] work_ymin, work_ymax;
@@ -974,6 +998,8 @@ module red_single_shape_engine #(
     reg [COORD_BITS-1:0] work_umin, work_umax, work_vmin, work_vmax;
     reg next_seen, next_bad, next_clipped;
     reg [COUNT_BITS-1:0] next_area;
+    reg [COUNT_BITS-1:0] next_missing;
+    reg [4:0] next_repair_rows;
     reg [15:0] next_perimeter;
     reg [X_BITS-1:0] next_xmin, next_xmax, next_prev_xmin, next_prev_xmax;
     reg [Y_BITS-1:0] next_ymin, next_ymax, next_prev_y;
@@ -985,12 +1011,7 @@ module red_single_shape_engine #(
         {1'b0,overlap_max}-{1'b0,overlap_min}+1'b1 : 0;
     wire [1:0] diagonal_steps =
         {1'b0,(r1_xmin != prev_xmin)}+{1'b0,(r1_xmax != prev_xmax)};
-    // Connectivity needs interval comparisons only. Do not put the min/max
-    // and overlap subtraction used by the perimeter on this control path.
-    wire linked_row = !r1_first && work_seen &&
-        {1'b0,r1_y} == {1'b0,prev_y}+1'b1 &&
-        {1'b0,r1_xmin} <= {1'b0,prev_xmax}+1'b1 &&
-        {1'b0,r1_xmax}+1'b1 >= {1'b0,prev_xmin};
+    wire linked_row = r1_linked;
     assign work_qualified=work_seen && work_area >= MIN_PIXELS &&
         ({1'b0,work_xmax}-{1'b0,work_xmin}+1'b1 >= MIN_WIDTH) &&
         ({1'b0,work_ymax}-{1'b0,work_ymin}+1'b1 >= MIN_HEIGHT);
@@ -1017,11 +1038,18 @@ module red_single_shape_engine #(
     wire [16:0] perimeter_sum=restart_component ? row_outline : accumulated_perimeter;
     wire [COUNT_BITS:0] accumulated_area={1'b0,work_area}+r1_pixels;
     wire [COUNT_BITS:0] area_sum=restart_component ? r1_pixels : accumulated_area;
+    wire [COUNT_BITS:0] accumulated_missing={1'b0,work_missing}+r1_missing;
+    wire [COUNT_BITS:0] missing_sum=restart_component ? r1_missing : accumulated_missing;
     always @* begin
         next_seen=restart_component ? 1'b0 : work_seen;
         next_bad=restart_component ? 1'b0 : work_bad;
         next_clipped=restart_component ? 1'b0 : work_clipped;
         next_area=restart_component ? {COUNT_BITS{1'b0}} : work_area;
+        next_missing=restart_component ? {COUNT_BITS{1'b0}} : work_missing;
+        next_repair_rows=restart_component ? 5'd0 : work_repair_rows;
+        // A repaired gap must close before the component ends. Long cracks
+        // are rejected even when their total missing area happens to be small.
+        if (finish_component && work_repair_rows != 0) next_bad=1;
         next_perimeter=restart_component ? 16'd0 : work_perimeter;
         next_xmin=restart_component ? {X_BITS{1'b1}} : work_xmin;
         next_xmax=restart_component ? {X_BITS{1'b0}} : work_xmax;
@@ -1036,7 +1064,12 @@ module red_single_shape_engine #(
         next_vmax=restart_component ? {COORD_BITS{1'b0}} : work_vmax;
         if (collect_row) begin
             next_bad=next_bad || r1_bad || area_sum[COUNT_BITS] ||
-                perimeter_sum[16] || (next_seen && !linked_row);
+                missing_sum[COUNT_BITS] || perimeter_sum[16] || (next_seen && !linked_row);
+            if (r1_missing != 0) begin
+                if (next_repair_rows == 16) next_bad=1;
+                else next_repair_rows=next_repair_rows+1'b1;
+            end else next_repair_rows=0;
+            next_missing=missing_sum[COUNT_BITS-1:0];
             next_clipped=next_clipped || r1_clipped;
             next_area=area_sum[COUNT_BITS-1:0];
             next_perimeter=perimeter_sum[15:0];
@@ -1058,6 +1091,7 @@ module red_single_shape_engine #(
     reg frame_done, snap_bad, snap_seen, snap_clipped;
     reg [9:0] snap_id;
     reg [COUNT_BITS-1:0] snap_area;
+    reg [COUNT_BITS-1:0] snap_missing;
     reg [15:0] snap_perimeter;
     reg [X_BITS-1:0] snap_xmin, snap_xmax;
     reg [Y_BITS-1:0] snap_ymin, snap_ymax;
@@ -1071,16 +1105,19 @@ module red_single_shape_engine #(
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
             work_seen<=0; work_bad<=0; work_area<=0; work_perimeter<=0;
+            work_missing<=0; work_repair_rows<=0;
             work_clipped<=0; work_complete<=0;
             work_xmin<=0; work_xmax<=0; work_ymin<=0; work_ymax<=0;
             prev_xmin<=0; prev_xmax<=0; prev_y<=0; work_mx2<=0; work_my2<=0;
             work_umin<=0; work_umax<=0; work_vmin<=0; work_vmax<=0;
             frame_done<=0; snap_bad<=0; snap_seen<=0; snap_clipped<=0; snap_id<=0;
             snap_area<=0; snap_perimeter<=0; snap_xmin<=0; snap_xmax<=0;
+            snap_missing<=0;
             snap_ymin<=0; snap_ymax<=0; snap_mx2<=0; snap_my2<=0;
             snap_umin<=0; snap_umax<=0; snap_vmin<=0; snap_vmax<=0;
         end else if (I_clear) begin
             work_seen<=0; work_bad<=0; work_area<=0; work_perimeter<=0; frame_done<=0;
+            work_missing<=0; work_repair_rows<=0;
             work_clipped<=0; work_complete<=0;
         end else begin
             frame_done<=0;
@@ -1090,6 +1127,7 @@ module red_single_shape_engine #(
                 if(r1_first) work_complete<=0;
                 else if(finish_component) work_complete<=1;
                 work_area<=next_area; work_perimeter<=next_perimeter;
+                work_missing<=next_missing; work_repair_rows<=next_repair_rows;
                 work_xmin<=next_xmin; work_xmax<=next_xmax;
                 work_ymin<=next_ymin; work_ymax<=next_ymax;
                 prev_xmin<=next_prev_xmin; prev_xmax<=next_prev_xmax; prev_y<=next_prev_y;
@@ -1097,7 +1135,9 @@ module red_single_shape_engine #(
                 work_umin<=next_umin; work_umax<=next_umax;
                 work_vmin<=next_vmin; work_vmax<=next_vmax;
                 if (r1_last) begin
-                    frame_done<=1; snap_id<=r1_id; snap_bad<=next_bad;
+                    frame_done<=1; snap_id<=r1_id;
+                    snap_bad<=next_bad || next_repair_rows != 0;
+                    snap_missing<=next_missing;
                     snap_seen<=next_seen; snap_clipped<=next_clipped;
                     snap_area<=next_area; snap_perimeter<=next_perimeter;
                     snap_xmin<=next_xmin; snap_xmax<=next_xmax;
@@ -1116,8 +1156,13 @@ module red_single_shape_engine #(
     // duplicating the entire snapshot as a second job bank is unnecessary.
     reg [2:0] class_state;
     reg [9:0] job_id;
-    wire job_bad=snap_bad, job_found=snap_found;
-    wire [COUNT_BITS-1:0] job_area=snap_area;
+    wire [COUNT_BITS:0] repaired_area={1'b0,snap_area}+snap_missing;
+    // At most 1/32 of the measured color area may be reconstructed. Keep
+    // this check after the snapshot, outside the pixel accumulation path.
+    wire job_bad=snap_bad || repaired_area[COUNT_BITS] ||
+        snap_missing > (snap_area>>5);
+    wire job_found=snap_found;
+    wire [COUNT_BITS-1:0] job_area=repaired_area[COUNT_BITS-1:0];
     wire [15:0] job_perimeter=snap_perimeter;
     wire [X_BITS-1:0] job_xmin=snap_xmin, job_xmax=snap_xmax;
     wire [Y_BITS-1:0] job_ymin=snap_ymin, job_ymax=snap_ymax;
@@ -1164,9 +1209,25 @@ module red_single_shape_engine #(
     reg [COORD_BITS:0] math_temp, math_delta;
     reg [COORD_BITS:0] math_left, math_right;
     reg math_subtract, math_round;
-    wire [COORD_BITS:0] math_value=math_left+
-        (math_right ^ {(COORD_BITS+1){math_subtract}})+
-        (math_subtract || math_round);
+    reg [COORD_BITS:0] math_left_q, math_right_q;
+    reg math_carry_q, math_execute;
+    wire [COORD_BITS:0] math_value=math_left_q+math_right_q+math_carry_q;
+    // Keep the wide state-controlled operand mux off the add/compare path.
+    // Each frame-rate operation loads operands, then consumes its result.
+    always @(posedge I_clk or negedge I_rst_n) begin
+        if (!I_rst_n) begin
+            math_left_q<=0; math_right_q<=0; math_carry_q<=0; math_execute<=0;
+        end else if (I_clear || abort_done || frame_done) begin
+            math_execute<=0;
+        end else if (class_state == CLASS_ASSOC || class_state == CLASS_SMOOTH) begin
+            math_execute<=!math_execute;
+            if (!math_execute) begin
+                math_left_q<=math_left;
+                math_right_q<=math_right ^ {(COORD_BITS+1){math_subtract}};
+                math_carry_q<=math_subtract || math_round;
+            end
+        end else math_execute<=0;
+    end
     wire boxes_overlap=job_xmin <= track_xmax && job_xmax >= track_xmin &&
         job_ymin <= track_ymax && job_ymax >= track_ymin;
     wire association_hit=track_occupied && job_found && association_ok &&
@@ -1399,7 +1460,7 @@ module red_single_shape_engine #(
                     track_shape_hits<=0; track_shape_age<=0;
                     pending_geometry<=0;
                 end
-            end else if(class_state==CLASS_ASSOC) begin
+            end else if(class_state==CLASS_ASSOC && math_execute) begin
                 assoc_index<=assoc_index+1'b1;
                 case(assoc_index[3:0])
                     0:assoc_track_span<=math_value;
@@ -1440,7 +1501,7 @@ module red_single_shape_engine #(
                 track_misses<=track_misses_n; track_shape<=track_shape_n;
                 track_pending_shape<=track_pending_shape_n;
                 track_shape_hits<=track_shape_hits_n; track_shape_age<=track_shape_age_n;
-            end else if (class_state == CLASS_SMOOTH) begin
+            end else if (class_state == CLASS_SMOOTH && math_execute) begin
                 case(smooth_index[3:0])
                     0,8,9:math_temp<=math_value;
                     1,2,6:math_delta<=math_value;
