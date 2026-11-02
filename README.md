@@ -2,7 +2,7 @@
 
 当前主工程为 [anlogic_edge_osd.al](td_project/anlogic_edge_osd.al)，顶层 `design_top_wrapper`，器件 PH1P35MDG324。工程状态见 [当前工程说明](td_project/当前工程说明.md)。
 
-2026-11-01 已融合 GitHub `71ce808`、单目标形状修复和镜头签名功能。当前版本已完成整机重新综合、布局、布线和 bit 生成：41101 条网络全部布通，open net 为 0，Setup WNS `+0.100 ns`，Hold WNS `+0.020 ns`。
+2026-11-02 当前通过版采用 `CongestionHigh + normal`、Place seed `1`：41015 条网络全部布通，open net 为 0，Setup WNS `+0.103 ns`，Hold WNS `+0.020 ns`。Slice 20156/21216，ERAM 104/108，DSP 39/40。现有时钟与 IO 约束警告仍需保留关注，板上曝光和白平衡效果不由时序报告保证。
 
 ## 操作
 
@@ -21,7 +21,7 @@
 
 镜头签名移植自 `Signature_Smooth_4x4` 的 `pen_minimal` 核心。开启 SW3 后，以画面中明显的红色标记中心书写，画面水平镜像，笔迹为红色；使用现有红色目标检测，标记需要满足其面积和连续确认条件。暂停、目标丢失或坐标大幅跳变时断笔，画布坐标的跳变门限约为 96 像素。签名时隐藏目标框和水果面板，SW1 延迟面板仍可用；SW2 的计算、称重与语音控制保持原样。签名使用内部模式 13，K1 原来的 0–12 模式保持不变，退出后检测恢复 K2 所选模式。
 
-画布为 320×180 单色位图，每格对应 4×4 像素，不占 DDR 视频带宽。镜像复用原来的读地址与像素拆包，不增加彩色帧缓存；新增笔迹在 HDMI 时钟域完成。最终整机占用为 20123/21216 Slice、104/108 ERAM、39/40 DSP。本次只生成 bit，没有操作板卡，也不会覆盖 U30 中已经烧入的新权重。
+画布为 320×180 单色位图，每格对应 4×4 像素，不占 DDR 视频带宽。镜像复用原来的读地址与像素拆包，不增加彩色帧缓存；新增笔迹在 HDMI 时钟域完成。构建脚本只生成 bit，不操作板卡或 U30 中已经烧入的新权重。
 
 单价依次为 8、6、12、5、20 元/kg。总价四舍五入到分，无有效识别、未校准、传感器故障或金额超过 99.99 元时不显示有效价格。HX711 接线、去皮、校准和自动播报见 [接线与语音说明](docs/CX_SP5T_MAIN_INTEGRATION.md)。
 
@@ -34,7 +34,8 @@
 | `sim/`、`verification/` | 测试台、回归脚本、静态检查 |
 | `fruitcnn128_retrained_20261031/` | 最佳模型检查点和少量归档信息，不参与主工程编译 |
 | `docs/reference/`、`docs/proposals/` | 硬件资料、开题 Word/PDF 及生成源 |
-| `build/release/` | 当前通过版的布局布线、时序和构建清单 |
+| `td_project/anlogic_edge_osd_Runs/phy_1/` | 当前布局布线数据库、日志和时序报告 |
+| `build/accepted_before_exposure/` | 曝光调整前唯一保留的通过版、源码及数据库 |
 
 TD GUI 可直接打开 `td_project/anlogic_edge_osd.al`。工程已固定为 `CongestionHigh`、Place seed `1` 和压缩 bit；开始运行前应关闭旧 TD 窗口后重新打开工程，确保加载更新后的配置。`build_firmware.cmd` 保留为命令行验收入口。
 
@@ -59,4 +60,4 @@ python -B verification/check_merge_readiness.py
 - [RAW 诊断](docs/RAW_STATS_GUIDE.md)
 - [参考资料导航](docs/参考资料导航.md)
 
-旧实验构建、历史 TD 日志和旧 `syn_1/phy_1` 已清理。完整 RTL/IP、约束、当前回归、硬件资料、`build/release` 和通过版 `best_result` 保留。
+失败实验构建、历史 TD 日志、重复 bit、过期实验记录和一次性对比脚本已清理。完整 RTL/IP、约束、回归测试、硬件资料、当前 `syn_1/phy_1`、通过版 `best_result` 和一份回退检查点保留。旧实验源码和记录可从 Git 历史恢复。

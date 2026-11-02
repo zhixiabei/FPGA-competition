@@ -32,4 +32,4 @@
 
 [静态检查](../verification/check_merge_readiness.py) 核对源文件存在性、模块接口、SW1/SW2 引脚与上游核心逻辑保护。[仿真索引](../sim/README.md) 列出当前回归入口。
 
-形状修复集中在 `red_single_shape_engine`：受限地补齐内部小缺口，并将共享运算器的操作数选择与执行拆开。边界和验证见 [形状说明](SINGLE_TARGET_COLOR_SHAPE.md)。当前物理拥塞尚未完成验收，不能使用历史报告替代当前结果。
+形状修复集中在 `red_single_shape_engine`：受限地补齐内部小缺口，并将共享运算器的操作数选择与执行拆开。边界和验证见 [形状说明](SINGLE_TARGET_COLOR_SHAPE.md)。当前通过版的物理验收结果见 [首页](../README.md)，后续修改必须重新验收。
