@@ -971,18 +971,17 @@
         </Run>
         <Run Name="phy_1" Type="PhysicalDesign" ConstraintSet="constraint_1" Description="" SynRun="syn_1" Active="true">
             <Strategy Name="CongestionHigh">
+                <BitgenProperty::GeneralOption>
+                    <compress>on</compress>
+                </BitgenProperty::GeneralOption>
                 <PlaceProperty>
                     <ofv>70</ofv>
                     <opt_timing>high</opt_timing>
                     <post_place_opt>high</post_place_opt>
-                    <seed>1</seed>
                 </PlaceProperty>
                 <RouteProperty>
                     <post_route_opt>high</post_route_opt>
                 </RouteProperty>
-                <BitgenProperty::GeneralOption>
-                    <compress>on</compress>
-                </BitgenProperty::GeneralOption>
             </Strategy>
             <UserParams>
                 <param>set_param place aggressive_opt 20</param>

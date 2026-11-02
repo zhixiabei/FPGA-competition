@@ -222,9 +222,9 @@ data128_96 u_data128_96 (
 
 awb #(
     .IMG_HEIGHT(720),
-    // Match the original fruit pipeline: update from every complete frame.
-    // The confidence/reacquire path remains available as an opt-in mode.
+    // Disable optional confidence checks; retain AE hold and cyan recovery.
     .IMG_WIDTH (1280), .CONFIDENCE_ENABLE(0),
+    .RED_RECOVERY_ENABLE(1), .CAPTURE_RED_MAX_Q8(1024),
     .DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE)
 ) u_awb (
     .I_clk   (axi4s_video_aclk),

@@ -11,7 +11,8 @@ param(
     [switch] $Dilation,
     [switch] $CloseMask,
     [switch] $AllModes,
-    [switch] $Diagnostics
+    [switch] $Diagnostics,
+    [switch] $HoldRelease
 )
 
 $ErrorActionPreference = 'Stop'
@@ -98,6 +99,7 @@ try {
     foreach ($run in $runs) {
         $modeArgs=@()
         if ($Diagnostics) { $modeArgs+=@('-generic_top','"IQ_DIAG_ENABLE=1"') }
+        if ($HoldRelease) { $modeArgs+=@('-generic_top','"HOLD_RELEASE_TEST=1"') }
         if ($run.Motion) { $modeArgs+=@('-generic_top','"MOTION_MODE=1"') }
         if ($run.Emboss) { $modeArgs+=@('-generic_top','"EMBOSS_MODE=1"') }
         if ($run.Cartoon) { $modeArgs+=@('-generic_top','"CARTOON_MODE=1"') }

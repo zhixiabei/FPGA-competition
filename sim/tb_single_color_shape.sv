@@ -37,6 +37,39 @@ module tb_single_color_shape #(
         .O_multi_frame_id(result_id), .O_multi_overflow(overflow)
     );
 
+`ifdef DETECTOR_ROUTING_REFERENCE
+    wire reference_ready, reference_overflow;
+    wire [3:0] reference_found, reference_held;
+    wire [7:0] reference_shapes;
+    wire [191:0] reference_boxes;
+    wire [9:0] reference_id;
+    integer equivalence_checks=0;
+    red_target_detect_96_reference #(
+        .IMG_WIDTH(W), .IMG_HEIGHT(H), .MIN_PIXELS(64),
+        .MIN_WIDTH(8), .MIN_HEIGHT(8), .MULTI_ENABLE(0),
+        .SINGLE_SHAPE_ENABLE(1)
+    ) reference (
+        .I_clk(clk), .I_rst_n(rst_n), .I_tuser(user), .I_tvalid(valid),
+        .I_tdata(data), .I_color_mode(color_mode),
+        .I_mask_view_mode(mask_view_mode), .O_mask_pixels(),
+        .I_frame_id(frame_id), .I_multi_clear(clear),
+        .O_result_ready(), .O_found(), .O_xmin(), .O_xmax(), .O_ymin(), .O_ymax(),
+        .O_center_x(), .O_center_y(), .O_pixels(), .O_frame_toggle(),
+        .O_multi_ready(reference_ready), .O_multi_valid(reference_found),
+        .O_multi_hold(reference_held), .O_multi_boxes(reference_boxes),
+        .O_multi_shapes(reference_shapes), .O_multi_frame_id(reference_id),
+        .O_multi_overflow(reference_overflow)
+    );
+    always @(posedge clk) begin
+        #2;
+        if ({ready,overflow,found,held,shapes,boxes,result_id} !==
+            {reference_ready,reference_overflow,reference_found,reference_held,
+             reference_shapes,reference_boxes,reference_id})
+            $fatal(1,"Detector routing changed output or publication cycle at %0t",$time);
+        equivalence_checks=equivalence_checks+1;
+    end
+`endif
+
     reg [23:0] image[0:W*H-1];
     reg seen[0:255];
     reg [3:0] seen_found[0:255], seen_held[0:255];
@@ -454,6 +487,9 @@ module tb_single_color_shape #(
         $display("SINGLE_COLOR_SHAPE_RESYNC_PASS partial_abort=1 clear_cancel=1 reset=1 bubbles=1 continuous_rows=1");
         $display("SINGLE_COLOR_SHAPE_PASS W=%0d H=%0d results=%0d checks=%0d cases=%0d last_frame=%0d colors=RED,GRN,BLU shapes=SQR,TRI,CIR,UNK lanes=1",
             W,H,results,checks,cases,next_id-1);
+`ifdef DETECTOR_ROUTING_REFERENCE
+        $display("DETECTOR_ROUTING_OUTPUT_EQUIVALENCE_PASS cycles=%0d",equivalence_checks);
+`endif
         $finish;
     end
     initial begin #(WATCHDOG_NS); $fatal(1,"Single color/shape watchdog"); end

@@ -1,5 +1,6 @@
 param(
     [string] $CoreRtl = '',
+    [string] $ReferenceRtl = '',
     [ValidateSet('Portable','Vendor')]
     [string] $MemoryModel = 'Portable',
     [ValidateSet('Behavioral','Vendor')]
@@ -41,6 +42,19 @@ $sources = @(
     $coreCopy,
     (Join-Path $root 'sim/tb_fruit_core_numeric.sv')
 )
+$compileDefines = ''
+if ($ReferenceRtl) {
+    $referenceText = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $ReferenceRtl))
+    $modulePattern = '\bmodule\s+fruitcnn128_core\s*\('
+    if ([regex]::Matches($referenceText,$modulePattern).Count -ne 1) {
+        throw 'Reference must declare exactly one fruitcnn128_core module'
+    }
+    $referenceCopy = Join-Path $work 'fruitcnn128_core_reference.v'
+    [IO.File]::WriteAllText($referenceCopy,
+        [regex]::Replace($referenceText,$modulePattern,'module fruitcnn128_core_reference('))
+    $sources += $referenceCopy
+    $compileDefines = '+define+FRUIT_CORE_ROUTING_REFERENCE'
+}
 if ($MacModel -eq 'Vendor') {
     $sources += Join-Path $root 'user_source/hdl_source/resnet/resnet_ph1p_dsp.v'
     foreach ($name in @('ph1p_phy_dspsiou_v2.v','ph1p_phy_dspmult_v2.v','ph1p_phy_dsptadd.v')) {
@@ -84,7 +98,7 @@ $script = @"
 onerror {quit -code 1 -force}
 onbreak {resume}
 vlib work
-vlog -sv $sourceArgs
+vlog -sv $compileDefines $sourceArgs
 vsim -t ps $top $simulationArgs
 run -all
 quit -code 0 -force
@@ -114,6 +128,9 @@ if ($ExpectBaselineFailure) {
     if ($process.ExitCode -ne 0 -or $console -notmatch 'FRUIT_CORE_NUMERIC_PASS' -or
         $console -match '(?im)^\s*(?:#\s*)?\*\*\s+(?:Fatal|Error)\b') {
         throw "Fruit numerical regression failed (exit=$($process.ExitCode)): $work/console.log"
+    }
+    if ($ReferenceRtl -and $console -notmatch 'FRUIT_CORE_ROUTING_EQUIVALENCE_PASS') {
+        throw "Fruit routing reference comparison did not complete: $work/console.log"
     }
 }
 [regex]::Matches($console,'(?m)^(?:#\s*)?FRUIT_CORE_.*(?:PASS|FAIL).*$') |

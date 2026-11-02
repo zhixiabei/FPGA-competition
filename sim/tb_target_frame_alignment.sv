@@ -56,7 +56,7 @@ module tb_target_frame_alignment;
     reg request_seen = 0;
 
     // RAW readout is verified separately with the real tap/CDC/HDMI chain.
-    design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(0),
+    design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(0), .ENABLE_HANDCNN(0),
         .SINGLE_SHAPE_ENABLE(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
@@ -528,6 +528,7 @@ module tb_target_frame_alignment;
         force dut.S_cam_fail_index = diagnostic_fail;
         force dut.S_100m_clk = ddr_clk;
         force dut.S_pll_lock = rst_n;
+        force dut.S_init_calib_complete = rst_n;
         force dut.S_ISP_O_tuser = camera_user;
         force dut.S_ISP_O_tvalid = 1'b0;
         force dut.S_ISP_O_tdata = 128'd0;
@@ -657,7 +658,7 @@ module video_mode_control #(parameter DEBOUNCE_CYCLES=0, DEFAULT_EDGE_MODE=0, DE
 endmodule
 module auto_exposure_control #(
     parameter TARGET_LOW=0, TARGET_HIGH=0, DARK_FAST=0, BRIGHT_FAST=0,
-    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0,
+    GAIN_MAX=0, SETTLE_FRAMES=0, AVERAGE_FRAMES=0, FAST_AVERAGE_FRAMES=0,
     HIGHLIGHT_ENABLE=0, FIXED_SAMPLE_COUNT=0, CHECK_BRIGHT_COUNT=1
 ) (input wire [127:0] I_clk, I_rst, I_cam_cfg_done, I_ae_cfg_done,
     I_stats_valid, I_sum_y, I_sample_count, I_bright_count, I_p95,
@@ -666,6 +667,12 @@ endmodule
 module ae_stats_cdc #(parameter WIDTH=64)
     (input wire [127:0] I_src_clk, I_dst_clk, I_rst_n,
     I_src_valid, I_src_data, O_dst_valid, O_dst_data);
+endmodule
+module checkout_scale_core #(parameter CLK_HZ=0, CALIBRATION_GRAMS=0)
+    (input wire [127:0] clk, rst_n, hx711_dout, tare_key_n, cal_key_n,
+    hx711_sck, fruit_valid, fruit_class, weight_g, total_fen, weight_valid,
+    price_valid, weight_updated, weight_bcd, price_bcd, weight_bcd_valid,
+    price_bcd_valid, status, raw_adc, sample_count, seg_n, sel_n);
 endmodule
 module uicfgcs520 #(parameter CLK_DIV=0)
     (input wire [127:0] I_clk, I_rst_n, I_ae_req, I_ae, I_ag, O_cam_scl,

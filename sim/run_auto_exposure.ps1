@@ -17,7 +17,7 @@ if (-not $productionBlock.Success) {
 }
 $productionValues = [ordered]@{}
 foreach ($name in @('TARGET_LOW', 'TARGET_HIGH', 'DARK_FAST', 'BRIGHT_FAST',
-                    'GAIN_MAX', 'SETTLE_FRAMES', 'AVERAGE_FRAMES', 'METER_MAX',
+                    'GAIN_MAX', 'SETTLE_FRAMES', 'AVERAGE_FRAMES', 'FAST_AVERAGE_FRAMES', 'METER_MAX',
                     'EXPOSURE_MIN', 'EXPOSURE_MAX', 'EXPOSURE_DEFAULT',
                     'GAIN_MIN', 'GAIN_DEFAULT', 'HIGHLIGHT_ENABLE',
                     'FIXED_SAMPLE_COUNT', 'CHECK_BRIGHT_COUNT')) {
@@ -67,7 +67,7 @@ if ($productionValues['FIXED_SAMPLE_COUNT'] -ne 0 -and
 }
 $lightingGenerics = @()
 foreach ($name in @('TARGET_LOW', 'TARGET_HIGH', 'DARK_FAST', 'BRIGHT_FAST',
-                    'GAIN_MAX', 'SETTLE_FRAMES', 'AVERAGE_FRAMES', 'METER_MAX',
+                    'GAIN_MAX', 'SETTLE_FRAMES', 'AVERAGE_FRAMES', 'FAST_AVERAGE_FRAMES', 'METER_MAX',
                     'HIGHLIGHT_ENABLE', 'HISTOGRAM_ENABLE', 'HIST_BIN_BITS',
                     'BRIGHT_LEVEL', 'FIXED_SAMPLE_COUNT', 'CHECK_BRIGHT_COUNT',
                     'HOLD_OUTPUTS')) {
@@ -89,6 +89,7 @@ if (-not $ProductionLightingOnly) {
         @{ Top = 'tb_ae_stats_cdc'; Snapshot = 'ae_cdc'; Pass = '^AE_STATS_CDC_PASS' },
         @{ Top = 'tb_ae_highlight_control'; Snapshot = 'ae_highlight'; Pass = '^AE_HIGHLIGHT_CONTROL_PASS' },
         @{ Top = 'tb_ae_fixed_count'; Snapshot = 'ae_fixed_count'; Pass = '^AE_FIXED_COUNT_PASS' },
+        @{ Top = 'tb_ae_fast_window'; Snapshot = 'ae_fast_window'; Pass = '^AE_FAST_WINDOW_PASS' },
         $lightingTest
     )
     $tests += @{
@@ -116,6 +117,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'tb_ae_stats_cdc.sv'),
     (Join-Path $PSScriptRoot 'tb_ae_highlight_control.sv'),
     (Join-Path $PSScriptRoot 'tb_ae_fixed_count.sv'),
+    (Join-Path $PSScriptRoot 'tb_ae_fast_window.sv'),
     (Join-Path $PSScriptRoot 'tb_ae_lighting_loop.sv')
 )
 $snapshotDirectory = Join-Path $simulationDir 'sources'

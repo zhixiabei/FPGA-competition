@@ -22,6 +22,7 @@ $sources = @(
     'user_source\hdl_source\pen_minimal.v',
     'user_source\hdl_source\anlogic_logo_rom.v',
     'user_source\hdl_source\osd_char_lib.v',
+    'sim\reference\ph1p_logic_dram_asym_sim.v',
     'sim\tb_target_frame_alignment.sv'
 )
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {

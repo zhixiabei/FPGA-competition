@@ -22,6 +22,45 @@ module tb_fruit_core_numeric;
         .mem_rsp_data(mem_rsp_data), .cycles(cycles),
         .mac_cycles(mac_cycles), .wait_cycles(wait_cycles)
     );
+`ifdef FRUIT_CORE_ROUTING_REFERENCE
+    wire [2:0] reference_group;
+    wire reference_busy, reference_done, reference_fault;
+    wire reference_mem_valid, reference_mem_write;
+    wire [31:0] reference_mem_addr, reference_cycles, reference_mac_cycles, reference_wait_cycles;
+    wire [127:0] reference_mem_data;
+    integer equivalence_cycles = 0;
+    fruitcnn128_core_reference reference_core(
+        .clk(clk), .rst_n(rst_n), .start(start), .operation(5'd9),
+        .group(reference_group), .descriptor(descriptor), .busy(reference_busy),
+        .done(reference_done), .fault(reference_fault), .mem_valid(reference_mem_valid),
+        .mem_write(reference_mem_write), .mem_addr(reference_mem_addr), .mem_data(reference_mem_data),
+        .mem_ready(mem_ready), .mem_rsp_valid(mem_rsp_valid), .mem_rsp_data(mem_rsp_data),
+        .cycles(reference_cycles), .mac_cycles(reference_mac_cycles), .wait_cycles(reference_wait_cycles)
+    );
+    always @(negedge clk) begin
+        #2;
+        if ({group_id,busy,done,fault,mem_valid,mem_write,mem_addr,mem_data,cycles,mac_cycles,wait_cycles} !==
+            {reference_group,reference_busy,reference_done,reference_fault,reference_mem_valid,
+             reference_mem_write,reference_mem_addr,reference_mem_data,reference_cycles,
+             reference_mac_cycles,reference_wait_cycles})
+            $fatal(1, "FRUIT_CORE_ROUTING_EQUIVALENCE_FAIL cycle=%0d state=%0d/%0d",
+                   equivalence_cycles,dut.state,reference_core.state);
+        equivalence_cycles = equivalence_cycles + 1;
+    end
+    genvar checked_lane;
+    generate for (checked_lane=0;checked_lane<24;checked_lane=checked_lane+1) begin: lane_equivalence
+        always @(posedge clk) if (rst_n) begin
+            if (dut.lanes[checked_lane].mac.enable !== reference_core.mac_enable)
+                $fatal(1,"FRUIT_CORE_ROUTING_ENABLE_FAIL lane=%0d",checked_lane);
+            if (reference_core.mac_enable &&
+                ({dut.lanes[checked_lane].mac.activation,dut.lanes[checked_lane].mac.opctrl,
+                  dut.lanes[checked_lane].mac.muxctrl} !==
+                 {reference_core.lanes[checked_lane].mac.activation,reference_core.lanes[checked_lane].mac.opctrl,
+                  reference_core.lanes[checked_lane].mac.muxctrl}))
+                $fatal(1,"FRUIT_CORE_ROUTING_MAC_INPUT_FAIL lane=%0d",checked_lane);
+        end
+    end endgenerate
+`endif
 
     localparam [31:0] SRC_BASE = 32'h1000;
     localparam [31:0] WEIGHT_BASE = 32'h20000;
@@ -414,6 +453,9 @@ module tb_fruit_core_numeric;
         begin_operation(); finish_operation();
         $display("FRUIT_CORE_NUMERIC_PASS cases=%0d reset_pending_response=1 signed_A12_W8 saturation_relu=1 weight_tail=1 multigroup=1 restart_geometry=6 full_row_cache=1 width128=1",
                  cases_passed);
+`ifdef FRUIT_CORE_ROUTING_REFERENCE
+        $display("FRUIT_CORE_ROUTING_EQUIVALENCE_PASS cycles=%0d lanes=24",equivalence_cycles);
+`endif
         $finish;
     end
     initial begin

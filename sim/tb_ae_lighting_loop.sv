@@ -9,6 +9,7 @@ module tb_ae_lighting_loop #(
     parameter integer GAIN_MAX = 176,
     parameter integer SETTLE_FRAMES = 3,
     parameter integer AVERAGE_FRAMES = 6,
+    parameter integer FAST_AVERAGE_FRAMES = 0,
     parameter integer METER_CAP = 192,
     parameter integer SENSOR_APPLY_FRAMES = 2,
     parameter integer EXPECT_LEGACY = 0,
@@ -74,6 +75,7 @@ module tb_ae_lighting_loop #(
         .DARK_FAST(DARK_FAST), .BRIGHT_FAST(BRIGHT_FAST), .METER_MAX(METER_CAP),
         .GAIN_MAX(GAIN_MAX),
         .SETTLE_FRAMES(SETTLE_FRAMES), .AVERAGE_FRAMES(AVERAGE_FRAMES),
+        .FAST_AVERAGE_FRAMES(FAST_AVERAGE_FRAMES),
         .HIGHLIGHT_ENABLE(HIGHLIGHT_ENABLE),
         .FIXED_SAMPLE_COUNT(FIXED_SAMPLE_COUNT != 0 ? METERED_COMPONENTS : 0),
         .CHECK_BRIGHT_COUNT(CHECK_BRIGHT_COUNT)

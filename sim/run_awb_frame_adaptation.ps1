@@ -17,6 +17,8 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'user_source\hdl_source\awb.v') `
     -Destination (Join-Path $simulationDir 'awb.v')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tb_awb_frame_adaptation.sv') `
     -Destination (Join-Path $simulationDir 'tb_awb_frame_adaptation.sv')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tb_awb_hold.sv') `
+    -Destination (Join-Path $simulationDir 'tb_awb_hold.sv')
 # Use the actual vendor functional DRAM module, without the following
 # encrypted PHY modules that XSim cannot read. Do not substitute a RAM stub.
 $primitiveText = [System.IO.File]::ReadAllText((Join-Path $TdSimLib 'ph1p_logic_dram.v'))
@@ -28,7 +30,7 @@ if (-not $primitiveModule.Success -or
 [System.IO.File]::WriteAllText((Join-Path $simulationDir 'ph1p_logic_dram.v'),
     $primitiveModule.Value + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false))
-$hashes = foreach ($name in @('awb.v','tb_awb_frame_adaptation.sv','ph1p_logic_dram.v')) {
+$hashes = foreach ($name in @('awb.v','tb_awb_frame_adaptation.sv','tb_awb_hold.sv','ph1p_logic_dram.v')) {
     [pscustomobject]@{
         File = $name
         SHA256 = (Get-FileHash -LiteralPath (Join-Path $simulationDir $name) -Algorithm SHA256).Hash
@@ -38,7 +40,7 @@ $hashes | Export-Csv -LiteralPath (Join-Path $simulationDir 'source_sha256.csv')
 Write-Output "Simulation output: $simulationDir"
 Push-Location $simulationDir
 try {
-    & (Join-Path $SimBin 'xvlog.bat') -sv ph1p_logic_dram.v awb.v tb_awb_frame_adaptation.sv `
+    & (Join-Path $SimBin 'xvlog.bat') -sv ph1p_logic_dram.v awb.v tb_awb_frame_adaptation.sv tb_awb_hold.sv `
         -log xvlog.log *> compile_console.log
     if ($LASTEXITCODE -ne 0) { throw 'AWB compile failed; see compile_console.log' }
     & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
@@ -52,6 +54,18 @@ try {
     if ($console -match '(?im)^\s*(?:FATAL_ERROR|Fatal|Error|ERROR|FATAL)\b' -or
         @($pass).Count -ne 1) {
         throw 'AWB regression did not pass; see simulate_console.log'
+    }
+    $pass.Line
+    & (Join-Path $SimBin 'xelab.bat') -timescale 1ns/1ps -debug typical `
+        work.tb_awb_hold -s awb_hold -log hold_xelab.log *> hold_elaborate_console.log
+    if ($LASTEXITCODE -ne 0) { throw 'AWB hold elaboration failed; see hold_elaborate_console.log' }
+    & (Join-Path $SimBin 'xsim.bat') awb_hold -runall `
+        -log hold_xsim.log *> hold_simulate_console.log
+    if ($LASTEXITCODE -ne 0) { throw 'AWB hold simulation failed; see hold_simulate_console.log' }
+    $console=[IO.File]::ReadAllText((Join-Path $simulationDir 'hold_simulate_console.log'))
+    $pass=Select-String -LiteralPath hold_simulate_console.log -Pattern '^AWB_HOLD_PASS'
+    if ($console -match '(?im)^\s*(?:FATAL_ERROR|Fatal|Error|ERROR|FATAL)\b' -or @($pass).Count -ne 1) {
+        throw 'AWB hold regression did not pass; see hold_simulate_console.log'
     }
     $pass.Line
 } finally {

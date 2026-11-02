@@ -3,11 +3,19 @@ param([string] $TdBin='D:\TD\bin', [switch] $SkipRoute,
       [hashtable] $ResourceLimits=@{}, [int] $PlaceSeed=1,
       [ValidateSet('','CongestionHigh','CongestionMedium')]
       [string] $PhysicalStrategy='', [string] $ResumeGateSnapshot='',
-      [string] $ResumePlaceSnapshot='', [string] $CoreRtlOverride='')
+      [string] $ResumePlaceSnapshot='', [string] $CoreRtlOverride='',
+      [ValidateSet('','normal','high','routability')]
+      [string] $RouteEffort='',
+      [long] $MaxWireLength=0,
+      [string] $ProgrammingDirectory='td_project\anlogic_edge_osd_Runs\best_result')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if($GenerateBit -and $SkipRoute) {throw 'Bit generation requires final routed timing checks'}
 if($ResourceLimits.Count -and $SkipRoute) {throw 'Resource limits require final routing'}
+if($RouteEffort -and $SkipRoute) {throw 'Route effort requires routing'}
+if($MaxWireLength -lt 0 -or ($MaxWireLength -gt 0 -and $SkipRoute)) {
+    throw 'Wire-length budget must be non-negative and requires final routing'
+}
 if($PlaceSeed -lt -1) {throw 'Place seed must be -1 (tool default) or a non-negative integer'}
 if($ResumeGateSnapshot -and $ResumePlaceSnapshot) {throw 'Choose one resume stage'}
 if($ResumePlaceSnapshot -and $SkipRoute) {throw 'Placed snapshot resume requires routing'}
@@ -289,24 +297,28 @@ function Assert-AeConstraintHealth([string] $Path,[string] $SdcPath) {
        [int]$row.Groups['ignored'].Value -ne 0 -or $limit -ne 20.0) {
         throw "The 20 ns AE statistics CDC bound must cover every payload path: $Path"
     }
-    # Original-compatible AWB does not consume the AE hold level. Requiring a
-    # false path here would constrain a non-functional or optimized endpoint.
+    # Only the asynchronous source -> first stage is excluded. The second
+    # synchronizer and the functional hold fanout remain normally timed.
     $sdc=[IO.File]::ReadAllText($SdcPath)
     $holdRows=@($sdc -split '\r?\n' | Where-Object {
         $_ -match '^\s*set_false_path\b' -and $_.Contains('awb_hold')
     })
-    if($holdRows.Count -ne 0 -or
+    $expectedHold='set_false_path -from [get_regs {u_auto_exposure/O_awb_hold}] -to [get_regs {u_isp_top/awb_hold_meta}]'
+    if($holdRows.Count -ne 1 -or $holdRows[0].Trim() -cne $expectedHold -or
        $health -notmatch 'There are 0 invalid constraints\.' -or
        $health -notmatch 'There are 0 constraints that have no timing paths\.') {
-        throw "Original-compatible AWB must not retain an unused AE-hold exception: $Path"
+        throw "AE hold requires exactly one live first-stage CDC exception: $Path"
     }
+    # TD's MCP/SMD summary does not list false paths. Live endpoint counts
+    # are checked against the imported netlist by verify_fifo_cdc below.
     return [pscustomobject]@{
         payload_paths=$total; max_delay_ns=$limit; status='passed'
-        awb_hold_constraint='disabled_with_compatibility_awb'
+        awb_hold_constraint='first_stage_only'
+        awb_hold_paths=1
     }
 }
 
-$bestResultDirectory=Get-WorkspaceDestination 'td_project\anlogic_edge_osd_Runs\best_result'
+$bestResultDirectory=Get-WorkspaceDestination $ProgrammingDirectory
 $reportDirectory=$null
 if($GenerateBit) {
     $reportDirectory=Get-WorkspaceDestination $(if($OutputDirectory) {$OutputDirectory} else {'build\release'})
@@ -407,8 +419,22 @@ PLACE_SEED_COMMAND
     report_area -file system_place.area
     report_qor -step place -file place.qor
     export_db system_place.db
+ROUTE_EFFORT_COMMAND
     commit_param -step route
-    route
+    if {[catch {route} route_message route_options]} {
+        puts stderr "ROUTE_FAILURE_DIAGNOSTICS_BEGIN"
+        foreach diagnostic {
+            {export_db failed_route.db}
+            {report_congestion -step route -line 100}
+            {report_route_status -drc -file failed_route.status}
+        } {
+            if {[catch {eval $diagnostic} diagnostic_message]} {
+                puts stderr "ROUTE_DIAGNOSTIC_UNAVAILABLE $diagnostic: $diagnostic_message"
+            }
+        }
+        puts stderr "ROUTE_FAILURE_DIAGNOSTICS_END"
+        return -options $route_options $route_message
+    }
     update_timing -mode final
     report_timing_summary -file system_pr.timing
     report_qor -step route -file route.qor
@@ -428,10 +454,16 @@ PLACE_SEED_COMMAND
     $route=$route.Replace('PLACE_SEED_COMMAND',$placeSeedCommand)
     if($resumePlace) {
         $placeStart=$route.IndexOf('    commit_param -step place')
-        $routeStart=$route.IndexOf('    commit_param -step route')
+        $routeStart=$route.IndexOf('ROUTE_EFFORT_COMMAND')
         if($placeStart -lt 0 -or $routeStart -le $placeStart) {throw 'Cannot isolate placement resume'}
         $route=$route.Substring(0,$placeStart)+$route.Substring($routeStart)
     }
+    $routeEffortCommand=if($RouteEffort) {
+        "    set_param route effort $RouteEffort"
+    } else {
+        ''
+    }
+    $route=$route.Replace('ROUTE_EFFORT_COMMAND',$routeEffortCommand)
 }
 $resourceGate=''
 if($ResourceLimits.Count) {
@@ -485,6 +517,12 @@ proc verify_fifo_cdc {report {stage final}} {
         ![string match {*There are 0 constraints that have no timing paths.*} $health]} {
         error "Invalid timing constraint coverage: $report"
     }
+    foreach endpoint {u_auto_exposure/O_awb_hold u_isp_top/awb_hold_meta u_isp_top/awb_hold_sync} {
+        if {[llength [get_regs $endpoint]] != 1} {
+            error "AE/AWB hold CDC endpoint missing or duplicated: $endpoint"
+        }
+    }
+    puts "AE_AWB_HOLD_ENDPOINTS_PASS source=1 meta=1 sync=1 stage=$stage"
     set camera_paths 0
     set display_paths 0
     foreach line [split $health \n] {
@@ -572,6 +610,7 @@ if($resumeGate) {
 Write-Output "Build output: $work"
 Write-Output "Source version: $version"
 if($PhysicalStrategy) {Write-Output "Physical strategy: $PhysicalStrategy"}
+if($RouteEffort) {Write-Output "Route effort: $RouteEffort"}
 if($resumeGate) {
     $resumeStage=if($resumePlace) {'placed'} else {'gate'}
     Write-Output "Resuming verified source-matched $resumeStage snapshot: $resumeRoot"
@@ -595,6 +634,16 @@ try {
         $routeCompletion=Assert-RouteCompletion (Join-Path $work 'system_route.status') $text
         Write-Output "FINAL_ROUTE_COMPLETION_PASS routed_nets=$($routeCompletion.routed_nets) open_nets=0"
         $slacks=Assert-FinalTiming (Join-Path $work 'system_pr.timing') (Join-Path $work 'route.qor')
+        $wireMatch=[regex]::Match([IO.File]::ReadAllText((Join-Path $work 'route.qor')),
+            '(?m)^\|\s*Wire length\s*\|\s*(\d+)\s*\|\s*$')
+        if(-not $wireMatch.Success) {throw 'Missing final routed wire length'}
+        $wireLength=[long]$wireMatch.Groups[1].Value
+        if($MaxWireLength -gt 0 -and $wireLength -gt $MaxWireLength) {
+            throw "Final wire-length budget failed: $wireLength exceeds $MaxWireLength"
+        }
+        $routeCompletion['wire_length']=$wireLength
+        $routeCompletion['wire_length_limit']=$MaxWireLength
+        Write-Output "FINAL_WIRE_LENGTH_PASS actual=$wireLength limit=$MaxWireLength"
         foreach($kind in @('SWNS','HWNS')) {
             Write-Output "${kind}: $($slacks[$kind])ns"
         }
@@ -646,7 +695,7 @@ try {
         }
         $bestResultReadme=Join-Path $work 'best_result_readme.txt'
         [IO.File]::WriteAllText($bestResultReadme,
-            "Verified build $version. Reports: build/release/release_manifest.json`r`n"+
+            "Verified build $version. Reports: $reportDirectory/release_manifest.json`r`n"+
             "Program anlogic_edge_osd.bit from this directory.`r`n",
             [Text.UTF8Encoding]::new($false))
         foreach($artifact in @(
@@ -672,7 +721,7 @@ try {
             toolchain_fingerprint_sha256=$driverHash
             source_manifest='source_sha256.csv'
             bitstream=[ordered]@{
-                path='td_project/anlogic_edge_osd_Runs/best_result/anlogic_edge_osd.bit'
+                path=(Join-Path $bestResultDirectory 'anlogic_edge_osd.bit').Substring($root.Length+1).Replace('\','/')
                 sha256=$bitHash
                 bytes=(Get-Item -LiteralPath $generatedBit).Length
             }
@@ -706,6 +755,7 @@ try {
                 driver='verification/run_image_quality_build.ps1'
                 physical_strategy=$PhysicalStrategy
                 place_seed=$PlaceSeed
+                route_effort=$RouteEffort
                 resumed_gate_snapshot=$ResumeGateSnapshot
                 resumed_place_snapshot=$ResumePlaceSnapshot
                 report_directory=$reportDirectory.Substring($root.Length+1).Replace('\','/')

@@ -16,6 +16,7 @@ module auto_exposure_control #(
     parameter integer BRIGHT_FAST = 144,
     parameter integer SETTLE_FRAMES = 3,
     parameter integer AVERAGE_FRAMES = 6,
+    parameter integer FAST_AVERAGE_FRAMES = 0,
     parameter integer HIGHLIGHT_ENABLE = 0,
     parameter integer FIXED_SAMPLE_COUNT = 0,
     parameter integer CHECK_BRIGHT_COUNT = 1
@@ -101,6 +102,7 @@ module auto_exposure_control #(
     reg [FRAME_BITS-1:0] frame_count;
     reg [SUM_BITS-1:0] sum_accum;
     reg [COUNT_BITS-1:0] count_accum;
+    reg fast_window_dark, fast_window_bright;
 
     wire [COUNT_BITS-1:0] input_count =
         FIXED_SAMPLE_COUNT != 0 ? FIXED_SAMPLE_COUNT : I_sample_count;
@@ -119,10 +121,19 @@ module auto_exposure_control #(
     wire [SUM_BITS-1:0] frame_sum = I_sum_y[SUM_BITS-1:0] +
         count_scale(input_count, {3'd0,highlight_bias});
     wire [SUM_BITS-1:0] window_sum = sum_accum + frame_sum;
-    // These comparisons are consumed only at the final averaging frame.
+    // Shorten a window only when every accepted frame is far from target
+    // in the same direction. Mixed or near-target scenes retain averaging.
+    wire frame_fast_dark = frame_sum < count_scale(input_count, DARK_FAST);
+    wire frame_fast_bright = frame_sum > count_scale(input_count, BRIGHT_FAST);
+    wire fast_window_complete = FAST_AVERAGE_FRAMES != 0 &&
+        frame_count == FAST_AVERAGE_FRAMES-1 &&
+        ((fast_window_dark && frame_fast_dark) ||
+         (fast_window_bright && frame_fast_bright));
+    // Fixed-count builds select two constant bounds, without a multiplier.
     wire [COUNT_BITS-1:0] window_count = FIXED_SAMPLE_COUNT != 0 ?
-        MAX_WINDOW_COUNT : count_accum + input_count;
-    wire window_complete = frame_count == AVERAGE_FRAMES - 1;
+        (fast_window_complete ? FIXED_SAMPLE_COUNT * FAST_AVERAGE_FRAMES :
+         MAX_WINDOW_COUNT) : count_accum + input_count;
+    wire window_complete = frame_count == AVERAGE_FRAMES - 1 || fast_window_complete;
 
     wire too_dark = window_sum < count_scale(window_count, TARGET_LOW);
     wire too_bright = window_sum > count_scale(window_count, TARGET_HIGH);
@@ -184,14 +195,19 @@ module auto_exposure_control #(
             frame_count <= {FRAME_BITS{1'b0}};
             sum_accum <= {SUM_BITS{1'b0}};
             count_accum <= {COUNT_BITS{1'b0}};
+            fast_window_dark <= 1'b0;
+            fast_window_bright <= 1'b0;
             O_ae_req <= 1'b0;
             O_ae <= EXPOSURE_DEFAULT;
             O_ag <= GAIN_DEFAULT;
             O_awb_hold <= 1'b1;
         end else begin
             O_ae_req <= 1'b0;
-            O_awb_hold <= state != ST_COLLECT || !I_cam_cfg_done;
+            // Collection is not convergence: keep WB frozen through every
+            // write/settle/window until a complete window needs no change.
+            if (!I_ae_cfg_done) O_awb_hold <= 1'b1;
             if (!I_cam_cfg_done) begin
+                O_awb_hold <= 1'b1;
                 state <= ST_INITIAL;
                 settle_remaining <= {SETTLE_BITS{1'b0}};
                 frame_count <= {FRAME_BITS{1'b0}};
@@ -199,6 +215,7 @@ module auto_exposure_control #(
                 count_accum <= {COUNT_BITS{1'b0}};
             end else case (state)
                 ST_INITIAL: begin
+                    O_awb_hold <= 1'b1;
                     if (I_ae_cfg_done) begin
                         O_ae <= EXPOSURE_DEFAULT;
                         O_ag <= GAIN_DEFAULT;
@@ -225,6 +242,10 @@ module auto_exposure_control #(
                     end
                 end
                 ST_COLLECT: if (I_stats_valid && stats_ok) begin
+                    fast_window_dark <= frame_fast_dark &&
+                        (frame_count == 0 || fast_window_dark);
+                    fast_window_bright <= frame_fast_bright &&
+                        (frame_count == 0 || fast_window_bright);
                     if (window_complete) begin
                         frame_count <= {FRAME_BITS{1'b0}};
                         sum_accum <= {SUM_BITS{1'b0}};
@@ -236,6 +257,10 @@ module auto_exposure_control #(
                             O_ae_req <= 1'b1;
                             O_awb_hold <= 1'b1;
                             state <= ST_WAIT_BUSY;
+                        end else if (I_ae_cfg_done) begin
+                            // A saturated sensor setting is stable too;
+                            // unreachable brightness must not freeze WB forever.
+                            O_awb_hold <= 1'b0;
                         end
                     end else begin
                         frame_count <= frame_count + 1'b1;
@@ -243,7 +268,10 @@ module auto_exposure_control #(
                         count_accum <= window_count;
                     end
                 end
-                default: state <= ST_INITIAL;
+                default: begin
+                    state <= ST_INITIAL;
+                    O_awb_hold <= 1'b1;
+                end
             endcase
         end
     end
@@ -252,6 +280,9 @@ module auto_exposure_control #(
     initial begin
         if (AVERAGE_FRAMES < 1 || AVERAGE_FRAMES > 16)
             $fatal(1, "AE averaging window is outside 1..16 frames");
+        if (FAST_AVERAGE_FRAMES != 0 &&
+            (FAST_AVERAGE_FRAMES < 2 || FAST_AVERAGE_FRAMES >= AVERAGE_FRAMES))
+            $fatal(1, "Fast AE window must be disabled or in 2..AVERAGE_FRAMES-1");
         if (SETTLE_FRAMES < 0 || SETTLE_FRAMES > 255)
             $fatal(1, "AE settle interval is outside 0..255 frames");
         if (METER_MAX < 1 || METER_MAX > 255)

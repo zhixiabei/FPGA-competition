@@ -6,6 +6,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$isp=[IO.File]::ReadAllText((Join-Path $projectRoot 'user_source/hdl_source/isp/isp_top.v'))
+$awbInstance=[regex]::Match($isp,'(?s)awb\s*#\((.*?)\)\s*u_awb')
+foreach($expected in @('.CONFIDENCE_ENABLE(1)', '.RED_RECOVERY_ENABLE(1)', '.CAPTURE_RED_MAX_Q8(1024)')) {
+    if(-not $awbInstance.Success -or -not $awbInstance.Groups[1].Value.Contains($expected)) {
+        throw "Production AWB does not match tested configuration: $expected"
+    }
+}
 foreach ($tool in @('xvlog.bat','xelab.bat','xsim.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SimBin $tool) -PathType Leaf)) {
         throw "Missing XSim tool: $tool"

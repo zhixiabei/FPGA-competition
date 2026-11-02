@@ -32,8 +32,9 @@ set_false_path -from [get_regs -nowarn {u_camera_diag_cdc/ack_toggle u_ae_stats_
 # IQ diagnostic payload destinations are optimized away in the production
 # configuration. AE statistics remain active and keep their bundled-data bound.
 set_max_delay -datapath_only -from [get_regs -nowarn {u_ae_stats_cdc/payload_hold[*]}] -to [get_regs -nowarn {u_ae_stats_cdc/O_dst_data[*]}] 20.000
-# Original-compatible AWB ignores the AE hold input, so its destination is not
-# a functional CDC endpoint in this build.
+# Only the first AE-hold synchronizer is asynchronous. The second stage
+# and all AWB control/pixel paths retain normal MIPI-clock timing checks.
+set_false_path -from [get_regs {u_auto_exposure/O_awb_hold}] -to [get_regs {u_isp_top/awb_hold_meta}]
 
 # Latency mailboxes cross CSI/DDR/HDMI; their payload bounds must remain
 # active. TD's broad asynchronous groups would override those bounds.

@@ -825,12 +825,12 @@ module design_top_wrapper #(
       .BRIGHT_FAST(144),
       .GAIN_MAX(176),
       .SETTLE_FRAMES(3),
-      // Preserve the original fruit pipeline's mean-luminance exposure target.
-      // P95 highlight bias can be re-enabled after camera-specific calibration.
-      .AVERAGE_FRAMES(6), .HIGHLIGHT_ENABLE(0),
+      // Keep six-frame fine control; persistent extreme light changes use two.
+      // Disable optional P95 bias; retain RAW mean-luminance exposure control.
+      .AVERAGE_FRAMES(6), .FAST_AVERAGE_FRAMES(2), .HIGHLIGHT_ENABLE(0),
       .FIXED_SAMPLE_COUNT(28800),
       // The complete-frame publisher guarantees near_count <= sample_count.
-      // Near/clip diagnostics stay in the source domain; AE uses P95.
+      // Near/clip diagnostics stay in the source domain; P95 bias is disabled.
       .CHECK_BRIGHT_COUNT(0)
   ) u_auto_exposure (
       .I_clk(S_24m_clk),

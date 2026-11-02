@@ -34,7 +34,7 @@ module tb_ae_highlight_control;
             if(req || !hold_awb) $fatal(1,"Settling did not hold WB/control");
         end
         tick();
-        if(hold_awb) $fatal(1,"AWB hold did not release after stable frames");
+        if(!hold_awb) $fatal(1,"AWB released before a stable statistics window");
     endtask
     task automatic initialize;
         @(negedge clk); rst=1; camera_done=0; ae_done=0; valid=0;

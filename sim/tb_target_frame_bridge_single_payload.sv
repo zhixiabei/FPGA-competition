@@ -65,9 +65,11 @@ module tb_target_frame_bridge_single_payload;
     );
 
 `ifdef BRIDGE_ROUTING_REFERENCE
-    wire [297:0] reference_tuple;
-    wire reference_mirror;
+    wire [297:0] reference_tuple, full_reference_tuple;
+    wire reference_mirror, full_reference_mirror;
     integer cycle_checks=0, stress_frame;
+    integer active_checks=0, bypass_reads=0, active_last_priority=0;
+    integer same_edge_reads=0, queued_read_checks=0;
     target_frame_bridge_reference #(
         .FRAME_WORDS(4), .COMPACT_MODE_PAYLOAD(1), .SINGLE_TARGET_ONLY(1),
         .USE_EXTERNAL_WRITE_PROGRESS(1),
@@ -75,7 +77,28 @@ module tb_target_frame_bridge_single_payload;
     ) reference (
         `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(reference_tuple),.O_read_mirror(reference_mirror)
     );
+    target_frame_bridge_reference #(.FRAME_WORDS(4)) full_reference (
+        `BRIDGE_INPUTS, `BRIDGE_OUTPUTS(full_reference_tuple),
+        .O_read_mirror(full_reference_mirror)
+    );
     always @(posedge ddr_clk) begin
+        if (rst_n) begin
+            if (single.S_result_write_active) begin
+                if (single.S_last_result_payload !== single.S_result_payload)
+                    $fatal(1,"Active bridge writeback changed the held result at %t",$time);
+                active_checks=active_checks+1;
+                if (read_start && single.S_active_pending_mask[read_slot] &&
+                    single.S_read_request == single.S_read_ack_sync)
+                    bypass_reads=bypass_reads+1;
+                if (write_start && |single.S_take_last_mask)
+                    active_last_priority=active_last_priority+1;
+            end
+            if (full.S_result_write_active &&
+                full.S_last_result_payload !== full.S_result_payload)
+                $fatal(1,"Queued bridge writeback changed the held result at %t",$time);
+            if (read_start && write_start && read_slot == write_slot)
+                same_edge_reads=same_edge_reads+1;
+        end
         #1;
         if (rst_n) begin
             if (single_mirror !== reference_mirror ||
@@ -83,6 +106,15 @@ module tb_target_frame_bridge_single_payload;
                 single.S_result_ack !== reference.S_result_ack ||
                 single.S_slot_result_valid !== reference.S_slot_result_valid)
                 $fatal(1,"Bridge routing changed DDR data/control at %t",$time);
+            if (full_mirror !== full_reference_mirror ||
+                full.S_read_payload !== full_reference.S_read_payload ||
+                full.S_read_pending_payload !== full_reference.S_read_pending_payload ||
+                full.S_read_pending_valid !== full_reference.S_read_pending_valid ||
+                full.S_result_ack !== full_reference.S_result_ack ||
+                full.S_slot_result_valid !== full_reference.S_slot_result_valid)
+                $fatal(1,"Queued bridge routing changed DDR data/control at %t",$time);
+            if (full.S_read_pending_valid)
+                queued_read_checks=queued_read_checks+1;
             cycle_checks=cycle_checks+1;
         end
     end
@@ -90,6 +122,8 @@ module tb_target_frame_bridge_single_payload;
         #1;
         if (rst_n && single_tuple !== reference_tuple)
             $fatal(1,"Bridge routing changed HDMI data/latency at %t",$time);
+        if (rst_n && full_tuple !== full_reference_tuple)
+            $fatal(1,"Queued bridge routing changed HDMI data/latency at %t",$time);
     end
 `endif
 
@@ -277,6 +311,28 @@ module tb_target_frame_bridge_single_payload;
             $fatal(1,"Binary display must restore forward read order");
 
 `ifdef BRIDGE_ROUTING_REFERENCE
+        // Keep multiple physical slots pending, then read during writeback
+        // while a cached result wins the simultaneous slot-write arbitration.
+        start_frame(20,12'h100,0,2);
+        for (stress_frame=0; stress_frame<4; stress_frame=stress_frame+1) begin
+            start_write_slot(2'(stress_frame));
+            complete_frame_write();
+        end
+        fork
+            publish_color_result(20);
+            begin
+                wait (single.S_result_write_active);
+                @(negedge ddr_clk);
+                read_start=1; read_slot=3; write_start=1; write_slot=1;
+                @(negedge ddr_clk);
+                read_slot=3; write_slot=3;
+                @(negedge ddr_clk);
+                read_slot=0; write_start=0;
+                @(negedge ddr_clk);
+                read_start=0;
+            end
+        join
+        repeat (24) @(negedge hdmi_clk);
         // Reused/duplicate slots, ID wrap, all effects and reads while a
         // result is crossing exercise the physical storage substitution.
         for (stress_frame=0; stress_frame<64; stress_frame=stress_frame+1) begin
@@ -304,6 +360,12 @@ module tb_target_frame_bridge_single_payload;
                 rst_n=1;
             end
         end
+        if (active_checks == 0 || bypass_reads == 0 || active_last_priority == 0 ||
+            same_edge_reads == 0 || queued_read_checks == 0)
+            $fatal(1,"Bridge local bypass coverage incomplete active=%0d bypass=%0d cached_write=%0d same_edge=%0d queued=%0d",
+                active_checks,bypass_reads,active_last_priority,same_edge_reads,queued_read_checks);
+        $display("TARGET_FRAME_BRIDGE_LOCAL_BYPASS_PASS active=%0d bypass_reads=%0d cached_write_priority=%0d same_edge=%0d queued_reads=%0d",
+            active_checks,bypass_reads,active_last_priority,same_edge_reads,queued_read_checks);
         $display("TARGET_FRAME_BRIDGE_ROUTING_EQUIVALENCE_PASS cycles=%0d frames=64 reset=1 external_progress=1 latency_delta=0",cycle_checks);
 `endif
         $display("TARGET_FRAME_BRIDGE_SINGLE_PAYLOAD_PASS body_bits=%0d result_bits=%0d read_bits=%0d slots=4 geometry=color+motion freeze=1 signature=1 queues=0",

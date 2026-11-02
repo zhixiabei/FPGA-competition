@@ -1,6 +1,6 @@
 param(
     [string] $ModelSimBin='C:\altera\14.1\modelsim_ase\win32aloem',
-    [string] $ReferenceRef='9d1735febb37f6f23c2474831508e1a24308f9c8',
+    [string] $ReferenceRef='8dc675d86bb4ed0de378a35d1faf6a7de8476f12',
     [string] $VendorDirectory='D:\TD\sim_release\ph1p'
 )
 $ErrorActionPreference='Stop'
@@ -62,7 +62,8 @@ foreach($variant in @('portable','vendor')) {
         throw "Bridge simulation failed: $console"
     }
     foreach($marker in @('TARGET_FRAME_BRIDGE_PASS','TARGET_FRAME_BRIDGE_SLOT_WRITES_PASS',
-        'TARGET_FRAME_BRIDGE_SINGLE_PAYLOAD_PASS','TARGET_FRAME_BRIDGE_ROUTING_EQUIVALENCE_PASS')) {
+        'TARGET_FRAME_BRIDGE_SINGLE_PAYLOAD_PASS','TARGET_FRAME_BRIDGE_ROUTING_EQUIVALENCE_PASS',
+        'TARGET_FRAME_BRIDGE_LOCAL_BYPASS_PASS')) {
         $matches=[regex]::Matches($text,'(?m)^\s*#\s*'+$marker+'\b.*$')
         if($matches.Count -ne 1) {throw "Missing/duplicate $marker in $console"}
         Write-Output ($variant+': '+$matches[0].Value.Trim())

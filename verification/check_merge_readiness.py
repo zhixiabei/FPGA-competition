@@ -103,6 +103,158 @@ def uncomment(text):
     return re.sub(r'//[^\n]*|/\*.*?\*/', '', text, flags=re.S)
 
 
+def check_ae_awb_hold_scope(relative, expected, actual):
+    """Permit AE fast-window/hold control and AWB hold/cyan/routing changes.
+
+    Exposure/divider arithmetic and pixel multiplication must match main.
+    AWB may register accepted smoothed gains and bank delay-memory pointers.
+    The neutral gate may only add the G/B-matched red recovery branch.
+    Functional regression and final routed STA remain required.
+    """
+    compact = lambda text: re.sub(r'\s+', '', uncomment(text))
+    original, candidate = compact(expected), compact(actual)
+    if original == candidate:
+        return False
+    if relative == 'auto_exposure_control.v':
+        replacements = [
+            ("parameter integer AVERAGE_FRAMES = 6,",
+             "parameter integer AVERAGE_FRAMES = 6, parameter integer FAST_AVERAGE_FRAMES = 0,"),
+            ("reg [COUNT_BITS-1:0] count_accum;",
+             "reg [COUNT_BITS-1:0] count_accum; reg fast_window_dark, fast_window_bright;"),
+            ("wire [COUNT_BITS-1:0] window_count = FIXED_SAMPLE_COUNT != 0 ? "
+             "MAX_WINDOW_COUNT : count_accum + input_count; "
+             "wire window_complete = frame_count == AVERAGE_FRAMES - 1;",
+             "wire frame_fast_dark = frame_sum < count_scale(input_count, DARK_FAST); "
+             "wire frame_fast_bright = frame_sum > count_scale(input_count, BRIGHT_FAST); "
+             "wire fast_window_complete = FAST_AVERAGE_FRAMES != 0 && "
+             "frame_count == FAST_AVERAGE_FRAMES-1 && "
+             "((fast_window_dark && frame_fast_dark) || (fast_window_bright && frame_fast_bright)); "
+             "wire [COUNT_BITS-1:0] window_count = FIXED_SAMPLE_COUNT != 0 ? "
+             "(fast_window_complete ? FIXED_SAMPLE_COUNT * FAST_AVERAGE_FRAMES : "
+             "MAX_WINDOW_COUNT) : count_accum + input_count; "
+             "wire window_complete = frame_count == AVERAGE_FRAMES - 1 || fast_window_complete;"),
+            ("count_accum <= {COUNT_BITS{1'b0}}; O_ae_req <= 1'b0;",
+             "count_accum <= {COUNT_BITS{1'b0}}; fast_window_dark <= 1'b0; "
+             "fast_window_bright <= 1'b0; O_ae_req <= 1'b0;"),
+            ("ST_COLLECT: if (I_stats_valid && stats_ok) begin if (window_complete)",
+             "ST_COLLECT: if (I_stats_valid && stats_ok) begin "
+             "fast_window_dark <= frame_fast_dark && (frame_count == 0 || fast_window_dark); "
+             "fast_window_bright <= frame_fast_bright && (frame_count == 0 || fast_window_bright); "
+             "if (window_complete)"),
+            ('if (SETTLE_FRAMES < 0 || SETTLE_FRAMES > 255)',
+             'if (FAST_AVERAGE_FRAMES != 0 && (FAST_AVERAGE_FRAMES < 2 || '
+             'FAST_AVERAGE_FRAMES >= AVERAGE_FRAMES)) '
+             '$fatal(1, "Fast AE window must be disabled or in 2..AVERAGE_FRAMES-1"); '
+             'if (SETTLE_FRAMES < 0 || SETTLE_FRAMES > 255)'),
+            ("O_awb_hold <= state != ST_COLLECT || !I_cam_cfg_done;",
+             "if (!I_ae_cfg_done) O_awb_hold <= 1'b1;"),
+            ("if (!I_cam_cfg_done) begin state <= ST_INITIAL;",
+             "if (!I_cam_cfg_done) begin O_awb_hold <= 1'b1; state <= ST_INITIAL;"),
+            ("ST_INITIAL: begin if (I_ae_cfg_done) begin",
+             "ST_INITIAL: begin O_awb_hold <= 1'b1; if (I_ae_cfg_done) begin"),
+            ("O_awb_hold <= 1'b1; state <= ST_WAIT_BUSY; end",
+             "O_awb_hold <= 1'b1; state <= ST_WAIT_BUSY; "
+             "end else if (I_ae_cfg_done) begin O_awb_hold <= 1'b0; end"),
+            ("default: state <= ST_INITIAL;",
+             "default: begin state <= ST_INITIAL; O_awb_hold <= 1'b1; end"),
+        ]
+    else:
+        replacements = [
+            ("parameter integer CONFIDENCE_ENABLE = 0,",
+             "parameter integer CONFIDENCE_ENABLE = 0, parameter integer RED_RECOVERY_ENABLE = 0,"),
+            ("""wire sample_neutral_d1 =
+                sample_max_d1 >= 8'd40 && sample_max_d1 <= 8'd220 &&
+                sample_spread_d1 <= (sample_max_d1 >> 1) &&
+                {1'b0, red_d1} <= neutral_upper_d1 && red_d1 >= neutral_lower_d1 &&
+                {1'b0, blue_d1} <= neutral_upper_d1 && blue_d1 >= neutral_lower_d1;""",
+             """wire [7:0] gb_difference_d1 = green_d1_stats >= blue_d1 ?
+                green_d1_stats-blue_d1 : blue_d1-green_d1_stats;
+                wire red_recovery_d1 = RED_RECOVERY_ENABLE != 0 &&
+                sample_max_d1 >= 8'd40 && sample_max_d1 <= 8'd220 &&
+                red_d1 >= 8'd20 && red_d1 >= (green_d1_stats >> 2) &&
+                red_d1 < neutral_lower_d1 &&
+                gb_difference_d1 <= (green_d1_stats >> 3);
+                wire sample_neutral_d1 =
+                red_recovery_d1 || (sample_max_d1 >= 8'd40 && sample_max_d1 <= 8'd220 &&
+                sample_spread_d1 <= (sample_max_d1 >> 1) &&
+                {1'b0, red_d1} <= neutral_upper_d1 && red_d1 >= neutral_lower_d1 &&
+                {1'b0, blue_d1} <= neutral_upper_d1 && blue_d1 >= neutral_lower_d1);"""),
+            ("wire hold_updates = CONFIDENCE_ENABLE != 0 && I_hold;",
+             "wire hold_updates = I_hold;"),
+            ("wire coverage_ok = CONFIDENCE_ENABLE == 0 || "
+             "(upper_samples == REGION_MIN && lower_samples == REGION_MIN && !completed_frame_bad);",
+             "wire coverage_ok = !completed_frame_bad && (CONFIDENCE_ENABLE == 0 || "
+             "(upper_samples == REGION_MIN && lower_samples == REGION_MIN));"),
+            ("bad_d0 <= hold_updates || line_bad || (!I_tuser && frame_bad);",
+             "bad_d0 <= hold_updates || (CONFIDENCE_ENABLE != 0 && line_bad) || (!I_tuser && frame_bad);"),
+            ("(CONFIDENCE_ENABLE == 0 || !overrun_block);", "!overrun_block;"),
+            ("frame_bad <= hold_updates || line_bad;",
+             "frame_bad <= hold_updates || (CONFIDENCE_ENABLE != 0 && line_bad);"),
+            ("if (line_bad || hold_updates) frame_bad <= 1'b1;",
+             "if ((CONFIDENCE_ENABLE != 0 && line_bad) || hold_updates) frame_bad <= 1'b1;"),
+            ("""wire [10:0] committed_gain_r = F_smooth_gain(gain_r_q8, pending_r_q8);
+                wire [10:0] committed_gain_b = F_smooth_gain(gain_b_q8, pending_b_q8);""",
+             "reg [10:0] committed_gain_r, committed_gain_b;"),
+            ("pending_b_q8 <= 11'd256; pending_ready <= 1'b0;",
+             "pending_b_q8 <= 11'd256; committed_gain_r <= 11'd256; "
+             "committed_gain_b <= 11'd256; pending_ready <= 1'b0;"),
+            ("pending_b_q8 <= blue_result; pending_ready <= 1'b1;",
+             "pending_b_q8 <= blue_result; "
+             "committed_gain_r <= F_smooth_gain(gain_r_q8, div_red_result); "
+             "committed_gain_b <= F_smooth_gain(gain_b_q8, blue_result); "
+             "pending_ready <= 1'b1;"),
+            ("reg [5:0] video_write_address, video_read_address;", ""),
+            ("video_write_address <= 6'd0; video_read_address <= 6'd13;", ""),
+            ("video_write_address <= video_write_address + 1'b1; "
+             "video_read_address <= video_read_address + 1'b1;", ""),
+            ("""PH1P_LOGIC_DRAM #(
+                .DATA_WIDTH_W(96), .DATA_WIDTH_R(96),
+                .ADDR_WIDTH_W(6), .ADDR_WIDTH_R(6),
+                .DATA_DEPTH_W(64), .DATA_DEPTH_R(64),
+                .READREG("ENABLE"), .RESETMODE("ASYNC"),
+                .INIT_FILE("NONE"), .FILL_ALL("NONE")
+            ) u_video_start_guard (
+                .di(output_data), .waddr(video_write_address), .we(I_rst_n), .wclk(I_clk),
+                .raddr(video_read_address), .rclk(I_clk), .rrst(!I_rst_n), .rce(1'b1),
+                .rdo(), .rdoq(video_delayed_data)
+            );""",
+             """genvar video_bank;
+            generate for (video_bank=0; video_bank<4; video_bank=video_bank+1) begin : g_video_delay
+                (* preserve=1 *) reg [5:0] write_address, read_address;
+                always @(posedge I_clk or negedge I_rst_n) begin
+                    if (!I_rst_n) begin
+                        write_address <= 6'd0;
+                        read_address <= 6'd13;
+                    end else begin
+                        write_address <= write_address + 1'b1;
+                        read_address <= read_address + 1'b1;
+                    end
+                end
+                PH1P_LOGIC_DRAM #(
+                    .DATA_WIDTH_W(24), .DATA_WIDTH_R(24),
+                    .ADDR_WIDTH_W(6), .ADDR_WIDTH_R(6),
+                    .DATA_DEPTH_W(64), .DATA_DEPTH_R(64),
+                    .READREG("ENABLE"), .RESETMODE("ASYNC"),
+                    .INIT_FILE("NONE"), .FILL_ALL("NONE")
+                ) u_video_start_guard (
+                    .di(output_data[video_bank*24 +: 24]),
+                    .waddr(write_address), .we(I_rst_n), .wclk(I_clk),
+                    .raddr(read_address), .rclk(I_clk), .rrst(!I_rst_n), .rce(1'b1),
+                    .rdo(), .rdoq(video_delayed_data[video_bank*24 +: 24])
+                );
+            end endgenerate"""),
+        ]
+    for before, after in replacements:
+        before, after = compact(before), compact(after)
+        require(original.count(before) == 1,
+                f'{relative}: main no longer matches the AE/AWB hold change')
+        original = original.replace(before, after)
+    require(candidate == original, f'{relative}: change outside AE/AWB hold scope')
+    print(f'AE_AWB_HOLD_CHANGE_SCOPE_PASS {relative} '
+          '(run hold/frame regression and routed timing separately)')
+    return True
+
+
 def check_scharr_center_scope(expected, actual):
     """Allow the reviewed centre-only substitution, preserve all other effects.
 
@@ -462,6 +614,20 @@ def check_signature_scope(relative, expected, actual):
     if actual == expected:
         return False
     if relative == 'target_frame_bridge.v':
+        local_bypass = '''    // Active writeback holds the same message in this DDR-domain register.
+    // Use that local copy for pending-slot reads instead of the CSI mailbox.
+    wire [BODY_WIDTH-1:0] S_slot_result_read =
+        S_result_write_active && S_active_pending_mask[I_read_slot] ?
+        S_last_result_payload[BODY_WIDTH-1:0] : S_slot_result_ram;'''
+        if local_bypass in actual:
+            require(actual.count(local_bypass) == 1, 'Duplicate bridge bypass substitution')
+            actual = actual.replace(local_bypass, '''    wire [BODY_WIDTH-1:0] S_slot_result_read =
+        S_result_write_active && S_active_pending_mask[I_read_slot] ?
+        S_result_payload[BODY_WIDTH-1:0] : S_slot_result_ram;''', 1)
+            print('BRIDGE_LOCAL_BYPASS_SCOPE_PASS '
+                  '(run mailbox invariant and routing equivalence separately)')
+            if actual == expected:
+                return True
         storage_prefix = '''    reg [4*BODY_WIDTH-1:0] S_slot_result_storage;
     genvar record_bank;
     generate if (SINGLE_TARGET_ONLY) begin : g_slot_registers
@@ -530,12 +696,15 @@ def main():
     detector_optimized = 0
     signature_changed = 0
     routing_changed = 0
+    ae_awb_changed = 0
     unchanged = 0
     for relative in preserved:
         path = 'user_source/hdl_source/'+relative
         expected = git('show', f'{args.main_ref}:{path}').decode('utf-8')
         actual = (ROOT/path).read_text(encoding='utf-8')
         unchanged += actual == expected
+        if actual == expected:
+            continue
         if relative in {'isp/scharr_edge_detect_96.v', 'isp/rgb_edge_switch_96.v'}:
             actual, changed = check_video_routing_scope(relative, expected, actual)
             routing_changed += changed
@@ -544,7 +713,9 @@ def main():
                       '(run pixel/control equivalence simulations separately)')
             if relative == 'isp/rgb_edge_switch_96.v':
                 continue
-        if relative == 'isp/scharr_edge_detect_96.v':
+        if relative in {'auto_exposure_control.v', 'awb.v'}:
+            ae_awb_changed += check_ae_awb_hold_scope(relative, expected, actual)
+        elif relative == 'isp/scharr_edge_detect_96.v':
             optimized += check_scharr_center_scope(expected, actual)
         elif relative == 'isp/red_target_detect_96.v':
             detector_optimized += check_red_single_scope(expected, actual)
@@ -558,7 +729,8 @@ def main():
           f'{optimized} reviewed centre-only substitution; '
           f'{detector_optimized} reviewed single-target detector change; '
           f'{signature_changed} reviewed signature integration changes; '
-          f'{routing_changed} reviewed local video-control changes')
+          f'{routing_changed} reviewed local video-control changes; '
+          f'{ae_awb_changed} reviewed AE/AWB hold changes')
     for path in (ROOT/'verification').glob('*.py'):
         ast.parse(path.read_text(encoding='utf-8-sig'), filename=str(path))
     print('PYTHON_SOURCE_PARSE_PASS')

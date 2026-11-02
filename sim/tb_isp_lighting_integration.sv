@@ -9,25 +9,27 @@ module tb_isp_lighting_integration #(
     parameter integer MORPH_MODE=0,
     parameter integer SCHARR_INV_MODE=0,
     parameter integer MASK_MODE=0,
-    parameter integer IQ_DIAG_ENABLE=0
+    parameter integer IQ_DIAG_ENABLE=0,
+    parameter integer HOLD_RELEASE_TEST=0
 );
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
     localparam integer AWB_LATENCY=54;
-    // Frame 0 supplies only the first illuminant candidate. Frame 1 has no
-    // eligible neutral samples, and frame 2 is a different illuminant.
-    // Confidence mode must therefore retain the initial unity gains.
+    // Hold all frames, or release halfway through frame 0. That partial frame
+    // must be discarded. Colour frame 1 has no neutral samples; motion frames
+    // 1 and 2 are grey and can confirm unity gains. All pixels retain unity.
     localparam integer EXPECTED_RED_GAIN=256, EXPECTED_BLUE_GAIN=256;
     // The color result uses three shared binary windows: majority, dilation,
-    // erosion. Its nine registered clocks are observed one edge later here.
+    // erosion. Its ten registered clocks are observed one edge later here.
     // Motion retains its existing thirteen-clock publication contract.
-    localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 10;
+    localparam integer TARGET_LATENCY=MOTION_MODE ? 13 : 11;
     localparam [3:0] THIRD_FRAME_MODE=EMBOSS_MODE ? 4'd4 :
         CARTOON_MODE ? 4'd6 : SCHARR_INV_MODE ? 4'd7 : MORPH_MODE ? 4'd8 :
         MASK_MODE>=9 && MASK_MODE<=12 ? 4'(MASK_MODE) : 4'd0;
     reg clk=0;
     always #5 clk=~clk;
     reg rst_n=0;
+    reg ae_hold=1;
     reg [3:0] request_mode=0;
     reg raw_valid=0, raw_user=0, raw_last=0;
     reg [39:0] raw_data=0;
@@ -48,7 +50,7 @@ module tb_isp_lighting_integration #(
     wire [127:0] iq_diag_data;
     reg [9:0] input_frame_id=0;
     isp_top #(.ENABLE_EDGE(0),.IQ_DIAGNOSTIC_ENABLE(IQ_DIAG_ENABLE)) dut (
-        .I_awb_hold_async(1'b0),
+        .I_awb_hold_async(ae_hold),
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),
         .I_effect_config({request_mode,8'd0}),
         .I_motion_mode_async(MOTION_MODE!=0),
@@ -116,7 +118,9 @@ module tb_isp_lighting_integration #(
                 0: scene = x>=200 && x<=359 && y>=180 && y<=299 ?
                            24'hc8231e : 24'h8c6e64;
                 1: scene = x>=700 && x<=859 && y>=400 && y<=519 ?
-                           24'h320f0c : 24'hffaaBE;
+                           // Low saturation background: max(G,B) > 3R/4,
+                           // outside the current detector's pale-red range.
+                           24'h320f0c : 24'hffd2dc;
                 default: scene = MASK_MODE!=0 && x>=200 && x<=359 &&
                     y>=180 && y<=299 &&
                     !((x==241 || x==242) && (y==225 || y==226)) ?
@@ -316,9 +320,8 @@ module tb_isp_lighting_integration #(
     );
         integer n,r,b,rg,bg;
         begin
-            // The complete-frame confidence rule rejects a first candidate
-            // and the following clipped scene. Compare actual pixel values,
-            // independently of internal pending/divider signals.
+            // AE hold prevents candidates; release still needs confirmation.
+            // Compare pixels independently of internal divider signals.
             rg=EXPECTED_RED_GAIN;
             bg=EXPECTED_BLUE_GAIN;
             for(n=0;n<4;n=n+1) begin
@@ -672,6 +675,8 @@ module tb_isp_lighting_integration #(
             if(f==2) tick(0,1,0,0); // Early marker during blanking.
             for(y=0;y<H;y=y+1) begin
                 for(g=0;g<GROUPS;g=g+1) begin
+                    if(HOLD_RELEASE_TEST && f==0 && y==H/2 && g==0)
+                        ae_hold=0;
                     if(y==H/2 && g==0)
                         request_mode=f==0 ? 4'd2 :
                             f==1 ? THIRD_FRAME_MODE : 4'd0;
@@ -684,6 +689,15 @@ module tb_isp_lighting_integration #(
             repeat(64) tick(0,0,0,0);
         end
         repeat(100) tick(0,0,0,0);
+        if(HOLD_RELEASE_TEST) begin
+            if(!dut.u_awb.candidate_valid ||
+               dut.u_awb.pending_ready !== (MOTION_MODE!=0))
+                $fatal(1,"AWB recovery confirmation mismatch motion=%0d candidate=%b pending=%b",
+                    MOTION_MODE,dut.u_awb.candidate_valid,dut.u_awb.pending_ready);
+            if(MOTION_MODE && (dut.u_awb.pending_r_q8!=256 ||
+                               dut.u_awb.pending_b_q8!=256))
+                $fatal(1,"Two clean grey motion frames must confirm unity AWB gains");
+        end
         if(ae_results!=3 || target_results!=3 || (MOTION_MODE && raw_motion_results!=3) ||
             byte_write!=byte_read ||
             bytes_checked!=3*W*H*3 || white_pixels==0)

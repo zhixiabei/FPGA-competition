@@ -14,6 +14,7 @@ module tb_auto_exposure_control;
     reg [15:0] sample_count = SAMPLE_COUNT;
     reg [15:0] bright_count = 0;
     wire request;
+    wire hold_awb;
     wire [15:0] exposure, gain;
     integer requests = 0;
     integer checks = 0;
@@ -24,6 +25,7 @@ module tb_auto_exposure_control;
         .I_cam_cfg_done(camera_done), .I_ae_cfg_done(ae_done),
         .I_stats_valid(stats_valid), .I_sum_y(sum_y),
         .I_sample_count(sample_count), .I_bright_count(bright_count),
+        .I_p95(5'd0), .O_awb_hold(hold_awb),
         .O_ae_req(request), .O_ae(exposure), .O_ag(gain)
     );
 
@@ -101,6 +103,8 @@ module tb_auto_exposure_control;
             end
             push_stats(mean_y, frame_bright);
             assert_state(expected_ae, expected_ag, expected_req, label_text);
+            if (hold_awb !== expected_req[0])
+                $fatal(1, "%s: WB must freeze on adjustment and release on a stable window", label_text);
         end
     endtask
 
@@ -111,6 +115,7 @@ module tb_auto_exposure_control;
         begin
             held_ae = exposure;
             held_ag = gain;
+            if (!hold_awb) $fatal(1, "AWB not held at transaction start");
             repeat (3) begin
                 tick();
                 assert_state(held_ae, held_ag, 0, "stale done high");
@@ -130,7 +135,10 @@ module tb_auto_exposure_control;
                 push_stats((frame_index & 1) ? 192 : 0,
                            (frame_index & 1) ? SAMPLE_COUNT : 0);
                 assert_state(held_ae, held_ag, 0, "post-write settling frame");
+                if (!hold_awb) $fatal(1, "AWB released during settling");
             end
+            repeat (3) tick();
+            if (!hold_awb) $fatal(1, "Collection alone must not release AWB");
             accepted_updates = accepted_updates + 1;
         end
     endtask

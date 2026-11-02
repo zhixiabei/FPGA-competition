@@ -16,6 +16,7 @@ module awb #(
     parameter integer MIN_GAIN_Q8 = 128,
     parameter integer MAX_GAIN_Q8 = 1024,
     parameter integer CONFIDENCE_ENABLE = 0,
+    parameter integer RED_RECOVERY_ENABLE = 0,
     parameter integer GAIN_DEADBAND_Q8 = 2,
     parameter integer CANDIDATE_TOLERANCE_Q8 = 24,
     parameter integer CAPTURE_RED_MIN_Q8 = 170,
@@ -101,13 +102,14 @@ module awb #(
     reg [COLUMN_BITS-1:0] column_count;
     // I_hold is a synchronous enable in I_clk. The AE clock crossing is at
     // the ISP boundary, before this module; do not sample it as an async bus.
-    wire hold_updates = CONFIDENCE_ENABLE != 0 && I_hold;
+    wire hold_updates = I_hold;
     reg half_d0, half_d1, half_d2;
     reg bad_d0, bad_d1, bad_d2;
     reg [REGION_BITS-1:0] upper_samples, lower_samples;
-    wire coverage_ok = CONFIDENCE_ENABLE == 0 ||
-        (upper_samples == REGION_MIN && lower_samples == REGION_MIN &&
-         !completed_frame_bad);
+    // Hold invalidation is mandatory even with optional colour-confidence
+    // checks disabled. A partial frame after release cannot update WB.
+    wire coverage_ok = !completed_frame_bad && (CONFIDENCE_ENABLE == 0 ||
+        (upper_samples == REGION_MIN && lower_samples == REGION_MIN));
 
     // Selecting a different lane at successive sample points avoids sampling
     // only one of the four Bayer reconstruction positions.
@@ -144,11 +146,20 @@ module awb #(
     wire [8:0] neutral_upper_d1 =
         {1'b0, green_d1_stats} + (green_d1_stats >> 1);
     wire [7:0] neutral_lower_d1 = green_d1_stats >> 1;
-    wire sample_neutral_d1 =
+    // A cyan-cast neutral can have R below the normal half-G gate. Require
+    // G/B agreement and usable R signal before extending capture to 4x.
+    wire [7:0] gb_difference_d1 = green_d1_stats >= blue_d1 ?
+        green_d1_stats-blue_d1 : blue_d1-green_d1_stats;
+    wire red_recovery_d1 = RED_RECOVERY_ENABLE != 0 &&
         sample_max_d1 >= 8'd40 && sample_max_d1 <= 8'd220 &&
+        red_d1 >= 8'd20 && red_d1 >= (green_d1_stats >> 2) &&
+        red_d1 < neutral_lower_d1 &&
+        gb_difference_d1 <= (green_d1_stats >> 3);
+    wire sample_neutral_d1 =
+        red_recovery_d1 || (sample_max_d1 >= 8'd40 && sample_max_d1 <= 8'd220 &&
         sample_spread_d1 <= (sample_max_d1 >> 1) &&
         {1'b0, red_d1} <= neutral_upper_d1 && red_d1 >= neutral_lower_d1 &&
-        {1'b0, blue_d1} <= neutral_upper_d1 && blue_d1 >= neutral_lower_d1;
+        {1'b0, blue_d1} <= neutral_upper_d1 && blue_d1 >= neutral_lower_d1);
 
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
@@ -179,7 +190,8 @@ module awb #(
             stats_start_d0 <= I_tuser;
             stats_end_d0 <= frame_complete;
             half_d0 <= !I_tuser && beat_count >= FRAME_BEATS/2;
-            bad_d0 <= hold_updates || line_bad || (!I_tuser && frame_bad);
+            bad_d0 <= hold_updates || (CONFIDENCE_ENABLE != 0 && line_bad) ||
+                      (!I_tuser && frame_bad);
             // Stage 1: channel extrema, aligned with the sample and tokens.
             sample_rgb_d1 <= sample_rgb_d0;
             sample_max_d1 <= max_rg_d0 > blue_d0 ? max_rg_d0 : blue_d0;
@@ -288,10 +300,8 @@ module awb #(
         end
     endfunction
 
-    wire [10:0] committed_gain_r =
-        F_smooth_gain(gain_r_q8, pending_r_q8);
-    wire [10:0] committed_gain_b =
-        F_smooth_gain(gain_b_q8, pending_b_q8);
+    // Calculate once when the ratio is accepted, before SOF selects the gain.
+    reg [10:0] committed_gain_r, committed_gain_b;
     // When SOF and the first valid pixel coincide, that pixel already belongs
     // to the new frame and must use the same gain as the rest of that frame.
     wire [10:0] pixel_gain_r = I_tuser && pending_ready && !hold_updates ?
@@ -332,7 +342,7 @@ module awb #(
          tracked_blue_delta <= TRACK_TOLERANCE_Q8);
     wire frame_stats_ok = sample_count >= MIN_SAMPLES &&
         sum_r != 0 && sum_b != 0 && coverage_ok &&
-        (CONFIDENCE_ENABLE == 0 || !overrun_block);
+        !overrun_block;
     wire ratio_finished = div_state == DIV_BLUE && div_bit_count == 0;
     wire candidate_approved =
         capture_range_ok && tracking_range_ok && consistent_candidate;
@@ -351,6 +361,8 @@ module awb #(
             gain_b_q8 <= 11'd256;
             pending_r_q8 <= 11'd256;
             pending_b_q8 <= 11'd256;
+            committed_gain_r <= 11'd256;
+            committed_gain_b <= 11'd256;
             pending_ready <= 1'b0;
             div_state <= DIV_IDLE;
             div_bit_count <= 0;
@@ -374,7 +386,7 @@ module awb #(
                 beat_count <= 0;
                 sample_phase <= 0;
                 sample_lane <= 0;
-                frame_bad <= hold_updates || line_bad;
+                frame_bad <= hold_updates || (CONFIDENCE_ENABLE != 0 && line_bad);
                 column_count <= 0;
                 if (pending_ready && !hold_updates) begin
                     gain_r_q8 <= committed_gain_r;
@@ -387,7 +399,8 @@ module awb #(
                 beat_count <= (I_tuser ? 0 : beat_count) + 1'b1;
                 column_count <= expected_last ? 0 :
                     (I_tuser ? 0 : column_count) + 1'b1;
-                if (line_bad || hold_updates) frame_bad <= 1'b1;
+                if ((CONFIDENCE_ENABLE != 0 && line_bad) || hold_updates)
+                    frame_bad <= 1'b1;
                 sample_phase <= (I_tuser ? 0 : sample_phase) + 1'b1;
                 if (take_sample)
                     sample_lane <= (I_tuser ? 0 : sample_lane) + 1'b1;
@@ -429,6 +442,8 @@ module awb #(
                     if (CONFIDENCE_ENABLE == 0 || candidate_approved) begin
                         pending_r_q8 <= div_red_result;
                         pending_b_q8 <= blue_result;
+                        committed_gain_r <= F_smooth_gain(gain_r_q8, div_red_result);
+                        committed_gain_b <= F_smooth_gain(gain_b_q8, blue_result);
                         pending_ready <= 1'b1;
                         tracking_valid <= 1'b1;
                         reacquire_count <= 0;
@@ -514,35 +529,45 @@ module awb #(
     // A fixed delay shifts bubbles too, so row lengths and byte order stay
     // unchanged. 64x96 distributed RAM avoids the old 2048-word frame buffer
     // and a 4992-flip-flop pixel shift register.
-    reg [5:0] video_write_address, video_read_address;
     reg [51:0] video_valid_delay;
     reg [51:0] video_last_delay;
     wire [95:0] video_delayed_data;
     always @(posedge I_clk or negedge I_rst_n) begin
         if (!I_rst_n) begin
-            video_write_address <= 6'd0;
-            // 51 stored clocks behind the write pointer plus one read FF.
-            video_read_address <= 6'd13;
             video_valid_delay <= 52'd0;
             video_last_delay <= 52'd0;
         end else begin
-            video_write_address <= video_write_address + 1'b1;
-            video_read_address <= video_read_address + 1'b1;
             video_valid_delay <= {video_valid_delay[50:0], valid_d2};
             video_last_delay <= {video_last_delay[50:0], last_d2};
         end
     end
-    PH1P_LOGIC_DRAM #(
-        .DATA_WIDTH_W(96), .DATA_WIDTH_R(96),
-        .ADDR_WIDTH_W(6), .ADDR_WIDTH_R(6),
-        .DATA_DEPTH_W(64), .DATA_DEPTH_R(64),
-        .READREG("ENABLE"), .RESETMODE("ASYNC"),
-        .INIT_FILE("NONE"), .FILL_ALL("NONE")
-    ) u_video_start_guard (
-        .di(output_data), .waddr(video_write_address), .we(I_rst_n), .wclk(I_clk),
-        .raddr(video_read_address), .rclk(I_clk), .rrst(!I_rst_n), .rce(1'b1),
-        .rdo(), .rdoq(video_delayed_data)
-    );
+    genvar video_bank;
+    generate for (video_bank=0; video_bank<4; video_bank=video_bank+1) begin : g_video_delay
+        // Independent same-phase pointers keep address routing local to a lane.
+        (* preserve=1 *) reg [5:0] write_address, read_address;
+        always @(posedge I_clk or negedge I_rst_n) begin
+            if (!I_rst_n) begin
+                write_address <= 6'd0;
+                // 51 stored clocks behind the write pointer plus one read FF.
+                read_address <= 6'd13;
+            end else begin
+                write_address <= write_address + 1'b1;
+                read_address <= read_address + 1'b1;
+            end
+        end
+        PH1P_LOGIC_DRAM #(
+            .DATA_WIDTH_W(24), .DATA_WIDTH_R(24),
+            .ADDR_WIDTH_W(6), .ADDR_WIDTH_R(6),
+            .DATA_DEPTH_W(64), .DATA_DEPTH_R(64),
+            .READREG("ENABLE"), .RESETMODE("ASYNC"),
+            .INIT_FILE("NONE"), .FILL_ALL("NONE")
+        ) u_video_start_guard (
+            .di(output_data[video_bank*24 +: 24]),
+            .waddr(write_address), .we(I_rst_n), .wclk(I_clk),
+            .raddr(read_address), .rclk(I_clk), .rrst(!I_rst_n), .rce(1'b1),
+            .rdo(), .rdoq(video_delayed_data[video_bank*24 +: 24])
+        );
+    end endgenerate
 
     assign I_tready = O_tready;
     assign O_tuser = I_tuser;

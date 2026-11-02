@@ -18,7 +18,8 @@ module tb_awb_confidence;
     wire [10:0] diag_gain_r, diag_gain_b;
     wire [15:0] diag_sample_count;
     awb #(.IMG_WIDTH(WIDTH), .IMG_HEIGHT(HEIGHT),
-          .CONFIDENCE_ENABLE(1), .DIAGNOSTIC_ENABLE(1)) dut (
+          .CONFIDENCE_ENABLE(1), .RED_RECOVERY_ENABLE(1),
+          .CAPTURE_RED_MAX_Q8(1024), .DIAGNOSTIC_ENABLE(1)) dut (
         .I_clk(clk), .I_rst_n(rst_n), .I_tlast(last), .I_tuser(user),
         .I_tdata(data), .I_tvalid(valid), .I_tready(in_ready),
         .O_tlast(out_last), .O_tuser(out_user), .O_tdata(out_data),
@@ -34,7 +35,8 @@ module tb_awb_confidence;
     wire large_out_valid, large_out_user, large_out_last;
     wire [95:0] large_out_data;
     awb #(.IMG_WIDTH(1280), .IMG_HEIGHT(720),
-          .CONFIDENCE_ENABLE(1)) full720p (
+          .CONFIDENCE_ENABLE(1), .RED_RECOVERY_ENABLE(1),
+          .CAPTURE_RED_MAX_Q8(1024)) full720p (
         .I_clk(clk), .I_rst_n(rst_n), .I_tlast(large_last),
         .I_tuser(large_user), .I_tdata(large_data), .I_tvalid(large_valid),
         .I_tready(), .O_tlast(large_out_last), .O_tuser(large_out_user),
@@ -268,6 +270,20 @@ module tb_awb_confidence;
             tick(1,beat==0,{24'hff10ff,24'h10ffff,24'hff1000,24'h00ff00});
         idle(5);
 
+        // A cyan-cast white sheet must not be excluded by the old half-G gate.
+        // Isolate capture from the deliberately truncated clipping frame above.
+        reset_all();
+        frame(35,100,100); check_pending(0);
+        frame(35,100,100); check_pending(1,731,256);
+        for(f=0;f<48;f=f+1) begin
+            frame(35,100,100,0,f%2); check_pending(1,731,256);
+        end
+        if(dut.gain_r_q8<729 || dut.gain_r_q8>731 ||
+           dut.gain_b_q8<254 || dut.gain_b_q8>258 ||
+           (35*dut.gain_r_q8/256)<99 || (100*dut.gain_b_q8/256)<99 ||
+           (100*dut.gain_b_q8/256)>100)
+            $fatal(1,"Cyan white did not recover neutral RGB near 100");
+
         // Unsupported dominant colours, dark frames and clipped white hold.
         frame(200,45,35); check_pending(0);
         saved_r=dut.gain_r_q8; saved_b=dut.gain_b_q8;
@@ -279,6 +295,8 @@ module tb_awb_confidence;
         frame(0,0,0); check_pending(0);
         frame(18,20,16); check_pending(0);
         frame(255,255,255); check_pending(0);
+        frame(12,100,100); check_pending(0); // Red is too weak to amplify safely.
+        frame(35,100,150); check_pending(0); // G/B disagree: reject blue object.
         if (dut.gain_r_q8 != saved_r || dut.gain_b_q8 != saved_b)
             $fatal(1,"Low-confidence colour/black/clipped frames changed gains");
 
