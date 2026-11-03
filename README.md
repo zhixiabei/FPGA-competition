@@ -2,7 +2,7 @@
 
 当前主工程为 [anlogic_edge_osd.al](td_project/anlogic_edge_osd.al)，顶层 `design_top_wrapper`，器件 PH1P35MDG324。工程状态见 [当前工程说明](td_project/当前工程说明.md)。
 
-2026-11-02 当前通过版采用 `CongestionHigh + normal`、Place seed `1`：41015 条网络全部布通，open net 为 0，Setup WNS `+0.103 ns`，Hold WNS `+0.020 ns`。Slice 20156/21216，ERAM 104/108，DSP 39/40。现有时钟与 IO 约束警告仍需保留关注，板上曝光和白平衡效果不由时序报告保证。
+源码以 Git `395967c` 为基线，保留 AE/AWB、RAW 直方图、Gamma、检测、识别和签名功能。
 
 ## 操作
 
@@ -33,15 +33,14 @@
 | `td_project/anlogic_edge_osd.al` | 当前统一工程 |
 | `sim/`、`verification/` | 测试台、回归脚本、静态检查 |
 | `fruitcnn128_retrained_20261031/` | 最佳模型检查点和少量归档信息，不参与主工程编译 |
-| `docs/reference/`、`docs/proposals/` | 硬件资料、开题 Word/PDF 及生成源 |
-| `td_project/anlogic_edge_osd_Runs/phy_1/` | 当前布局布线数据库、日志和时序报告 |
-| `build/accepted_before_exposure/` | 曝光调整前唯一保留的通过版、源码及数据库 |
+| `docs/reference/hardware/` | 开发板与相机接口图片 |
+| `td_project/anlogic_edge_osd_Runs/phy_1/` | 后续重新构建的布局布线输出 |
 
 TD GUI 可直接打开 `td_project/anlogic_edge_osd.al`。工程已固定为 `CongestionHigh`、Place seed `1` 和压缩 bit；开始运行前应关闭旧 TD 窗口后重新打开工程，确保加载更新后的配置。`build_firmware.cmd` 保留为命令行验收入口。
 
 ## 模型与验证
 
-用户已确认新权重烧入板上 U30；当前配置要求 CRC32 `3a37bea7`。主工程上电只读取和校验权重，修改形状逻辑无需重复烧权重。本机旧权重和旧烧写入口已清理；模型检查点不等于定点 Flash 导出包。本次未操作板卡。详见 [Flash 模型说明](docs/FRUIT_FLASH_BOOT.md)。
+当前模型配置要求 CRC32 `3a37bea7`。主工程上电从 U30 读取并校验权重，硬件编译不读取电脑中的训练检查点。详见 [Flash 模型说明](docs/FRUIT_FLASH_BOOT.md)。
 
 仅检查源码、路径和接口：
 
@@ -57,7 +56,5 @@ python -B verification/check_merge_readiness.py
 - [单目标形状识别](docs/SINGLE_TARGET_COLOR_SHAPE.md)
 - [运动检测](docs/MOTION_DETECTION.md)
 - [延迟显示](docs/LATENCY_VISUALIZATION.md)
-- [RAW 诊断](docs/RAW_STATS_GUIDE.md)
-- [参考资料导航](docs/参考资料导航.md)
-
-失败实验构建、历史 TD 日志、重复 bit、过期实验记录和一次性对比脚本已清理。完整 RTL/IP、约束、回归测试、硬件资料、当前 `syn_1/phy_1`、通过版 `best_result` 和一份回退检查点保留。旧实验源码和记录可从 Git 历史恢复。
+- [称重接线与语音](docs/CX_SP5T_MAIN_INTEGRATION.md)
+- [水果模型加载](docs/FRUIT_FLASH_BOOT.md)

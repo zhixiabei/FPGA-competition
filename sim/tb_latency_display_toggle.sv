@@ -47,8 +47,6 @@ module tb_latency_display_toggle;
         .I_video_user(user),.I_video_last(last),.I_video_hsync(hs), \
         .I_video_vsync(vs),.I_effect_mode(effect_mode),.I_effect_param(8'd0), \
         .I_debug_status(4'b1111),.I_cam_fail_index(8'd0), \
-        .I_raw_stats_valid(1'b0),.I_raw_stats_data(45'd0), \
-        .I_ae_readout_valid(1'b0),.I_ae_readout_data(28'd0), \
         .I_latency_show(SWITCH),.I_latency_sample_strobe(sample_strobe), \
         .I_latency_sample_valid(sample_valid),.I_latency_total_us(total_us), \
         .I_latency_isp_us(isp_us),.I_latency_buffer_us(buffer_us), \

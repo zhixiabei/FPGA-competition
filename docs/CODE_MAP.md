@@ -24,7 +24,7 @@
 | `fruit_merged/fruitcnn128_core.v`、`handfixed_config.v` | RGB128 推理与模型配置 |
 | `voice/` | 稳定结果判定、音频组合与 CX-SP5T UART |
 
-`fruit_merged/` 内保留的 `handfixed_*` 名称是沿用的模块命名，不代表当前使用手势模型。其他手势、CNN 与共享存储模块仍可能被工程或测试引用，不能仅凭名称删除。
+`fruit_merged/` 内保留的 `handfixed_*` 名称是沿用的模块命名，不代表当前使用手势模型。旧独立 `handfixed/`、SC500 配置、重复 AWB/IP 及 RAW/IQ 调试显示已清理；`resnet/`、`resnet18/` 中被水果推理或测试引用的共享模块保留。
 
 ## 约束与检查
 
@@ -32,4 +32,4 @@
 
 [静态检查](../verification/check_merge_readiness.py) 核对源文件存在性、模块接口、SW1/SW2 引脚与上游核心逻辑保护。[仿真索引](../sim/README.md) 列出当前回归入口。
 
-形状修复集中在 `red_single_shape_engine`：受限地补齐内部小缺口，并将共享运算器的操作数选择与执行拆开。边界和验证见 [形状说明](SINGLE_TARGET_COLOR_SHAPE.md)。当前通过版的物理验收结果见 [首页](../README.md)，后续修改必须重新验收。
+形状处理集中在 `red_single_shape_engine`：受限地补齐内部小缺口，并将共享运算器的操作数选择与执行拆开。边界见 [形状说明](SINGLE_TARGET_COLOR_SHAPE.md)。

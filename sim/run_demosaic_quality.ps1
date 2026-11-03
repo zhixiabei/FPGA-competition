@@ -4,7 +4,6 @@ param(
     [int] $Width = 64,
     [int] $Height = 48,
     [switch] $AllowErrors,
-    [switch] $LegacyRamTies,
     [switch] $CsiSource,
     [string] $DemosaicSourceRoot=''
 )
@@ -14,19 +13,13 @@ $root = Split-Path -Parent $PSScriptRoot
 $hdl = Join-Path $root 'user_source\hdl_source\isp\demosaic_4x_2_0'
 if($DemosaicSourceRoot) { $hdl=$DemosaicSourceRoot }
 $sources = @(
-    'demosaic.v','raw_matrix_3x3_buffer.v','bilinear_interpolation.v',
-    'mipi_to_raw_converter.v','zhenghe.v','line_buffer_demosaic.v',
-    'blk_mem_gen_demosaic\blk_mem_gen_demosaic.v',
-    'blk_mem_gen_demosaic\RTL\ram_c36c2ca3b3a7.v',
-    'blk_mem_gen_zhenghe\blk_mem_gen_zhenghe.v',
-    'blk_mem_gen_zhenghe\RTL\ram_d32970204f32.v'
+    'demosaic.v','raw_matrix_3x3_buffer.v','bilinear_interpolation.v'
 ) | ForEach-Object { Join-Path $hdl $_ }
 $sources += Join-Path $PSScriptRoot 'tb_demosaic_quality.sv'
 $sources += Join-Path $TdSimLib 'ph1p_logic_eram.v'
 $sources += Join-Path $TdSimLib 'ph1p_phy_gsr.v'
 if($CsiSource) {
     if($Width % 16 -ne 0) { throw 'CSI test width must be a multiple of 16' }
-    if($LegacyRamTies) { throw 'CSI coverage uses the current demosaic implementation' }
     $sources += @(
         'user_source\hdl_source\isp\csi_unpacket_2lane.v',
         'user_source\hdl_source\isp\raw10_unpacket_2lane.v',
@@ -38,18 +31,12 @@ New-Item -ItemType Directory -Path $work | Out-Null
 $sourceArgs = ($sources | ForEach-Object { '{' + $_.Replace('\','/') + '}' }) -join ' '
 $allow = [int] $AllowErrors.IsPresent
 $csi = [int] $CsiSource.IsPresent
-$defines = ''
-$reference=1
-if ($LegacyRamTies) {
-    $defines = '+define+LEGACY_DEMOSAIC_RAM_TIES'
-    $reference=0
-}
 $script = @"
 onerror {quit -code 1 -force}
 onbreak {quit -code 1 -force}
 vlib work
-vlog -sv $defines $sourceArgs
-vsim -t ps -gW=$Width -gH=$Height -gALLOW_ERRORS=$allow -gEDGE_AWARE_REFERENCE=$reference -gCSI_SOURCE=$csi work.tb_demosaic_quality work.PH1P_PHY_GSR
+vlog -sv $sourceArgs
+vsim -t ps -gW=$Width -gH=$Height -gALLOW_ERRORS=$allow -gEDGE_AWARE_REFERENCE=1 -gCSI_SOURCE=$csi work.tb_demosaic_quality work.PH1P_PHY_GSR
 run -all
 quit -code 0 -force
 "@

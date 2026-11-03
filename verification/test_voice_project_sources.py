@@ -15,7 +15,11 @@ class VoiceProjectSourcesTest(unittest.TestCase):
         sources = ET.Element('Source_Files')
         verilog = ET.SubElement(sources, 'Verilog')
         voice = ROOT / 'user_source/hdl_source/voice'
-        paths = [ROOT / 'user_source/hdl_source/design_top_wrapper.v', *sorted(voice.glob('*.v'))]
+        paths = [
+            *(ROOT / 'user_source/hdl_source' / name for name in (
+                'design_top_wrapper.v', 'pen_minimal.v', 'signature_control.v')),
+            *sorted(voice.glob('*.v')),
+        ]
         for path in paths:
             if path.name == omitted:
                 continue

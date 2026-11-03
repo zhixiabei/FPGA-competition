@@ -50,8 +50,6 @@ module tb_fruit_font_pixels;
         .I_video_user(user), .I_video_last(last),
         .I_effect_mode(effect_mode), .I_effect_param(8'd0),
         .I_debug_status(4'hf), .I_cam_fail_index(8'd0),
-        .I_raw_stats_valid(1'b0), .I_raw_stats_data(45'd0),
-        .I_ae_readout_valid(1'b0), .I_ae_readout_data(28'd0),
         .I_latency_sample_strobe(latency_strobe), .I_latency_show(1'b1),
         .I_latency_sample_valid(1'b1), .I_latency_total_us(20'd24123),
         .I_latency_isp_us(20'd1750), .I_latency_buffer_us(20'd22373),

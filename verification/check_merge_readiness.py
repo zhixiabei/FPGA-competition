@@ -25,7 +25,7 @@ def git(*args):
 
 
 def approved_cleanup_removals(policy):
-    """Permit only reviewed obsolete documents and disposable simulator files."""
+    """Permit reviewed removals, with exact Git identities for each file."""
     require(policy.get('schema_version') == 1, 'Unknown cleanup manifest version')
     simulator_files = {'modelsim.ini', 'transcript', 'sim/normalize_work/transcript'} | {
         prefix + name for prefix in (
@@ -35,6 +35,29 @@ def approved_cleanup_removals(policy):
         ('_info', '_lib.qdb', '_lib1_0.qdb', '_lib1_0.qpg', '_lib1_0.qtl', '_vmake')
     }
     allowed = {}
+    retired_source_directories = (
+        'user_source/hdl_source/isp/awb/',
+        'user_source/hdl_source/uics500_cfg/',
+        'user_source/hdl_source/uiisp_beta/',
+        'user_source/hdl_source/handfixed/',
+        'user_source/ip_source/blk_mem_gen_awb_delay_signal/',
+        'user_source/ip_source/divider/',
+        'user_source/ip_source/MCU/',
+        'user_source/ip_source/w40_d512_fifo/',
+        'user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_demosaic/',
+        'user_source/hdl_source/isp/demosaic_4x_2_0/blk_mem_gen_zhenghe/',
+    )
+    retired_source_files = {
+        'user_source/hdl_source/' + name for name in (
+            'color_target_detect.v', 'image_correction.v', 'signal_delay.v',
+            'ps_wrapper.v', 'raw10_unpacket.v', 'isp/edge_detect_96.v',
+            'isp/color_edge_detect_96.v', 'isp/iq_diagnostic_stats.v',
+            'isp/raw_region_stats.v', 'raw_stats_osd.v',
+            'isp/demosaic_4x_2_0/line_buffer_demosaic.v',
+            'isp/demosaic_4x_2_0/mipi_to_raw_converter.v',
+            'isp/demosaic_4x_2_0/zhenghe.v',
+        )
+    } | {'user_source/constraints_source/timing.sdc'}
     critical_tools = {'check_merge_readiness.py', 'run_image_quality_build.ps1',
                       'run_scale_voice_tests.py', 'test_voice_project_sources.py',
                       'read_flash_model_status.ps1', 'refresh_osd_font.py',
@@ -44,8 +67,19 @@ def approved_cleanup_removals(policy):
         require('..' not in path.split('/') and '\\' not in path,
                 f'Invalid cleanup path: {path}')
         valid = (
-            category == 'obsolete_document' and path.endswith('.md') and
-            path.startswith(('docs/', 'verification/', 'firmware/'))
+            category == 'retired_production_source' and
+            policy.get('base_commit') == '395967c7b974ce69f873857d15451b489faadf5d' and
+            (path in retired_source_files or path.startswith(retired_source_directories))
+        ) or (
+            category == 'obsolete_document' and (
+                path.endswith('.md') and
+                path.startswith(('docs/', 'verification/', 'firmware/')) or
+                policy.get('base_commit') == '395967c7b974ce69f873857d15451b489faadf5d' and
+                path == 'docs/reference/FPGA-安路赛道(1).pdf')
+        ) or (
+            category == 'retired_document_bundle' and
+            policy.get('base_commit') == '395967c7b974ce69f873857d15451b489faadf5d' and
+            path.startswith('docs/proposals/')
         ) or (
             category == 'generated_simulation_file' and path in simulator_files
         ) or (
@@ -89,9 +123,10 @@ def check_main_inventory(main_ref):
         if entry:
             metadata, path = entry.split('\t', 1)
             tree[path] = metadata.split()[2]
-    manifest = ROOT/'verification/workspace_cleanup_20261101.json'
-    allowed = (approved_cleanup_removals(json.loads(manifest.read_text(encoding='utf-8')))
-               if manifest.is_file() else {})
+    allowed = {}
+    for manifest in sorted((ROOT/'verification').glob('workspace_cleanup_*.json')):
+        allowed.update(approved_cleanup_removals(
+            json.loads(manifest.read_text(encoding='utf-8-sig'))))
     missing = [path for path in tree if not (ROOT/path).is_file()]
     unexpected = [path for path in missing if allowed.get(path) != tree[path]]
     require(not unexpected, 'Unreviewed main files removed or upstream version changed: ' +
@@ -689,7 +724,7 @@ def main():
     main_files, retired_count = check_main_inventory(args.main_ref)
     preserved = ['auto_exposure_control.v', 'awb.v', 'display_effect_control.v',
                  'display_effects_rgb888.v', 'target_frame_bridge.v', 'video_latency_monitor.v']
-    preserved += ['isp/'+p for p in ['ae_frame_stats_raw10_4x.v', 'iq_diagnostic_stats.v',
+    preserved += ['isp/'+p for p in ['ae_frame_stats_raw10_4x.v',
                   'lsc_raw10_4x.v', 'red_target_detect_96.v', 'rgb_edge_switch_96.v',
                   'scharr_edge_detect_96.v', 'target_detect_switch_96.v']]
     optimized = 0

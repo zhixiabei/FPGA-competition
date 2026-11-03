@@ -6,7 +6,7 @@ pushd "%~dp0"
 if not exist out_sc520 mkdir out_sc520
 cd out_sc520
 >result.txt echo RUNNING
-call "%SIM_BIN%\xvlog.bat" -sv "../tb_sc520_config.sv" "../../user_source/hdl_source/uics520_cfg/uicfgcs520.v" "../../user_source/hdl_source/uics520_cfg/uics520reg_720p60.v" "../../user_source/hdl_source/uics520_cfg/uics520regAE.v" "../../user_source/hdl_source/uics520_cfg/SC520GainTbl.v" "../../user_source/hdl_source/uics500_cfg/uii2c.v" -log xvlog.log >compile_console.log 2>&1
+call "%SIM_BIN%\xvlog.bat" -sv "../tb_sc520_config.sv" "../../user_source/hdl_source/uics520_cfg/uicfgcs520.v" "../../user_source/hdl_source/uics520_cfg/uics520reg_720p60.v" "../../user_source/hdl_source/uics520_cfg/uics520regAE.v" "../../user_source/hdl_source/uics520_cfg/SC520GainTbl.v" -log xvlog.log >compile_console.log 2>&1
 if errorlevel 1 goto failed
 call "%SIM_BIN%\xelab.bat" -timescale 1ns/1ps -debug typical work.tb_sc520_config -s sc520_config_sim -log xelab.log >elaborate_console.log 2>&1
 if errorlevel 1 goto failed

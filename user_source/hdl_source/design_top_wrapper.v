@@ -5,12 +5,10 @@ module design_top_wrapper #(
     parameter integer RED_MULTI_ENABLE = 0,
     parameter integer SINGLE_SHAPE_ENABLE = 1,
     parameter integer SHOW_RED_MASK = 0, // Reserved for compatibility; no mask frame is stored.
-    parameter integer SHOW_RAW_STATS = 0, // RAW diagnostics.
     parameter integer ENABLE_HANDCNN = 1, // Enabled by the model project generator.
     parameter integer FRUIT_SWITCH_CONTROL = 1, // SW2 level controls the fruit candidate.
     parameter integer FRUIT_FLASH_MODEL = 1, // Independent U30 Flash auto-loads the model.
-    parameter integer ENABLE_LATENCY_DIAGNOSTICS = 1,
-    parameter integer IQ_DIAGNOSTIC_ENABLE = 0 // Optional CSI-clock ChipWatcher probes.
+    parameter integer ENABLE_LATENCY_DIAGNOSTICS = 1
 ) (
     input wire        I_sys_clk,
     input wire        I_rst_n,
@@ -137,8 +135,6 @@ module design_top_wrapper #(
 	wire 			S_ISP_O_tlast ;
 	wire 			S_ISP_O_tuser ;
 	wire 			S_ISP_O_tvalid; 
-    wire            S_iq_diag_valid;
-    wire [127:0]    S_iq_diag_data;
 
     // Per-frame selected red/motion result from the AWB RGB stream.
     wire        S_ISP_target_result_ready;
@@ -975,84 +971,6 @@ assign S_raw_tvalid = S_axis_tvalid;
 assign S_raw_tuser  = S_axis_tuser;
 
 
-//cwc1 cwc1_Inst
-//  (
-//      .probe0(S_axis_tuser),
-//      .probe1(S_axis_tvalid),
-//      .probe2(S_axis_tlast),
-//      .probe3(S_axis_tdata),
-//      .probe4(S_ISP_O_tuser),
-//      .probe5(S_ISP_O_tvalid),
-//      .probe6(S_ISP_O_tlast),
-//      .probe7(S_ISP_O_tdata),
-//      .probe8 (S_raw_tdata ),
-//      .probe9 (S_raw_tlast ),
-//      .probe10(S_raw_tvalid),
-//      .probe11(S_raw_tuser ),
-//      .clk(S_csi_rx_clk)
-//  );
-
-
-// Read-only RAW tap, serialized into ten small packets per camera frame.
-// In 720p the closest packets are 152 camera clocks apart, comfortably
-// exceeding mailbox round trip and the HDMI decimal converter's 44 clocks.
-wire S_raw_stats_valid;
-wire [44:0] S_raw_stats_data;
-wire S_ae_readout_valid;
-wire [27:0] S_ae_readout_data;
-generate if (SHOW_RAW_STATS != 0) begin: raw_diagnostics
-    wire stats_valid;
-    wire [44:0] stats_data;
-    raw_region_stats u_stats (
-        .I_clk(S_csi_rx_clk), .I_rst_n(S_rst_n),
-        .I_tdata(S_raw_tdata), .I_tvalid(S_raw_tvalid),
-        .I_tuser(S_raw_tuser), .I_tlast(S_raw_tlast),
-        .O_valid(stats_valid), .O_data(stats_data)
-    );
-    ae_stats_cdc #(.WIDTH(45)) u_cdc (
-        .I_src_clk(S_csi_rx_clk), .I_dst_clk(S_hdmi_pixel_clk),
-        .I_rst_n(S_rst_n), .I_src_valid(stats_valid), .I_src_data(stats_data),
-        .O_dst_valid(S_raw_stats_valid), .O_dst_data(S_raw_stats_data)
-    );
-    // Report completed writes, not new requests. This is not sensor readback.
-    // Only complete AE frames advance the sequence; a parameter-only update
-    // must not reset the HDMI metering freshness indicator.
-    reg ae_done_d, meter_seen;
-    reg [7:0] meter_sequence;
-    reg [10:0] applied_exposure;
-    reg [7:0] applied_gain;
-    wire write_done = S_ae_cfg_done && !ae_done_d && S_cam_cfg_done;
-    always @(posedge S_24m_clk or negedge S_rst_n) begin
-        if (!S_rst_n) begin
-            ae_done_d<=0; meter_seen<=0; meter_sequence<=0;
-            applied_exposure<=1000; applied_gain<=16;
-        end else begin
-            ae_done_d<=S_ae_cfg_done;
-            if (S_ae_stats_valid) begin
-                meter_seen<=1;
-                meter_sequence<=meter_sequence+1'b1;
-            end
-            if (write_done) begin
-                applied_exposure<=S_ae[10:0]; applied_gain<=S_ag[7:0];
-            end
-        end
-    end
-    ae_stats_cdc #(.WIDTH(28)) u_ae_readout_cdc (
-        .I_src_clk(S_24m_clk), .I_dst_clk(S_hdmi_pixel_clk), .I_rst_n(S_rst_n),
-        .I_src_valid(S_ae_stats_valid || write_done),
-        .I_src_data({meter_seen || S_ae_stats_valid,
-            meter_sequence+{7'd0,S_ae_stats_valid},
-            write_done ? S_ae[10:0] : applied_exposure,
-            write_done ? S_ag[7:0] : applied_gain}),
-        .O_dst_valid(S_ae_readout_valid), .O_dst_data(S_ae_readout_data)
-    );
-end else begin: no_raw_diagnostics
-    assign S_raw_stats_valid = 1'b0;
-    assign S_raw_stats_data = 45'd0;
-    assign S_ae_readout_valid = 1'b0;
-    assign S_ae_readout_data = 28'd0;
-end endgenerate
-
     wire S_bridge_write_complete, S_latency_write_complete;
     video_ddr_write_progress u_ddr_write_progress (
         .I_clk(S_ddr_clk), .I_rst_n(S_rst_n),
@@ -1141,7 +1059,6 @@ isp_top #(
         .ENABLE_EDGE(ENABLE_EDGE),
         .RED_MULTI_ENABLE(RED_MULTI_ENABLE),
         .SINGLE_SHAPE_ENABLE(SINGLE_SHAPE_ENABLE),
-        .IQ_DIAGNOSTIC_ENABLE(IQ_DIAGNOSTIC_ENABLE),
         .ENABLE_DISPLAY_EFFECTS(1),
         .ENABLE_HANDCNN_TAP(ENABLE_HANDCNN)
     ) u_isp_top (
@@ -1191,29 +1108,9 @@ isp_top #(
 .O_ae_bright_count     (S_ISP_ae_bright_count),
 .O_ae_p95              (S_ISP_ae_p95),
 .I_awb_hold_async      (S_awb_hold),
-.O_iq_diag_valid       (S_iq_diag_valid),
-.O_iq_diag_data        (S_iq_diag_data),
 .O_latency_frame_id   (S_isp_frame_id),
 .I_tready        ()
   );
-
-    generate if (IQ_DIAGNOSTIC_ENABLE != 0) begin : iq_diagnostics
-        // Retain an actual register endpoint for ChipWatcher. Sample valid
-        // and data together on S_csi_rx_clk; these are source-frame snapshots.
-        // This entire branch is absent from the default production build.
-        (* keep="true", preserve="true" *) reg valid;
-        (* keep="true", preserve="true" *) reg [127:0] data;
-        always @(posedge S_csi_rx_clk or negedge S_rst_n) begin
-            if (!S_rst_n) begin
-                valid <= 1'b0;
-                data <= 128'd0;
-            end else begin
-                valid <= S_iq_diag_valid;
-                if (S_iq_diag_valid)
-                    data <= S_iq_diag_data;
-            end
-        end
-    end endgenerate
 
     wire S_rnet_mem_valid,S_rnet_mem_write,S_rnet_mem_ready,S_rnet_rsp_valid,S_rnet_memory_error;
     wire [31:0] S_rnet_mem_addr;
@@ -1544,8 +1441,7 @@ end endgenerate
         .HANDCNN_DYNAMIC_ROI(ENABLE_HANDCNN != 0),
         .FRUIT_CNN(1),
         .CNN_RESULT_TIMEOUT_FRAMES(0),
-        .SHOW_RESNET_RUNTIME ( 0 ),
-        .SHOW_RAW_STATS     ( SHOW_RAW_STATS )
+        .SHOW_RESNET_RUNTIME ( 0 )
     )u_hdmi_mixer(
         .I_clk           ( S_hdmi_pixel_clk   ),
         .I_rst_n         ( S_hdmi_rst_n       ),
@@ -1558,10 +1454,6 @@ end endgenerate
         .I_effect_param  ( S_effect_config_hdmi[7:0] ),
         .I_debug_status  ( S_hdmi_debug_status),
         .I_cam_fail_index( S_cam_fail_sync    ),
-        .I_raw_stats_valid(S_raw_stats_valid),
-        .I_raw_stats_data (S_raw_stats_data),
-        .I_ae_readout_valid(S_ae_readout_valid),
-        .I_ae_readout_data(S_ae_readout_data),
         .I_latency_sample_strobe(S_latency_sample_strobe),
         .I_latency_show(I_latency_switch),
         .I_latency_sample_valid(S_latency_sample_valid),

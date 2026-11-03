@@ -10,7 +10,6 @@ module hdmi_mixer #(
     parameter integer TARGET_RED_MIN = 80,
     parameter integer TARGET_RED_DELTA = 30,
     parameter integer TARGET_MIN_PIXELS = 128,
-    parameter integer SHOW_RAW_STATS = 0,
     parameter integer SHOW_LATENCY = 0,
     parameter integer LATENCY_SWITCH_ENABLE = 0,
     parameter integer SHOW_EFFECT_LABEL = 0,
@@ -40,10 +39,6 @@ module hdmi_mixer #(
 
     input wire[3:0]   I_debug_status,
     input wire[7:0]   I_cam_fail_index,
-    input wire        I_raw_stats_valid,
-    input wire [44:0] I_raw_stats_data,
-    input wire        I_ae_readout_valid,
-    input wire [27:0] I_ae_readout_data,
     input wire        I_latency_sample_strobe,
     input wire        I_latency_show,
     input wire        I_latency_sample_valid,
@@ -697,10 +692,6 @@ module hdmi_mixer #(
                 F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
                     LATENCY_PANEL_X,LATENCY_PANEL_Y,
                     LATENCY_PANEL_X+LATENCY_PANEL_WIDTH,LATENCY_PANEL_Y+LATENCY_PANEL_HEIGHT))
-                candidate_valid = 1'b0;
-            if ((SHOW_RAW_STATS != 0) &&
-                F_bounds_overlap(candidate_x,candidate_y,candidate_right,candidate_bottom,
-                    13'd496,13'd176,13'd1264,13'd528))
                 candidate_valid = 1'b0;
             for (peer_index=0; peer_index<PEER_TARGETS; peer_index=peer_index+1)
                 if (label_valid[peer_index] &&
@@ -1368,22 +1359,6 @@ module hdmi_mixer #(
             F_probe_hex=nibble<10 ? 8'h30+nibble : 8'h41+(nibble-10);
         end
     endfunction
-
-    wire S_raw_panel, S_raw_text, S_raw_alert;
-    generate if (SHOW_RAW_STATS != 0) begin: raw_readout
-        raw_stats_osd u_osd (
-            .I_clk(I_clk), .I_rst_n(I_rst_n),
-            .I_stats_valid(I_raw_stats_valid), .I_stats_data(I_raw_stats_data),
-            .I_ae_valid(I_ae_readout_valid), .I_ae_data(I_ae_readout_data),
-            .I_frame_start(S_video_de_1d && S_x_1d==0 && S_y_1d==0),
-            .I_de(S_video_de_1d), .I_x(S_x_1d), .I_y(S_y_1d),
-            .O_panel(S_raw_panel), .O_text(S_raw_text), .O_alert(S_raw_alert)
-        );
-    end else begin: no_raw_readout
-        assign S_raw_panel=1'b0;
-        assign S_raw_text=1'b0;
-        assign S_raw_alert=1'b0;
-    end endgenerate
 
     wire S_latency_panel, S_latency_text, S_latency_alert;
     generate if (SHOW_LATENCY != 0) begin: latency_readout
@@ -2176,9 +2151,7 @@ module hdmi_mixer #(
                 S_rgb_next = 24'h101010;
                 S_font_valid_next = 1'b1;
                 S_font_color_next = 24'h40ff80;
-            end else if(S_raw_panel)
-                S_rgb_next = S_raw_text ? (S_raw_alert ? 24'hffb040 : 24'hffffff) : 24'h101010;
-            else if(S_osd_hit)
+            end else if(S_osd_hit)
                 S_rgb_next = S_osd_color;
             else if(S_target_panel_on) begin
                 S_rgb_next = 24'h101010;

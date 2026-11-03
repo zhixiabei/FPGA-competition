@@ -55,8 +55,8 @@ module tb_target_frame_alignment;
     integer request_count = 0;
     reg request_seen = 0;
 
-    // RAW readout is verified separately with the real tap/CDC/HDMI chain.
-    design_top_wrapper #(.SHOW_RAW_STATS(0), .RED_MULTI_ENABLE(0), .ENABLE_HANDCNN(0),
+    // Exercise the production top with the unrelated pixel arithmetic stubbed.
+    design_top_wrapper #(.RED_MULTI_ENABLE(0), .ENABLE_HANDCNN(0),
         .SINGLE_SHAPE_ENABLE(0)) dut (
         .I_sys_clk(ddr_clk), .I_rst_n(rst_n),
         .I_mode_key_n(1'b1), .I_detect_key_n(1'b1),
@@ -700,7 +700,7 @@ module uial2axis #(parameter IMG_WIDTH=0, IMG_HEIGHT=0, INPUT_DATA_WIDTH=0)
     (input wire [127:0] I_native_clk, I_rst_n, I_data, I_data_valid,
     I_data_start, I_data_end, axis_tvalid, axis_tdata, axis_tuser, axis_tlast);
 endmodule
-module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, SINGLE_SHAPE_ENABLE=0, IQ_DIAGNOSTIC_ENABLE=0,
+module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, SINGLE_SHAPE_ENABLE=0,
     ENABLE_DISPLAY_EFFECTS=0, ENABLE_HANDCNN_TAP=0)
     (input wire [127:0] axi4s_video_aclk, I_rst_n, I_effect_config, I_motion_mode_async,
     I_color_mode_async, I_awb_hold_async,
@@ -715,7 +715,6 @@ module isp_top #(parameter ENABLE_EDGE=0, RED_MULTI_ENABLE=0, SINGLE_SHAPE_ENABL
     O_target_multi_boxes, O_target_multi_overflow,
     O_edge_mode_active, O_effect_config, I_tready,
     O_ae_stats_valid, O_ae_sum_y, O_ae_sample_count, O_ae_bright_count, O_ae_p95,
-    O_iq_diag_valid, O_iq_diag_data,
     O_latency_frame_id,
     output wire [7:0] O_target_multi_shapes);
     assign O_target_multi_shapes = 8'd0;

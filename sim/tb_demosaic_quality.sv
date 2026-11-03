@@ -51,18 +51,6 @@ module tb_demosaic_quality #(
         .axi4s_video_tready(),.O_tvalid(out_valid),.O_tuser(out_user),
         .O_tlast(out_last),.O_tdata(out_data),.O_tready(1'b1)
     );
-`ifdef LEGACY_DEMOSAIC_RAM_TIES
-    // The old wrappers omit unused port B writes. TD ties these pins low,
-    // but the functional model treats Z as an indeterminate write mode.
-    initial begin
-        force dut.raw_matrix_3x3_buffer_d.zhenghe_d.blk_mem_gen_zhenghe_d1.web=1'b0;
-        force dut.raw_matrix_3x3_buffer_d.zhenghe_d.blk_mem_gen_zhenghe_d1.dib=32'd0;
-        force dut.raw_matrix_3x3_buffer_d.two_line_buffer[1].line_buffer_demosaic_r1.blk_mem_gen_demosaic_r0.web=1'b0;
-        force dut.raw_matrix_3x3_buffer_d.two_line_buffer[1].line_buffer_demosaic_r1.blk_mem_gen_demosaic_r0.dib=33'd0;
-        force dut.raw_matrix_3x3_buffer_d.two_line_buffer[2].line_buffer_demosaic_r1.blk_mem_gen_demosaic_r0.web=1'b0;
-        force dut.raw_matrix_3x3_buffer_d.two_line_buffer[2].line_buffer_demosaic_r1.blk_mem_gen_demosaic_r0.dib=33'd0;
-    end
-`endif
     integer scene_id=0, received=0, errors=0, frames=0, total_pixels=0, marker_errors=0;
     integer raw_received=0,total_raw_pixels=0,raw_lane,raw_x,raw_y;
     integer sharpness_checks=0,bilinear_edge_error=0,directional_edge_error=0;

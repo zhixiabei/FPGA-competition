@@ -1,12 +1,12 @@
 # 水果权重 Flash 加载
 
-用户已确认新权重烧入独立用户 Flash U30。当前配置 `fruit_merged/handfixed_config.v` 要求模型 CRC32 `3a37bea7`。本次未重新读取或操作板卡。
+模型存放在独立用户 Flash U30。当前配置 `fruit_merged/handfixed_config.v` 要求模型 CRC32 `3a37bea7`。
 
 ## 当前操作
 
 修改形状逻辑后，只需在主工程通过构建验收后更新主程序 bit；已经匹配的新权重无需重复烧录。电脑中有没有模型文件，不影响 FPGA 从 U30 读取已保存的权重。
 
-旧 `bbd4adef` 权重文件、临时烧写 bit 和配套烧写入口已清理。当前模型检查点保存在 `fruitcnn128_retrained_20261031/training/model.pt`，它是训练归档，不是可直接烧写的定点包。
+模型检查点位于 `fruitcnn128_retrained_20261031/training/model.pt`，它是训练归档，不是可直接烧写的定点包。
 
 ## 上电流程
 

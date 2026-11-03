@@ -21,8 +21,6 @@ module tb_fruit_showcase_panel;
         .I_video_hsync(1'b0),.I_video_de(1'b0),.I_video_user(1'b0), \
         .I_video_last(1'b0),.I_effect_mode(4'd0),.I_effect_param(8'd0), \
         .I_debug_status(4'hf),.I_cam_fail_index(8'd0), \
-        .I_raw_stats_valid(1'b0),.I_raw_stats_data(45'd0), \
-        .I_ae_readout_valid(1'b0),.I_ae_readout_data(28'd0), \
         .I_latency_sample_strobe(1'b0),.I_latency_show(1'b0), \
         .I_latency_sample_valid(1'b0),.I_latency_total_us(20'd0), \
         .I_latency_isp_us(20'd0),.I_latency_buffer_us(20'd0), \

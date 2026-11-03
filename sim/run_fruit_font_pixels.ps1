@@ -12,7 +12,7 @@ if(-not $OutputDir) {
 $simulationDir=[IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Path $simulationDir | Out-Null
 $sources=@('hdmi_mixer.v','display_effects_rgb888.v','gamma_lut_rgb888.v',
-    'anlogic_logo_rom.v','osd_char_lib.v','video_latency_osd.v','raw_stats_osd.v')
+    'anlogic_logo_rom.v','osd_char_lib.v','video_latency_osd.v')
 foreach($source in $sources) {
     Copy-Item -LiteralPath (Join-Path $projectRoot ('user_source/hdl_source/'+$source)) `
         -Destination (Join-Path $simulationDir $source)

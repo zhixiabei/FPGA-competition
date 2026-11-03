@@ -11,7 +11,6 @@ param(
     [switch] $Dilation,
     [switch] $CloseMask,
     [switch] $AllModes,
-    [switch] $Diagnostics,
     [switch] $HoldRelease
 )
 
@@ -30,9 +29,6 @@ $sources = @('isp\isp_top.v','isp\lsc_raw10_4x.v','awb.v',
     'isp\red_target_detect_96.v','isp\motion_target_detect_96.v',
     'isp\target_detect_switch_96.v','isp\data96_128\data96_128.v',
     'isp\data128_96\data128_96.v')
-if (Test-Path -LiteralPath (Join-Path $sourceRoot 'isp\iq_diagnostic_stats.v')) {
-    $sources += 'isp\iq_diagnostic_stats.v'
-}
 foreach ($tool in @('xvlog.bat', 'xelab.bat', 'xsim.bat')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SimBin $tool) -PathType Leaf)) {
         throw "XSim tool is missing: $tool"
@@ -98,7 +94,6 @@ try {
     }
     foreach ($run in $runs) {
         $modeArgs=@()
-        if ($Diagnostics) { $modeArgs+=@('-generic_top','"IQ_DIAG_ENABLE=1"') }
         if ($HoldRelease) { $modeArgs+=@('-generic_top','"HOLD_RELEASE_TEST=1"') }
         if ($run.Motion) { $modeArgs+=@('-generic_top','"MOTION_MODE=1"') }
         if ($run.Emboss) { $modeArgs+=@('-generic_top','"EMBOSS_MODE=1"') }
@@ -123,7 +118,6 @@ try {
             throw "ISP integration reported an error; see $simulateLog"
         }
         $requiredPasses=@($(if ($run.Motion) { 'ISP_MOTION_INTEGRATION_PASS' } else { 'ISP_LIGHTING_INTEGRATION_PASS' }))
-        if ($Diagnostics) { $requiredPasses+='ISP_IQ_DIAGNOSTIC_INTEGRATION_PASS' }
         if ($run.Emboss) { $requiredPasses+='ISP_EMBOSS_INTEGRATION_PASS' }
         if ($run.Cartoon) { $requiredPasses+='ISP_CARTOON_INTEGRATION_PASS' }
         if ($run.Morph) { $requiredPasses+='ISP_MORPH_INTEGRATION_PASS' }

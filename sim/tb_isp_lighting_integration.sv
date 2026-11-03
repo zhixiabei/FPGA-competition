@@ -9,15 +9,16 @@ module tb_isp_lighting_integration #(
     parameter integer MORPH_MODE=0,
     parameter integer SCHARR_INV_MODE=0,
     parameter integer MASK_MODE=0,
-    parameter integer IQ_DIAG_ENABLE=0,
     parameter integer HOLD_RELEASE_TEST=0
 );
     localparam integer W=1280, H=720, GROUPS=320;
     localparam integer FRAME_GROUPS=230400, FRAME_WORDS=172800;
     localparam integer AWB_LATENCY=54;
     // Hold all frames, or release halfway through frame 0. That partial frame
-    // must be discarded. Colour frame 1 has no neutral samples; motion frames
-    // 1 and 2 are grey and can confirm unity gains. All pixels retain unity.
+    // must be discarded. Confidence mode requires two consistent candidates;
+    // motion frames 1 and 2 are grey and can confirm unity gains. With
+    // confidence disabled, the final clean frame can publish immediately.
+    // All pixels retain unity during these three frames.
     localparam integer EXPECTED_RED_GAIN=256, EXPECTED_BLUE_GAIN=256;
     // The color result uses three shared binary windows: majority, dilation,
     // erosion. Its ten registered clocks are observed one edge later here.
@@ -46,10 +47,8 @@ module tb_isp_lighting_integration #(
     wire [31:0] sum_y;
     wire [15:0] sample_count, bright_count;
     wire [4:0] p95;
-    wire iq_diag_valid;
-    wire [127:0] iq_diag_data;
     reg [9:0] input_frame_id=0;
-    isp_top #(.ENABLE_EDGE(0),.IQ_DIAGNOSTIC_ENABLE(IQ_DIAG_ENABLE)) dut (
+    isp_top #(.ENABLE_EDGE(0)) dut (
         .I_awb_hold_async(ae_hold),
         .axi4s_video_aclk(clk),.I_rst_n(rst_n),
         .I_effect_config({request_mode,8'd0}),
@@ -66,8 +65,7 @@ module tb_isp_lighting_integration #(
         .O_edge_mode_active(mode),.O_effect_config(effect_config),
         .O_ae_stats_valid(stats_valid),
         .O_ae_sum_y(sum_y),.O_ae_sample_count(sample_count),
-        .O_ae_bright_count(bright_count), .O_ae_p95(p95),
-        .O_iq_diag_valid(iq_diag_valid),.O_iq_diag_data(iq_diag_data)
+        .O_ae_bright_count(bright_count), .O_ae_p95(p95)
     );
 
     integer source_frame=-1, awb_frame=-1, edge_frame=-1, packed_frame=-1;
@@ -76,10 +74,6 @@ module tb_isp_lighting_integration #(
     integer expected_p95[0:2];
     integer ae_results=0, target_results=0, raw_motion_results=0, bytes_checked=0;
     integer cycle_number=0, awb_last_cycle[0:2], white_pixels=0;
-    bit diagnostic_seen[0:2][0:5][0:3];
-    integer diagnostic_packets=0,diag_kind,diag_channel,diag_frame,diag_i;
-    integer diag_a,diag_b,diag_near,diag_clip;
-    reg [39:0] diag_raw;
     integer emboss_pixels=0,emboss_bright=0,emboss_dark=0,emboss_neutral=0;
     integer emboss_white=0,emboss_black=0;
     integer cartoon_pixels=0,cartoon_black=0,cartoon_color=0,cartoon_nonblack=0;
@@ -492,50 +486,6 @@ module tb_isp_lighting_integration #(
                         ae_results,sum_y,sample_count,bright_count,p95);
                 ae_results=ae_results+1;
             end
-            if(IQ_DIAG_ENABLE && iq_diag_valid) begin
-                diag_kind=iq_diag_data[127:124];
-                diag_channel=iq_diag_data[123:122];
-                diag_frame=iq_diag_data[121:112];
-                if(diag_kind>=6 || diag_frame>=3 ||
-                    (diag_kind>=2 && diag_kind<4 && diag_channel==2) ||
-                    (diag_kind>=4 && diag_channel!=0) ||
-                    diagnostic_seen[diag_frame][diag_kind][diag_channel])
-                    $fatal(1,"ISP diagnostic duplicate/invalid packet kind=%0d channel=%0d frame=%0d",
-                        diag_kind,diag_channel,diag_frame);
-                diagnostic_seen[diag_frame][diag_kind][diag_channel]=1;
-                diagnostic_packets++;
-                if(diag_kind<4 &&
-                    iq_diag_data[111:96]!=(diag_kind<2 ? 7200 : 14400))
-                    $fatal(1,"ISP diagnostic wrong sample population");
-                if(diag_kind==0) begin
-                    diag_raw=raw_scene(diag_frame);
-                    diag_a=diag_raw[(diag_channel==0 || diag_channel==2) ? 10 : 0 +:10];
-                    diag_b=diag_raw[(diag_channel==0 || diag_channel==2) ? 30 : 20 +:10];
-                    diag_near=3600*((diag_a>=992)+(diag_b>=992));
-                    diag_clip=3600*((diag_a==1023)+(diag_b==1023));
-                    if(iq_diag_data[95:72]!=(diag_a+diag_b)*3600 ||
-                        iq_diag_data[71:56]!=diag_near ||
-                        iq_diag_data[55:40]!=diag_clip ||
-                        iq_diag_data[39:24]!=diag_near)
-                        $fatal(1,"ISP RAW diagnostic source/channel mismatch frame=%0d channel=%0d",
-                            diag_frame,diag_channel);
-                end
-                if(diag_kind==4 &&
-                    (iq_diag_data[111:107]!=(diag_frame==0 ? 12 : diag_frame==1 ? 0 : 7) ||
-                     iq_diag_data[106:102]!=(diag_frame==0 ? 23 : diag_frame==1 ? 0 : 12) ||
-                     iq_diag_data[101:97]!=expected_p95[diag_frame] ||
-                     iq_diag_data[96:92]!=expected_p95[diag_frame] ||
-                     iq_diag_data[91:76]!=28800 ||
-                     iq_diag_data[75:60]!=(diag_frame==0 ? 7200 : 0) ||
-                     iq_diag_data[59:44]!=(diag_frame==0 ? 7200 : 0)))
-                    $fatal(1,"ISP histogram diagnostic source/percentile mismatch frame=%0d",diag_frame);
-                if(diag_kind==5 &&
-                    (iq_diag_data[111:101]!=256 || iq_diag_data[100:90]!=256 ||
-                     iq_diag_data[88:73]>14400))
-                    $fatal(1,"ISP WB diagnostic gain/sample mismatch");
-            end
-            if(!IQ_DIAG_ENABLE && (iq_diag_valid!==0 || iq_diag_data!==0))
-                $fatal(1,"ISP diagnostic default-off outputs changed");
             if(MOTION_MODE && dut.u_target_detect_switch.raw_motion_ready) begin
                 if(raw_motion_results>=3 ||
                     cycle_number-awb_last_cycle[raw_motion_results]!=11 ||
@@ -642,10 +592,6 @@ module tb_isp_lighting_integration #(
         force dut.m_aixs_tvalid=injected_valid;
         force dut.m_aixs_tuser=injected_user;
         force dut.m_aixs_tlast=injected_last;
-        if(IQ_DIAG_ENABLE)
-            force dut.demosaic_frame_id=input_frame_id;
-        for(f=0;f<3;f=f+1) for(y=0;y<6;y=y+1) for(g=0;g<4;g=g+1)
-            diagnostic_seen[f][y][g]=0;
         for(f=0;f<3;f=f+1) begin
             awb_count[f]=0;edge_count[f]=0;packed_count[f]=0;
             awb_last_cycle[f]=-1;expected_sum[f]=0;
@@ -691,9 +637,11 @@ module tb_isp_lighting_integration #(
         repeat(100) tick(0,0,0,0);
         if(HOLD_RELEASE_TEST) begin
             if(!dut.u_awb.candidate_valid ||
-               dut.u_awb.pending_ready !== (MOTION_MODE!=0))
-                $fatal(1,"AWB recovery confirmation mismatch motion=%0d candidate=%b pending=%b",
-                    MOTION_MODE,dut.u_awb.candidate_valid,dut.u_awb.pending_ready);
+               dut.u_awb.pending_ready !==
+                   (MOTION_MODE!=0 || dut.u_awb.CONFIDENCE_ENABLE==0))
+                $fatal(1,"AWB recovery confirmation mismatch motion=%0d confidence=%0d candidate=%b pending=%b",
+                    MOTION_MODE,dut.u_awb.CONFIDENCE_ENABLE,
+                    dut.u_awb.candidate_valid,dut.u_awb.pending_ready);
             if(MOTION_MODE && (dut.u_awb.pending_r_q8!=256 ||
                                dut.u_awb.pending_b_q8!=256))
                 $fatal(1,"Two clean grey motion frames must confirm unity AWB gains");
@@ -702,16 +650,6 @@ module tb_isp_lighting_integration #(
             byte_write!=byte_read ||
             bytes_checked!=3*W*H*3 || white_pixels==0)
             $fatal(1,"ISP integration coverage/count mismatch");
-        if(IQ_DIAG_ENABLE) begin
-            if(diagnostic_packets!=48)
-                $fatal(1,"ISP diagnostic missing packets checked=%0d expected=48",diagnostic_packets);
-            for(f=0;f<3;f=f+1) for(y=0;y<6;y=y+1) for(g=0;g<4;g=g+1)
-                if((y<2 || (y<4 && g!=2) || (y>=4 && g==0)) &&
-                    !diagnostic_seen[f][y][g])
-                    $fatal(1,"ISP diagnostic missing frame/kind/channel %0d/%0d/%0d",f,y,g);
-            $display("ISP_IQ_DIAGNOSTIC_INTEGRATION_PASS frames=3 packets=%0d raw_lsc_rgb_awb_hist_wb_status=1 source_frame_tags=1 valid_only_stats=1",
-                diagnostic_packets);
-        end
         for(f=0;f<3;f=f+1)
             if(awb_count[f]!=FRAME_GROUPS || edge_count[f]!=FRAME_GROUPS ||
                 packed_count[f]!=FRAME_WORDS)
